@@ -3,7 +3,7 @@
  * Plugin Name: Replanta Care
  * Plugin URI: https://replanta.dev
  * Description: Plugin de mantenimiento WordPress automático para clientes de Replanta
- * Version: 1.0.9
+ * Version: 1.1.0
  * Author: Replanta
  * Author URI: https://replanta.dev
  * License: GPL v2 or later
@@ -17,7 +17,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('RPCARE_VERSION', '1.0.9');
+define('RPCARE_VERSION', '1.1.0');
 define('RPCARE_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('RPCARE_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('RPCARE_PLUGIN_FILE', __FILE__);
@@ -220,7 +220,11 @@ class ReplantaCare {
             'advanced' => 'Avanzado', 
             'premium' => 'Premium'
         ];
-        $plan_name = isset($plan_names[$plan]) ? $plan_names[$plan] : 'Activo';
+        $plan_name = isset($plan_names[$plan]) ? $plan_names[$plan] : 'Detectando...';
+        
+        // Show hub connection status
+        $hub_connected = get_option('rpcare_hub_connected', false);
+        $status_text = $hub_connected ? '✅ Conectado al Hub Replanta' : '🔄 Detectando configuración...';
         
         // Main menu item
         $wp_admin_bar->add_menu([
@@ -236,7 +240,7 @@ class ReplantaCare {
         $wp_admin_bar->add_menu([
             'parent' => 'replanta-care',
             'id' => 'replanta-care-status',
-            'title' => '✅ Protegido por Replanta',
+            'title' => $status_text,
             'href' => false
         ]);
         
@@ -372,9 +376,26 @@ class ReplantaCare {
     }
     
     public function is_activated() {
+        // Auto-activation through hub detection
+        $plan = get_option('rpcare_plan', '');
+        $hub_connected = get_option('rpcare_hub_connected', false);
+        
+        if ($plan && $hub_connected) {
+            return true;
+        }
+        
+        // Try to detect from hub
+        if (class_exists('RP_Care_Plan')) {
+            $detected_plan = RP_Care_Plan::get_current();
+            if ($detected_plan) {
+                return true;
+            }
+        }
+        
+        // Fallback to manual activation
         return get_option('rpcare_activated', false) && 
                get_option('rpcare_token', '') !== '' && 
-               get_option('rpcare_plan', '') !== '';
+               $plan !== '';
     }
 }
 

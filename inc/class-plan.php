@@ -10,13 +10,15 @@ if (!defined('ABSPATH')) {
 
 class RP_Care_Plan {
     
-    const PLAN_SEMILLA = 'semilla';
-    const PLAN_RAIZ = 'raiz';
-    const PLAN_ECOSISTEMA = 'ecosistema';
+    const PLAN_BASIC = 'basic';
+    const PLAN_ADVANCED = 'advanced';
+    const PLAN_PREMIUM = 'premium';
+    
+    const HUB_URL = 'https://sitios.replanta.dev';
     
     private static $plan_configs = [
-        self::PLAN_SEMILLA => [
-            'name' => 'Plan Semilla',
+        self::PLAN_BASIC => [
+            'name' => 'Plan Básico',
             'price' => '49€/mes',
             'updates' => 'monthly',
             'backups' => 'weekly',
@@ -32,8 +34,8 @@ class RP_Care_Plan {
                 'Soporte por email'
             ]
         ],
-        self::PLAN_RAIZ => [
-            'name' => 'Plan Raíz',
+        self::PLAN_ADVANCED => [
+            'name' => 'Plan Avanzado',
             'price' => '89€/mes',
             'updates' => 'weekly',
             'backups' => 'weekly',
@@ -42,7 +44,7 @@ class RP_Care_Plan {
             'monitoring' => true,
             'priority_support' => true,
             'features' => [
-                'Todo lo del plan Semilla',
+                'Todo lo del plan Básico',
                 'Actualizaciones semanales',
                 'Soporte prioritario',
                 'Monitorización 24/7',
@@ -50,8 +52,8 @@ class RP_Care_Plan {
                 'Informes de estado mensuales'
             ]
         ],
-        self::PLAN_ECOSISTEMA => [
-            'name' => 'Plan Ecosistema',
+        self::PLAN_PREMIUM => [
+            'name' => 'Plan Premium',
             'price' => '149€/mes',
             'updates' => 'weekly',
             'backups' => 'daily',
@@ -61,7 +63,7 @@ class RP_Care_Plan {
             'priority_support' => true,
             'hosting_included' => true,
             'features' => [
-                'Todo lo del plan Raíz',
+                'Todo lo del plan Avanzado',
                 'Consultoría técnica trimestral',
                 'Hosting ecológico incluido',
                 'Auditoría SEO/WPO trimestral',
@@ -71,6 +73,12 @@ class RP_Care_Plan {
     ];
     
     public static function get_current() {
+        // Auto-detect from hub
+        $plan = self::detect_plan_from_hub();
+        if ($plan) {
+            update_option('rpcare_plan', $plan);
+            return $plan;
+        }
         return get_option('rpcare_plan', '');
     }
     
@@ -83,7 +91,38 @@ class RP_Care_Plan {
     }
     
     public static function is_valid_plan($plan) {
-        return in_array($plan, [self::PLAN_SEMILLA, self::PLAN_RAIZ, self::PLAN_ECOSISTEMA]);
+        return in_array($plan, [self::PLAN_BASIC, self::PLAN_ADVANCED, self::PLAN_PREMIUM]);
+    }
+    
+    /**
+     * Detect plan from Replanta hub
+     */
+    private static function detect_plan_from_hub() {
+        $site_url = get_site_url();
+        $domain = parse_url($site_url, PHP_URL_HOST);
+        
+        $response = wp_remote_get(self::HUB_URL . '/api/sites/plan', [
+            'headers' => [
+                'Content-Type' => 'application/json',
+                'X-Site-Domain' => $domain,
+                'X-Site-URL' => $site_url
+            ],
+            'timeout' => 10
+        ]);
+        
+        if (!is_wp_error($response) && wp_remote_retrieve_response_code($response) === 200) {
+            $body = wp_remote_retrieve_body($response);
+            $data = json_decode($body, true);
+            
+            if (isset($data['plan']) && self::is_valid_plan($data['plan'])) {
+                // Mark as activated automatically
+                update_option('rpcare_activated', true);
+                update_option('rpcare_hub_connected', true);
+                return $data['plan'];
+            }
+        }
+        
+        return false;
     }
     
     public static function get_plan_config($plan = null) {
@@ -191,17 +230,17 @@ class RP_Care_Plan {
         }
         
         $features_by_plan = [
-            'updates' => [self::PLAN_SEMILLA, self::PLAN_RAIZ, self::PLAN_ECOSISTEMA],
-            'backups' => [self::PLAN_SEMILLA, self::PLAN_RAIZ, self::PLAN_ECOSISTEMA],
-            'wpo_basic' => [self::PLAN_SEMILLA, self::PLAN_RAIZ, self::PLAN_ECOSISTEMA],
-            'wpo_advanced' => [self::PLAN_RAIZ, self::PLAN_ECOSISTEMA],
-            'wpo_premium' => [self::PLAN_ECOSISTEMA],
-            'monitoring' => [self::PLAN_RAIZ, self::PLAN_ECOSISTEMA],
-            'priority_support' => [self::PLAN_RAIZ, self::PLAN_ECOSISTEMA],
-            'seo_reviews' => [self::PLAN_RAIZ, self::PLAN_ECOSISTEMA],
-            'quarterly_audit' => [self::PLAN_ECOSISTEMA],
-            'cdn_optimization' => [self::PLAN_ECOSISTEMA],
-            'technical_consulting' => [self::PLAN_ECOSISTEMA]
+            'updates' => [self::PLAN_BASIC, self::PLAN_ADVANCED, self::PLAN_PREMIUM],
+            'backups' => [self::PLAN_BASIC, self::PLAN_ADVANCED, self::PLAN_PREMIUM],
+            'wpo_basic' => [self::PLAN_BASIC, self::PLAN_ADVANCED, self::PLAN_PREMIUM],
+            'wpo_advanced' => [self::PLAN_ADVANCED, self::PLAN_PREMIUM],
+            'wpo_premium' => [self::PLAN_PREMIUM],
+            'monitoring' => [self::PLAN_ADVANCED, self::PLAN_PREMIUM],
+            'priority_support' => [self::PLAN_ADVANCED, self::PLAN_PREMIUM],
+            'seo_reviews' => [self::PLAN_ADVANCED, self::PLAN_PREMIUM],
+            'quarterly_audit' => [self::PLAN_PREMIUM],
+            'cdn_optimization' => [self::PLAN_PREMIUM],
+            'technical_consulting' => [self::PLAN_PREMIUM]
         ];
         
         return in_array($plan, $features_by_plan[$feature] ?? []);

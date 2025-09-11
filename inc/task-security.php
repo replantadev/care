@@ -1,3 +1,4 @@
+<?php
 /**
  * Security Task Implementation
  */

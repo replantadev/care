@@ -2,6 +2,21 @@
 
 Un plugin completo de mantenimiento para WordPress que proporciona automatización de tareas, monitoreo de seguridad, optimización de rendimiento y reportes detallados.
 
+**Versión actual:** 1.0.2  
+**Probado hasta:** WordPress 6.6  
+**Requiere:** WordPress 5.0+, PHP 7.4+
+
+## Changelog
+
+### v1.0.2 (2025-09-11)
+- **Fix:** Corregido error de sintaxis PHP en task-security.php (faltaba tag <?php)
+- **Mejora:** Plugin ahora se instala correctamente desde GitHub
+- **Mejora:** Sistema de auto-actualización mejorado
+
+### v1.0.1 (2025-09-11)
+- Versión inicial con sistema de auto-actualización
+- Implementación completa de todas las funcionalidades
+
 ## Características Principales
 
 ### 🔧 Automatización de Tareas

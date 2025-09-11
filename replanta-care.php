@@ -3,7 +3,7 @@
  * Plugin Name: Replanta Care
  * Plugin URI: https://replanta.dev
  * Description: Plugin de mantenimiento WordPress automático para clientes de Replanta
- * Version: 1.0.2
+ * Version: 1.0.3
  * Author: Replanta
  * Author URI: https://replanta.dev
  * License: GPL v2 or later
@@ -17,7 +17,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('RPCARE_VERSION', '1.0.2');
+define('RPCARE_VERSION', '1.0.3');
 define('RPCARE_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('RPCARE_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('RPCARE_PLUGIN_FILE', __FILE__);
@@ -27,16 +27,13 @@ if (file_exists(RPCARE_PLUGIN_PATH . 'vendor/autoload.php')) {
     require_once RPCARE_PLUGIN_PATH . 'vendor/autoload.php';
     
     $updateChecker = \YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
-        'https://github.com/replantadev/care.git',
+        'https://github.com/replantadev/care',
         __FILE__,
         'replanta-care'
     );
     
-    // Optional: Set the branch that contains the stable release.
+    // Set the branch that contains the stable release.
     $updateChecker->setBranch('main');
-    
-    // Optional: If you're using a private repository, specify the access token like this:
-    // $updateChecker->setAuthentication('your-token-here');
 }
 
 // Main plugin class

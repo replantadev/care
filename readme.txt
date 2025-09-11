@@ -4,7 +4,7 @@ Tags: maintenance, security, performance, updates, monitoring
 Requires at least: 5.0
 Tested up to: 6.6
 Requires PHP: 7.4
-Stable tag: 1.0.7
+Stable tag: 1.0.8
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -106,6 +106,12 @@ Solo si configuras integraciones específicas. El plugin respeta tu privacidad y
 4. Sistema de notificaciones y alertas
 
 == Changelog ==
+
+= 1.0.8 (2025-09-11) =
+* Fix: Corregidas rutas de assets (logo e iconos) usando RPCARE_PLUGIN_URL
+* Fix: Eliminadas notificaciones de otros plugins en la página de configuración
+* UI: Interfaz más limpia sin interferencias de otros plugins
+* Fix: Logo de Replanta ahora se muestra correctamente
 
 = 1.0.7 (2025-09-11) =
 * Fix: Añadidas verificaciones de existencia de archivos para evitar errores fatales

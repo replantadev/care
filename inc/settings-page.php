@@ -27,6 +27,9 @@ class RP_Care_Settings_Page {
         add_action('wp_ajax_rpcare_run_task', [$this, 'run_task_manually']);
         add_action('wp_ajax_rpcare_get_status', [$this, 'get_status_ajax']);
         add_action('wp_ajax_rpcare_get_metric_details', [$this, 'get_metric_details_ajax']);
+        
+        // Hide other plugin notices on our settings page
+        add_action('admin_head', [$this, 'hide_other_plugin_notices']);
     }
     
     public function add_admin_menu() {
@@ -146,7 +149,7 @@ class RP_Care_Settings_Page {
         
         wp_enqueue_script(
             'rpcare-admin',
-            plugin_dir_url(__FILE__) . '../assets/js/admin.js',
+            RPCARE_PLUGIN_URL . 'assets/js/admin.js',
             ['jquery'],
             RPCARE_VERSION,
             true
@@ -154,7 +157,7 @@ class RP_Care_Settings_Page {
         
         wp_enqueue_style(
             'rpcare-admin',
-            plugin_dir_url(__FILE__) . '../assets/css/admin.css',
+            RPCARE_PLUGIN_URL . 'assets/css/admin.css',
             [],
             RPCARE_VERSION
         );
@@ -173,6 +176,20 @@ class RP_Care_Settings_Page {
         ]);
     }
     
+    public function hide_other_plugin_notices() {
+        global $pagenow;
+        
+        // Only on our settings page
+        if ($pagenow === 'options-general.php' && isset($_GET['page']) && $_GET['page'] === 'replanta-care') {
+            // Remove all admin notices except WordPress core ones
+            remove_all_actions('admin_notices');
+            remove_all_actions('all_admin_notices');
+            
+            // Re-add only WordPress core notices
+            add_action('admin_notices', 'settings_errors');
+        }
+    }
+    
     public function settings_page() {
         if (!current_user_can('manage_options')) {
             return;
@@ -186,7 +203,7 @@ class RP_Care_Settings_Page {
         <div class="wrap">
             <div class="rpcare-header">
                 <div class="rpcare-logo">
-                    <img src="<?php echo plugin_dir_url(__FILE__) . '../assets/img/replanta-icon.png'; ?>" alt="Replanta" class="logo-icon">
+                    <img src="<?php echo RPCARE_PLUGIN_URL . 'assets/img/replanta-icon.png'; ?>" alt="Replanta" class="logo-icon">
                     <h1>Replanta Care</h1>
                     <span class="version">v<?php echo RPCARE_VERSION; ?></span>
                 </div>

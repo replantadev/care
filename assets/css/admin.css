@@ -1,5 +1,18 @@
 /* Replanta Care - Modern Admin Dashboard Styles */
 
+/* Isolation from other plugin notifications */
+.settings_page_replanta-care .notice,
+.settings_page_replanta-care .error,
+.settings_page_replanta-care .warning,
+.settings_page_replanta-care .update-nag {
+    display: none !important;
+}
+
+/* Only show Replanta Care specific notices */
+.settings_page_replanta-care .rpcare-notice {
+    display: block !important;
+}
+
 :root {
     --replanta-primary: #2E7D32;
     --replanta-primary-dark: #1B5E20;

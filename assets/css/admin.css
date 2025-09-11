@@ -1,0 +1,1013 @@
+/* Replanta Care - Modern Admin Dashboard Styles */
+
+:root {
+    --replanta-primary: #2E7D32;
+    --replanta-primary-dark: #1B5E20;
+    --replanta-secondary: #4CAF50;
+    --replanta-accent: #81C784;
+    --replanta-success: #4CAF50;
+    --replanta-warning: #FF9800;
+    --replanta-error: #F44336;
+    --replanta-info: #2196F3;
+    --replanta-bg: #F8F9FA;
+    --replanta-surface: #FFFFFF;
+    --replanta-text: #212121;
+    --replanta-text-secondary: #757575;
+    --replanta-border: #E0E0E0;
+    --replanta-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    --replanta-shadow-hover: 0 4px 8px rgba(0,0,0,0.15);
+    --replanta-radius: 8px;
+    --replanta-radius-large: 12px;
+}
+
+/* Main Dashboard Layout */
+.rpcare-admin-header {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 24px;
+    margin: 24px 0;
+    padding: 0;
+}
+
+.rpcare-plan-card,
+.rpcare-status-card {
+    background: var(--replanta-surface);
+    border-radius: var(--replanta-radius-large);
+    padding: 24px;
+    box-shadow: var(--replanta-shadow);
+    border: 1px solid var(--replanta-border);
+    transition: all 0.3s ease;
+}
+
+.rpcare-plan-card:hover,
+.rpcare-status-card:hover {
+    box-shadow: var(--replanta-shadow-hover);
+    transform: translateY(-2px);
+}
+
+/* Plan Card */
+.rpcare-plan-card .plan-header {
+    display: flex;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.rpcare-plan-card .plan-icon {
+    width: 48px;
+    height: 48px;
+    background: linear-gradient(135deg, var(--replanta-primary), var(--replanta-secondary));
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 16px;
+}
+
+.rpcare-plan-card .plan-icon .dashicons {
+    color: white;
+    font-size: 24px;
+}
+
+.rpcare-plan-card h2 {
+    color: var(--replanta-primary);
+    margin: 0;
+    font-size: 24px;
+    font-weight: 600;
+}
+
+.rpcare-plan-card .plan-subtitle {
+    color: var(--replanta-text-secondary);
+    font-size: 14px;
+    margin-top: 4px;
+}
+
+.rpcare-plan-features {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.rpcare-plan-features li {
+    display: flex;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid #F5F5F5;
+    font-weight: 500;
+}
+
+.rpcare-plan-features li:last-child {
+    border-bottom: none;
+}
+
+.rpcare-plan-features .feature-icon {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 12px;
+    font-size: 12px;
+    font-weight: bold;
+}
+
+.rpcare-plan-features .feature-enabled {
+    color: var(--replanta-success);
+}
+
+.rpcare-plan-features .feature-enabled .feature-icon {
+    background: var(--replanta-success);
+    color: white;
+}
+
+.rpcare-plan-features .feature-disabled {
+    color: var(--replanta-text-secondary);
+}
+
+.rpcare-plan-features .feature-disabled .feature-icon {
+    background: var(--replanta-border);
+    color: white;
+}
+
+/* Status Card */
+.rpcare-status-card h3 {
+    margin-top: 0;
+    color: var(--replanta-text);
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 20px;
+}
+
+.status-metrics {
+    display: grid;
+    gap: 16px;
+}
+
+.status-metric {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    background: var(--replanta-bg);
+    border-radius: var(--replanta-radius);
+    border-left: 4px solid var(--replanta-primary);
+}
+
+.status-metric-label {
+    font-weight: 500;
+    color: var(--replanta-text);
+}
+
+.status-metric-value {
+    font-weight: 600;
+    color: var(--replanta-primary);
+}
+
+/* Health Score */
+.health-score-container {
+    text-align: center;
+    margin: 20px 0;
+}
+
+.health-score-circle {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    background: conic-gradient(var(--replanta-success) 0deg, var(--replanta-success) var(--health-angle, 288deg), var(--replanta-border) var(--health-angle, 288deg));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 12px;
+    position: relative;
+}
+
+.health-score-circle::before {
+    content: '';
+    width: 60px;
+    height: 60px;
+    background: var(--replanta-surface);
+    border-radius: 50%;
+    position: absolute;
+}
+
+.health-score {
+    position: relative;
+    z-index: 1;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--replanta-text);
+}
+
+/* Task Buttons */
+.rpcare-manual-tasks {
+    margin: 32px 0;
+    padding: 24px;
+    background: var(--replanta-surface);
+    border-radius: var(--replanta-radius-large);
+    box-shadow: var(--replanta-shadow);
+    border: 1px solid var(--replanta-border);
+}
+
+.rpcare-manual-tasks h3 {
+    margin-top: 0;
+    color: var(--replanta-text);
+    font-size: 20px;
+    font-weight: 600;
+    margin-bottom: 20px;
+}
+
+.rpcare-task-buttons {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin: 20px 0;
+}
+
+.rpcare-task-buttons .button {
+    background: linear-gradient(135deg, var(--replanta-primary), var(--replanta-secondary));
+    color: white;
+    border: none;
+    border-radius: var(--replanta-radius);
+    padding: 12px 20px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+    text-decoration: none;
+    min-height: 48px;
+}
+
+.rpcare-task-buttons .button:hover {
+    background: linear-gradient(135deg, var(--replanta-primary-dark), var(--replanta-primary));
+    color: white;
+    transform: translateY(-2px);
+    box-shadow: var(--replanta-shadow-hover);
+}
+
+.rpcare-task-buttons .button:focus {
+    outline: 2px solid var(--replanta-accent);
+    outline-offset: 2px;
+}
+
+.rpcare-task-buttons .button.loading {
+    opacity: 0.8;
+    pointer-events: none;
+    cursor: not-allowed;
+}
+
+.rpcare-task-buttons .button .dashicons {
+    margin-right: 8px;
+    font-size: 16px;
+}
+
+.rpcare-task-buttons .button.loading .dashicons {
+    animation: rpcare-spin 1s linear infinite;
+}
+
+@keyframes rpcare-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+/* Task Results */
+#rpcare-task-results {
+    margin-top: 24px;
+    min-height: 60px;
+}
+
+.rpcare-task-result {
+    padding: 20px;
+    margin: 16px 0;
+    border-radius: var(--replanta-radius);
+    border-left: 4px solid var(--replanta-success);
+    background: var(--replanta-surface);
+    box-shadow: var(--replanta-shadow);
+    animation: slideInRight 0.3s ease;
+}
+
+.rpcare-task-result.error {
+    border-left-color: var(--replanta-error);
+}
+
+.rpcare-task-result .task-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.rpcare-task-result h4 {
+    margin: 0;
+    color: var(--replanta-text);
+    font-size: 16px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+}
+
+.rpcare-task-result h4 .dashicons {
+    margin-right: 8px;
+    color: var(--replanta-success);
+}
+
+.rpcare-task-result.error h4 .dashicons {
+    color: var(--replanta-error);
+}
+
+.rpcare-task-result .task-timestamp {
+    font-size: 12px;
+    color: var(--replanta-text-secondary);
+}
+
+.rpcare-task-result .task-message {
+    margin: 8px 0;
+    font-weight: 500;
+    color: var(--replanta-text);
+}
+
+.rpcare-task-result .task-details {
+    background: var(--replanta-bg);
+    padding: 16px;
+    margin: 12px 0;
+    border-radius: var(--replanta-radius);
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    max-height: 200px;
+    overflow-y: auto;
+    border: 1px solid var(--replanta-border);
+}
+
+@keyframes slideInRight {
+    from {
+        opacity: 0;
+        transform: translateX(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+/* Logs Section */
+.rpcare-logs {
+    margin: 32px 0;
+    padding: 24px;
+    background: var(--replanta-surface);
+    border-radius: var(--replanta-radius-large);
+    box-shadow: var(--replanta-shadow);
+    border: 1px solid var(--replanta-border);
+}
+
+.rpcare-logs h3 {
+    margin-top: 0;
+    color: var(--replanta-text);
+    font-size: 20px;
+    font-weight: 600;
+    margin-bottom: 20px;
+}
+
+.rpcare-logs table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 16px;
+}
+
+.rpcare-logs th,
+.rpcare-logs td {
+    padding: 12px 16px;
+    text-align: left;
+    border-bottom: 1px solid var(--replanta-border);
+}
+
+.rpcare-logs th {
+    background: var(--replanta-bg);
+    font-weight: 600;
+    color: var(--replanta-text);
+}
+
+.rpcare-logs .status-success {
+    color: var(--replanta-success);
+    font-weight: 600;
+}
+
+.rpcare-logs .status-error {
+    color: var(--replanta-error);
+    font-weight: 600;
+}
+
+/* Form Styles */
+.form-table {
+    background: var(--replanta-surface);
+    border-radius: var(--replanta-radius-large);
+    padding: 24px;
+    box-shadow: var(--replanta-shadow);
+    border: 1px solid var(--replanta-border);
+}
+
+.form-table th {
+    width: 220px;
+    font-weight: 600;
+    color: var(--replanta-text);
+}
+
+.form-table .description {
+    font-style: normal;
+    color: var(--replanta-text-secondary);
+    font-size: 13px;
+    margin-top: 8px;
+}
+
+.form-table input[type="url"],
+.form-table input[type="email"],
+.form-table input[type="text"] {
+    padding: 12px 16px;
+    border: 2px solid var(--replanta-border);
+    border-radius: var(--replanta-radius);
+    font-size: 14px;
+    transition: border-color 0.3s ease;
+    width: 100%;
+    max-width: 400px;
+}
+
+.form-table input[type="url"]:focus,
+.form-table input[type="email"]:focus,
+.form-table input[type="text"]:focus {
+    border-color: var(--replanta-primary);
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(46, 125, 50, 0.1);
+}
+
+.form-table select {
+    padding: 12px 16px;
+    border: 2px solid var(--replanta-border);
+    border-radius: var(--replanta-radius);
+    font-size: 14px;
+    min-width: 200px;
+    background: var(--replanta-surface);
+}
+
+.form-table select:focus {
+    border-color: var(--replanta-primary);
+    outline: none;
+}
+
+/* Connection Test */
+#test-connection {
+    margin-left: 12px;
+    background: var(--replanta-success);
+    color: white;
+    border: none;
+    border-radius: var(--replanta-radius);
+    padding: 10px 16px;
+    font-weight: 600;
+    transition: all 0.3s ease;
+}
+
+#test-connection:hover {
+    background: var(--replanta-primary-dark);
+    color: white;
+    transform: translateY(-1px);
+}
+
+#test-connection.testing {
+    background: var(--replanta-warning);
+    pointer-events: none;
+}
+
+.connection-status {
+    margin: 12px 0;
+    padding: 12px 16px;
+    border-radius: var(--replanta-radius);
+    display: none;
+    align-items: center;
+    font-weight: 500;
+}
+
+.connection-status .dashicons {
+    margin-right: 8px;
+}
+
+.connection-status.success {
+    background: rgba(76, 175, 80, 0.1);
+    color: var(--replanta-success);
+    border: 1px solid rgba(76, 175, 80, 0.3);
+    display: flex;
+}
+
+.connection-status.error {
+    background: rgba(244, 67, 54, 0.1);
+    color: var(--replanta-error);
+    border: 1px solid rgba(244, 67, 54, 0.3);
+    display: flex;
+}
+
+/* Notifications */
+.rpcare-notification {
+    padding: 16px 20px;
+    border-radius: var(--replanta-radius);
+    margin: 8px 0;
+    display: flex;
+    align-items: center;
+    box-shadow: var(--replanta-shadow-hover);
+    animation: slideInDown 0.3s ease;
+    min-width: 300px;
+    max-width: 500px;
+}
+
+.rpcare-notification .dashicons {
+    margin-right: 12px;
+    font-size: 18px;
+}
+
+.rpcare-notification.success {
+    background: rgba(76, 175, 80, 0.1);
+    color: var(--replanta-success);
+    border-left: 4px solid var(--replanta-success);
+}
+
+.rpcare-notification.error {
+    background: rgba(244, 67, 54, 0.1);
+    color: var(--replanta-error);
+    border-left: 4px solid var(--replanta-error);
+}
+
+.rpcare-notification.warning {
+    background: rgba(255, 152, 0, 0.1);
+    color: var(--replanta-warning);
+    border-left: 4px solid var(--replanta-warning);
+}
+
+.rpcare-notification.info {
+    background: rgba(33, 150, 243, 0.1);
+    color: var(--replanta-info);
+    border-left: 4px solid var(--replanta-info);
+}
+
+.rpcare-notification .notification-message {
+    flex: 1;
+    font-weight: 500;
+}
+
+.rpcare-notification .notification-close {
+    background: none;
+    border: none;
+    font-size: 18px;
+    cursor: pointer;
+    padding: 0;
+    margin-left: 12px;
+    opacity: 0.7;
+    transition: opacity 0.3s ease;
+}
+
+.rpcare-notification .notification-close:hover {
+    opacity: 1;
+}
+
+@keyframes slideInDown {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Tooltips */
+.rpcare-tooltip {
+    position: absolute;
+    background: var(--replanta-text);
+    color: white;
+    padding: 8px 12px;
+    border-radius: var(--replanta-radius);
+    font-size: 12px;
+    z-index: 10000;
+    max-width: 200px;
+    box-shadow: var(--replanta-shadow);
+    animation: fadeIn 0.2s ease;
+}
+
+.rpcare-tooltip::before {
+    content: '';
+    position: absolute;
+    top: -5px;
+    left: 50%;
+    transform: translateX(-50%);
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-bottom: 5px solid var(--replanta-text);
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+/* Save Indicator */
+.rpcare-save-indicator {
+    position: fixed;
+    top: 32px;
+    right: 20px;
+    background: var(--replanta-success);
+    color: white;
+    padding: 12px 16px;
+    border-radius: var(--replanta-radius);
+    display: none;
+    align-items: center;
+    z-index: 9999;
+    box-shadow: var(--replanta-shadow);
+}
+
+.rpcare-save-indicator .dashicons {
+    margin-right: 8px;
+}
+
+/* Progress Bars */
+.rpcare-progress {
+    background: var(--replanta-border);
+    border-radius: 20px;
+    height: 8px;
+    overflow: hidden;
+    margin: 8px 0;
+}
+
+.rpcare-progress .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--replanta-primary), var(--replanta-secondary));
+    border-radius: inherit;
+    transition: width 0.3s ease;
+}
+
+/* Responsive Design */
+@media (max-width: 1200px) {
+    .rpcare-admin-header {
+        grid-template-columns: 1fr;
+        gap: 20px;
+    }
+}
+
+@media (max-width: 768px) {
+    .rpcare-task-buttons {
+        grid-template-columns: 1fr;
+    }
+    
+    .rpcare-plan-card,
+    .rpcare-status-card,
+    .rpcare-manual-tasks,
+    .rpcare-logs {
+        padding: 16px;
+    }
+    
+    .form-table input[type="url"],
+    .form-table input[type="email"],
+    .form-table input[type="text"] {
+        max-width: 100%;
+    }
+}
+
+/* Dark Mode Support */
+@media (prefers-color-scheme: dark) {
+    :root {
+        --replanta-bg: #121212;
+        --replanta-surface: #1E1E1E;
+        --replanta-text: #FFFFFF;
+        --replanta-text-secondary: #AAAAAA;
+        --replanta-border: #333333;
+    }
+}
+
+.rpcare-manual-tasks {
+    margin: 30px 0;
+    padding: 20px;
+    background: #fff;
+    border: 1px solid #ccd0d4;
+    box-shadow: 0 1px 1px rgba(0,0,0,.04);
+}
+
+.rpcare-manual-tasks h3 {
+    margin-top: 0;
+    color: #1d2327;
+}
+
+.rpcare-task-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 15px 0;
+}
+
+.rpcare-task-buttons .button {
+    background: #2271b1;
+    color: #fff;
+    border-color: #2271b1;
+    position: relative;
+}
+
+.rpcare-task-buttons .button:hover {
+    background: #135e96;
+    border-color: #135e96;
+    color: #fff;
+}
+
+.rpcare-task-buttons .button.loading {
+    opacity: 0.7;
+    pointer-events: none;
+}
+
+.rpcare-task-buttons .button.loading::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    right: 10px;
+    transform: translateY(-50%);
+    width: 16px;
+    height: 16px;
+    border: 2px solid transparent;
+    border-top: 2px solid #fff;
+    border-radius: 50%;
+    animation: rpcare-spin 1s linear infinite;
+}
+
+@keyframes rpcare-spin {
+    0% { transform: translateY(-50%) rotate(0deg); }
+    100% { transform: translateY(-50%) rotate(360deg); }
+}
+
+#rpcare-task-results {
+    margin-top: 20px;
+    min-height: 50px;
+}
+
+.rpcare-task-result {
+    padding: 15px;
+    margin: 10px 0;
+    border-radius: 4px;
+    border-left: 4px solid #00a32a;
+    background: #f0f6fc;
+}
+
+.rpcare-task-result.error {
+    border-left-color: #d63638;
+    background: #fcf0f1;
+}
+
+.rpcare-task-result h4 {
+    margin: 0 0 10px 0;
+    color: #1d2327;
+}
+
+.rpcare-task-result .task-message {
+    margin: 5px 0;
+    font-weight: 500;
+}
+
+.rpcare-task-result .task-details {
+    background: rgba(0,0,0,0.05);
+    padding: 10px;
+    margin: 10px 0;
+    border-radius: 3px;
+    font-family: monospace;
+    font-size: 12px;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.rpcare-logs {
+    margin: 30px 0;
+    padding: 20px;
+    background: #fff;
+    border: 1px solid #ccd0d4;
+    box-shadow: 0 1px 1px rgba(0,0,0,.04);
+}
+
+.rpcare-logs h3 {
+    margin-top: 0;
+    color: #1d2327;
+}
+
+.rpcare-logs table {
+    margin-top: 15px;
+}
+
+.rpcare-logs .status-success {
+    color: #00a32a;
+    font-weight: 600;
+}
+
+.rpcare-logs .status-error {
+    color: #d63638;
+    font-weight: 600;
+}
+
+/* Settings Form Styles */
+.form-table th {
+    width: 200px;
+}
+
+.form-table .description {
+    font-style: italic;
+    color: #646970;
+}
+
+/* Connection Test Button */
+#test-connection {
+    margin-left: 10px;
+    background: #00a32a;
+    color: #fff;
+    border-color: #00a32a;
+}
+
+#test-connection:hover {
+    background: #008a20;
+    border-color: #008a20;
+    color: #fff;
+}
+
+#test-connection.testing {
+    background: #f0b849;
+    border-color: #f0b849;
+    pointer-events: none;
+}
+
+/* Connection Status */
+.connection-status {
+    margin: 10px 0;
+    padding: 10px;
+    border-radius: 4px;
+    display: none;
+}
+
+.connection-status.success {
+    background: #d1e7dd;
+    color: #0f5132;
+    border: 1px solid #badbcc;
+    display: block;
+}
+
+.connection-status.error {
+    background: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
+    display: block;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .rpcare-admin-header {
+        grid-template-columns: 1fr;
+        gap: 20px;
+    }
+    
+    .rpcare-task-buttons {
+        flex-direction: column;
+    }
+    
+    .rpcare-task-buttons .button {
+        width: 100%;
+        justify-content: center;
+    }
+}
+
+/* WordPress Admin Color Scheme Compatibility */
+.admin-color-light .rpcare-task-buttons .button {
+    background: #0073aa;
+    border-color: #0073aa;
+}
+
+.admin-color-light .rpcare-task-buttons .button:hover {
+    background: #005a87;
+    border-color: #005a87;
+}
+
+.admin-color-blue .rpcare-task-buttons .button {
+    background: #096484;
+    border-color: #096484;
+}
+
+.admin-color-blue .rpcare-task-buttons .button:hover {
+    background: #07526c;
+    border-color: #07526c;
+}
+
+.admin-color-coffee .rpcare-task-buttons .button {
+    background: #c7a589;
+    border-color: #c7a589;
+}
+
+.admin-color-coffee .rpcare-task-buttons .button:hover {
+    background: #a88365;
+    border-color: #a88365;
+}
+
+.admin-color-ectoplasm .rpcare-task-buttons .button {
+    background: #a3b745;
+    border-color: #a3b745;
+}
+
+.admin-color-ectoplasm .rpcare-task-buttons .button:hover {
+    background: #8b9a3a;
+    border-color: #8b9a3a;
+}
+
+.admin-color-midnight .rpcare-task-buttons .button {
+    background: #e14d43;
+    border-color: #e14d43;
+}
+
+.admin-color-midnight .rpcare-task-buttons .button:hover {
+    background: #dd382d;
+    border-color: #dd382d;
+}
+
+.admin-color-ocean .rpcare-task-buttons .button {
+    background: #9ebaa0;
+    border-color: #9ebaa0;
+}
+
+.admin-color-ocean .rpcare-task-buttons .button:hover {
+    background: #89a08b;
+    border-color: #89a08b;
+}
+
+.admin-color-sunrise .rpcare-task-buttons .button {
+    background: #dd823b;
+    border-color: #dd823b;
+}
+
+.admin-color-sunrise .rpcare-task-buttons .button:hover {
+    background: #d56a1c;
+    border-color: #d56a1c;
+}
+
+/* Loading Spinner for Connection Test */
+.loading-spinner {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid #f3f3f3;
+    border-top: 2px solid #0073aa;
+    border-radius: 50%;
+    animation: rpcare-spin 1s linear infinite;
+    margin-left: 10px;
+    vertical-align: middle;
+}
+
+/* Form Field Enhancements */
+.form-table input[type="url"],
+.form-table input[type="email"],
+.form-table input[type="text"] {
+    padding: 8px 12px;
+    border-radius: 4px;
+}
+
+.form-table select {
+    padding: 6px 10px;
+    border-radius: 4px;
+    min-width: 200px;
+}
+
+/* Notification Types Checkboxes */
+.form-table input[type="checkbox"] {
+    margin-right: 8px;
+}
+
+.form-table label {
+    display: flex;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+/* Enhanced Descriptions */
+.form-table .description {
+    margin-top: 5px;
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+/* Success/Error Messages */
+.rpcare-message {
+    padding: 10px 15px;
+    margin: 15px 0;
+    border-radius: 4px;
+    font-weight: 500;
+}
+
+.rpcare-message.success {
+    background: #d1e7dd;
+    color: #0f5132;
+    border-left: 4px solid #0f5132;
+}
+
+.rpcare-message.error {
+    background: #f8d7da;
+    color: #721c24;
+    border-left: 4px solid #721c24;
+}
+
+.rpcare-message.info {
+    background: #d1ecf1;
+    color: #0c5460;
+    border-left: 4px solid #0c5460;
+}

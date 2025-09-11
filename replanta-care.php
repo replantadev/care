@@ -3,7 +3,7 @@
  * Plugin Name: Replanta Care
  * Plugin URI: https://replanta.dev
  * Description: Plugin de mantenimiento WordPress automático para clientes de Replanta
- * Version: 1.0.8
+ * Version: 1.0.9
  * Author: Replanta
  * Author URI: https://replanta.dev
  * License: GPL v2 or later
@@ -17,7 +17,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('RPCARE_VERSION', '1.0.8');
+define('RPCARE_VERSION', '1.0.9');
 define('RPCARE_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('RPCARE_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('RPCARE_PLUGIN_FILE', __FILE__);
@@ -59,6 +59,8 @@ class ReplantaCare {
         add_action('init', [$this, 'load_textdomain']);
         add_action('init', [$this, 'init_components']);
         add_action('admin_enqueue_scripts', [$this, 'enqueue_admin_assets']);
+        add_action('wp_enqueue_scripts', [$this, 'enqueue_frontend_assets']);
+        add_action('admin_bar_menu', [$this, 'add_admin_bar_menu'], 999);
         
         // Activation/Deactivation hooks
         register_activation_hook(__FILE__, [$this, 'activate']);
@@ -171,6 +173,134 @@ class ReplantaCare {
                 'task_failed' => 'Error en la tarea'
             ]
         ]);
+    }
+    
+    public function enqueue_frontend_assets() {
+        if (is_admin_bar_showing()) {
+            wp_add_inline_style('admin-bar', '
+                #wp-admin-bar-replanta-care .ab-icon {
+                    float: left !important;
+                    margin-right: 8px !important;
+                }
+                #wp-admin-bar-replanta-care .ab-label {
+                    color: #4CAF50 !important;
+                    font-weight: 600 !important;
+                }
+                #wp-admin-bar-replanta-care:hover .ab-label {
+                    color: #81C784 !important;
+                }
+                #wp-admin-bar-replanta-care-dashboard .ab-item {
+                    background: #4CAF50 !important;
+                    color: white !important;
+                    border-radius: 3px !important;
+                    margin: 2px !important;
+                }
+                #wp-admin-bar-replanta-care-dashboard:hover .ab-item {
+                    background: #2E7D32 !important;
+                }
+            ');
+        }
+    }
+    
+    public function add_admin_bar_menu($wp_admin_bar) {
+        if (!current_user_can('manage_options')) {
+            return;
+        }
+        
+        $plan = get_option('rpcare_plan', '');
+        $is_activated = $this->is_activated();
+        
+        if (!$is_activated) {
+            return;
+        }
+        
+        // Get plan display name
+        $plan_names = [
+            'basic' => 'Básico',
+            'advanced' => 'Avanzado', 
+            'premium' => 'Premium'
+        ];
+        $plan_name = isset($plan_names[$plan]) ? $plan_names[$plan] : 'Activo';
+        
+        // Main menu item
+        $wp_admin_bar->add_menu([
+            'id' => 'replanta-care',
+            'title' => '<span class="ab-icon" style="background: url(' . RPCARE_PLUGIN_URL . 'assets/img/ico.png) center/16px no-repeat; width: 20px; height: 20px; margin-top: 6px;"></span><span class="ab-label">Mantenimiento Activo</span>',
+            'href' => admin_url('options-general.php?page=replanta-care'),
+            'meta' => [
+                'title' => 'Replanta Care - Mantenimiento Automático'
+            ]
+        ]);
+        
+        // Submenu items
+        $wp_admin_bar->add_menu([
+            'parent' => 'replanta-care',
+            'id' => 'replanta-care-status',
+            'title' => '✅ Protegido por Replanta',
+            'href' => false
+        ]);
+        
+        $wp_admin_bar->add_menu([
+            'parent' => 'replanta-care',
+            'id' => 'replanta-care-plan',
+            'title' => "📋 Plan: {$plan_name}",
+            'href' => false
+        ]);
+        
+        $wp_admin_bar->add_menu([
+            'parent' => 'replanta-care',
+            'id' => 'replanta-care-features',
+            'title' => '🔧 Características activas:',
+            'href' => false
+        ]);
+        
+        // Plan features
+        $features = $this->get_plan_features($plan);
+        foreach ($features as $feature) {
+            $wp_admin_bar->add_menu([
+                'parent' => 'replanta-care',
+                'id' => 'replanta-care-feature-' . sanitize_title($feature),
+                'title' => "  • {$feature}",
+                'href' => false
+            ]);
+        }
+        
+        $wp_admin_bar->add_menu([
+            'parent' => 'replanta-care',
+            'id' => 'replanta-care-dashboard',
+            'title' => '🎛️ Acceder al Dashboard',
+            'href' => admin_url('options-general.php?page=replanta-care'),
+            'meta' => [
+                'class' => 'rpcare-dashboard-link'
+            ]
+        ]);
+    }
+    
+    private function get_plan_features($plan) {
+        $features = [
+            'basic' => [
+                'Actualizaciones automáticas',
+                'Monitoreo de seguridad básico',
+                'Reportes mensuales'
+            ],
+            'advanced' => [
+                'Actualizaciones automáticas',
+                'Monitoreo de seguridad avanzado', 
+                'Optimización de rendimiento',
+                'Backups automáticos',
+                'Reportes semanales'
+            ],
+            'premium' => [
+                'Actualizaciones automáticas',
+                'Monitoreo de seguridad completo',
+                'Optimización avanzada',
+                'Backups diarios',
+                'Soporte prioritario',
+                'Reportes en tiempo real'
+            ]
+        ];
+        
+        return isset($features[$plan]) ? $features[$plan] : ['Mantenimiento básico'];
     }
     
     public function activate() {

@@ -203,7 +203,7 @@ class RP_Care_Settings_Page {
         <div class="wrap">
             <div class="rpcare-header">
                 <div class="rpcare-logo">
-                    <img src="<?php echo RPCARE_PLUGIN_URL . 'assets/img/replanta-icon.png'; ?>" alt="Replanta" class="logo-icon">
+                    <img src="<?php echo RPCARE_PLUGIN_URL . 'assets/img/ico.png'; ?>" alt="Replanta" class="logo-icon">
                     <h1>Replanta Care</h1>
                     <span class="version">v<?php echo RPCARE_VERSION; ?></span>
                 </div>

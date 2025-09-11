@@ -4,7 +4,7 @@ Tags: maintenance, security, performance, updates, monitoring
 Requires at least: 5.0
 Tested up to: 6.6
 Requires PHP: 7.4
-Stable tag: 1.0.8
+Stable tag: 1.0.9
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -106,6 +106,13 @@ Solo si configuras integraciones específicas. El plugin respeta tu privacidad y
 4. Sistema de notificaciones y alertas
 
 == Changelog ==
+
+= 1.0.9 (2025-09-11) =
+* Fix: Corregida ruta del icono a /assets/img/ico.png
+* Nuevo: Añadido indicador de mantenimiento en la barra de administración
+* Nuevo: Dropdown con información del plan y características activas
+* UI: Acceso rápido al dashboard desde la toolbar
+* UI: Indicador visual del estado de protección
 
 = 1.0.8 (2025-09-11) =
 * Fix: Corregidas rutas de assets (logo e iconos) usando RPCARE_PLUGIN_URL

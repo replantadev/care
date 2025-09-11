@@ -13,6 +13,9 @@ class RP_Care_Plan {
     const PLAN_BASIC = 'basic';
     const PLAN_ADVANCED = 'advanced';
     const PLAN_PREMIUM = 'premium';
+    const PLAN_SEMILLA = 'semilla';
+    const PLAN_RAIZ = 'raiz';
+    const PLAN_ECOSISTEMA = 'ecosistema';
     
     const HUB_URL = 'https://sitios.replanta.dev';
     
@@ -69,6 +72,59 @@ class RP_Care_Plan {
                 'Auditoría SEO/WPO trimestral',
                 'CDN y optimización avanzada'
             ]
+        ],
+        self::PLAN_SEMILLA => [
+            'name' => 'Plan Semilla',
+            'price' => '29€/mes',
+            'updates' => 'monthly',
+            'backups' => 'monthly',
+            'wpo' => 'basic',
+            'reviews' => 'none',
+            'monitoring' => false,
+            'priority_support' => false,
+            'features' => [
+                'Actualizaciones mensuales',
+                'Copia de seguridad mensual',
+                'Optimización básica',
+                'Soporte básico'
+            ]
+        ],
+        self::PLAN_RAIZ => [
+            'name' => 'Plan Raíz',
+            'price' => '69€/mes',
+            'updates' => 'weekly',
+            'backups' => 'weekly',
+            'wpo' => 'advanced',
+            'reviews' => 'monthly',
+            'monitoring' => true,
+            'priority_support' => false,
+            'features' => [
+                'Actualizaciones semanales',
+                'Copias de seguridad semanales',
+                'Optimización avanzada',
+                'Monitorización básica',
+                'Revisión mensual'
+            ]
+        ],
+        self::PLAN_ECOSISTEMA => [
+            'name' => 'Plan Ecosistema',
+            'price' => '199€/mes',
+            'updates' => 'daily',
+            'backups' => 'daily',
+            'wpo' => 'premium',
+            'reviews' => 'weekly',
+            'monitoring' => true,
+            'priority_support' => true,
+            'hosting_included' => true,
+            'features' => [
+                'Todo incluido',
+                'Actualizaciones diarias',
+                'Copias de seguridad diarias',
+                'Optimización premium',
+                'Monitorización completa',
+                'Soporte 24/7',
+                'Hosting incluido'
+            ]
         ]
     ];
     
@@ -77,8 +133,16 @@ class RP_Care_Plan {
         $plan = self::detect_plan_from_hub();
         if ($plan) {
             update_option('rpcare_plan', $plan);
+            update_option('rpcare_detected_plan', $plan);
             return $plan;
         }
+        
+        // Fallback to previously detected plan
+        $detected_plan = get_option('rpcare_detected_plan', '');
+        if ($detected_plan) {
+            return $detected_plan;
+        }
+        
         return get_option('rpcare_plan', '');
     }
     
@@ -91,7 +155,7 @@ class RP_Care_Plan {
     }
     
     public static function is_valid_plan($plan) {
-        return in_array($plan, [self::PLAN_BASIC, self::PLAN_ADVANCED, self::PLAN_PREMIUM]);
+        return in_array($plan, [self::PLAN_BASIC, self::PLAN_ADVANCED, self::PLAN_PREMIUM, self::PLAN_SEMILLA, self::PLAN_RAIZ, self::PLAN_ECOSISTEMA]);
     }
     
     /**
@@ -105,23 +169,43 @@ class RP_Care_Plan {
             'headers' => [
                 'Content-Type' => 'application/json',
                 'X-Site-Domain' => $domain,
-                'X-Site-URL' => $site_url
+                'X-Site-URL' => $site_url,
+                'User-Agent' => 'Replanta-Care/' . RPCARE_VERSION . ' (WordPress/' . get_bloginfo('version') . ')'
             ],
-            'timeout' => 10
+            'timeout' => 15
         ]);
         
-        if (!is_wp_error($response) && wp_remote_retrieve_response_code($response) === 200) {
-            $body = wp_remote_retrieve_body($response);
-            $data = json_decode($body, true);
-            
-            if (isset($data['plan']) && self::is_valid_plan($data['plan'])) {
-                // Mark as activated automatically
-                update_option('rpcare_activated', true);
-                update_option('rpcare_hub_connected', true);
-                return $data['plan'];
-            }
+        if (is_wp_error($response)) {
+            error_log('Care Plugin: Error detecting plan from hub: ' . $response->get_error_message());
+            return false;
         }
         
+        $response_code = wp_remote_retrieve_response_code($response);
+        if ($response_code !== 200) {
+            error_log('Care Plugin: Hub returned HTTP ' . $response_code . ' for domain ' . $domain);
+            return false;
+        }
+        
+        $body = wp_remote_retrieve_body($response);
+        $data = json_decode($body, true);
+        
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            error_log('Care Plugin: Invalid JSON response from hub: ' . $body);
+            return false;
+        }
+        
+        if (isset($data['plan']) && self::is_valid_plan($data['plan'])) {
+            // Mark as activated automatically
+            update_option('rpcare_activated', true);
+            update_option('rpcare_hub_connected', true);
+            update_option('rpcare_detected_plan', $data['plan']);
+            update_option('rpcare_hub_last_check', current_time('mysql'));
+            
+            error_log('Care Plugin: Successfully detected plan ' . $data['plan'] . ' for domain ' . $domain);
+            return $data['plan'];
+        }
+        
+        error_log('Care Plugin: Invalid plan received from hub: ' . print_r($data, true));
         return false;
     }
     
@@ -138,8 +222,25 @@ class RP_Care_Plan {
     }
     
     public static function get_current_plan() {
+        // First try to get auto-detected plan
+        $detected_plan = get_option('rpcare_detected_plan', '');
+        if ($detected_plan && self::is_valid_plan($detected_plan)) {
+            return $detected_plan;
+        }
+        
+        // Fallback to manually set plan
         $options = get_option('rpcare_options', []);
-        return isset($options['plan']) ? $options['plan'] : 'semilla';
+        $manual_plan = isset($options['plan']) ? $options['plan'] : '';
+        
+        // If no manual plan, try auto-detection
+        if (!$manual_plan) {
+            $auto_plan = self::get_current();
+            if ($auto_plan) {
+                return $auto_plan;
+            }
+        }
+        
+        return $manual_plan ?: 'semilla';
     }
     
     public static function get_plan_features($plan = null) {
@@ -161,12 +262,14 @@ class RP_Care_Plan {
         ];
         
         switch ($plan) {
+            case self::PLAN_SEMILLA:
             case 'semilla':
                 $all_features['auto_updates'] = true;
                 $all_features['backup'] = true;
                 $all_features['security_monitoring'] = true;
                 break;
                 
+            case self::PLAN_RAIZ:
             case 'raiz':
                 $all_features['auto_updates'] = true;
                 $all_features['backup'] = true;
@@ -175,7 +278,34 @@ class RP_Care_Plan {
                 $all_features['seo_monitoring'] = true;
                 break;
                 
+            case self::PLAN_ECOSISTEMA:
             case 'ecosistema':
+                foreach ($all_features as $feature => $value) {
+                    $all_features[$feature] = true;
+                }
+                break;
+                
+            case self::PLAN_BASIC:
+            case 'basic':
+                $all_features['auto_updates'] = true;
+                $all_features['backup'] = true;
+                $all_features['security_monitoring'] = true;
+                $all_features['performance_optimization'] = true;
+                break;
+                
+            case self::PLAN_ADVANCED:
+            case 'advanced':
+                $all_features['auto_updates'] = true;
+                $all_features['backup'] = true;
+                $all_features['security_monitoring'] = true;
+                $all_features['performance_optimization'] = true;
+                $all_features['seo_monitoring'] = true;
+                $all_features['uptime_monitoring'] = true;
+                $all_features['priority_support'] = true;
+                break;
+                
+            case self::PLAN_PREMIUM:
+            case 'premium':
                 foreach ($all_features as $feature => $value) {
                     $all_features[$feature] = true;
                 }

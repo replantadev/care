@@ -3,7 +3,7 @@
  * Plugin Name: Replanta Care
  * Plugin URI: https://replanta.dev
  * Description: Plugin de mantenimiento WordPress automático para clientes de Replanta
- * Version: 1.0.5
+ * Version: 1.0.6
  * Author: Replanta
  * Author URI: https://replanta.dev
  * License: GPL v2 or later
@@ -17,7 +17,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('RPCARE_VERSION', '1.0.5');
+define('RPCARE_VERSION', '1.0.6');
 define('RPCARE_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('RPCARE_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('RPCARE_PLUGIN_FILE', __FILE__);
@@ -53,7 +53,6 @@ class ReplantaCare {
         // Hook into WordPress
         add_action('init', [$this, 'load_textdomain']);
         add_action('init', [$this, 'init_components']);
-        add_action('admin_menu', [$this, 'add_admin_menu']);
         add_action('admin_enqueue_scripts', [$this, 'enqueue_admin_assets']);
         
         // Activation/Deactivation hooks
@@ -107,16 +106,11 @@ class ReplantaCare {
         
         // Initialize 404 logger
         new RP_Care_Task_404();
-    }
-    
-    public function add_admin_menu() {
-        add_options_page(
-            __('Replanta Care', 'replanta-care'),
-            __('Replanta Care', 'replanta-care'),
-            'manage_options',
-            'replanta-care',
-            [RP_Care_Settings_Page::get_instance(), 'settings_page']
-        );
+        
+        // Initialize admin settings page
+        if (is_admin()) {
+            RP_Care_Settings_Page::get_instance();
+        }
     }
     
     public function enqueue_admin_assets($hook) {

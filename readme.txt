@@ -4,7 +4,7 @@ Tags: maintenance, security, performance, updates, monitoring
 Requires at least: 5.0
 Tested up to: 6.6
 Requires PHP: 7.4
-Stable tag: 1.0.5
+Stable tag: 1.0.6
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -106,6 +106,11 @@ Solo si configuras integraciones específicas. El plugin respeta tu privacidad y
 4. Sistema de notificaciones y alertas
 
 == Changelog ==
+
+= 1.0.6 (2025-09-11) =
+* Fix: Eliminada función add_admin_menu duplicada que causaba conflicto
+* Fix: Corregida inicialización de la página de configuración
+* Fix: Resuelto completamente el error fatal de callback inválido
 
 = 1.0.5 (2025-09-11) =
 * Fix: Corregido error fatal en página de configuración (método render inexistente)

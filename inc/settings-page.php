@@ -593,25 +593,59 @@ class RP_Care_Settings_Page {
         }
         
         // Test connection to hub
-        $response = wp_remote_post($hub_url . '/api/test-connection', [
-            'body' => json_encode(['site_token' => $site_token]),
-            'headers' => [
-                'Content-Type' => 'application/json',
-                'Authorization' => 'Bearer ' . $site_token
-            ],
-            'timeout' => 10
-        ]);
+        // If hub_url ends with '/', remove it to avoid double slashes
+        $hub_url = rtrim($hub_url, '/');
         
-        if (is_wp_error($response)) {
-            wp_send_json_error('Error de conexión: ' . $response->get_error_message());
+        // For local development, try the WordPress REST API endpoint first
+        $test_endpoints = [
+            $hub_url . '/wp-json/replanta-hub/v1/test-connection',
+            $hub_url . '/api/test-connection',
+            $hub_url . '/wp-admin/admin-ajax.php'
+        ];
+        
+        $connection_success = false;
+        $last_error = '';
+        
+        foreach ($test_endpoints as $endpoint) {
+            if (strpos($endpoint, 'admin-ajax.php') !== false) {
+                // Test via WordPress AJAX
+                $response = wp_remote_post($endpoint, [
+                    'body' => [
+                        'action' => 'rphub_test_care_connection',
+                        'site_token' => $site_token,
+                        'site_url' => site_url()
+                    ],
+                    'timeout' => 10
+                ]);
+            } else {
+                // Test via REST API
+                $response = wp_remote_post($endpoint, [
+                    'body' => json_encode(['site_token' => $site_token, 'site_url' => site_url()]),
+                    'headers' => [
+                        'Content-Type' => 'application/json',
+                        'Authorization' => 'Bearer ' . $site_token
+                    ],
+                    'timeout' => 10
+                ]);
+            }
+            
+            if (!is_wp_error($response)) {
+                $code = wp_remote_retrieve_response_code($response);
+                if ($code === 200) {
+                    $connection_success = true;
+                    break;
+                } else {
+                    $last_error = "Error del servidor: $code en $endpoint";
+                }
+            } else {
+                $last_error = 'Error de conexión: ' . $response->get_error_message();
+            }
         }
         
-        $code = wp_remote_retrieve_response_code($response);
-        
-        if ($code === 200) {
+        if ($connection_success) {
             wp_send_json_success('Conexión exitosa con el Hub');
         } else {
-            wp_send_json_error('Error del servidor: ' . $code);
+            wp_send_json_error($last_error ?: 'No se pudo conectar con ningún endpoint del Hub');
         }
     }
     

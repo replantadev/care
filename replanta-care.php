@@ -3,7 +3,7 @@
  * Plugin Name: Replanta Care
  * Plugin URI: https://replanta.dev
  * Description: Plugin de mantenimiento WordPress automático para clientes de Replanta
- * Version: 1.0.6
+ * Version: 1.0.7
  * Author: Replanta
  * Author URI: https://replanta.dev
  * License: GPL v2 or later
@@ -17,7 +17,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('RPCARE_VERSION', '1.0.6');
+define('RPCARE_VERSION', '1.0.7');
 define('RPCARE_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('RPCARE_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('RPCARE_PLUGIN_FILE', __FILE__);
@@ -26,11 +26,16 @@ define('RPCARE_PLUGIN_FILE', __FILE__);
 if (file_exists(RPCARE_PLUGIN_PATH . 'vendor/autoload.php')) {
     require_once RPCARE_PLUGIN_PATH . 'vendor/autoload.php';
     
-    $updateChecker = \YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
-        'https://github.com/replantadev/care/',
-        __FILE__,
-        'replanta-care'
-    );
+    try {
+        $updateChecker = \YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
+            'https://github.com/replantadev/care/',
+            __FILE__,
+            'replanta-care'
+        );
+    } catch (Exception $e) {
+        // Silently fail if update checker can't be initialized
+        error_log('Replanta Care: Update checker failed to initialize - ' . $e->getMessage());
+    }
 }
 
 // Main plugin class
@@ -68,48 +73,69 @@ class ReplantaCare {
     }
     
     public function load_dependencies() {
-        // Core classes
-        require_once RPCARE_PLUGIN_PATH . 'inc/class-plan.php';
-        require_once RPCARE_PLUGIN_PATH . 'inc/class-scheduler.php';
-        require_once RPCARE_PLUGIN_PATH . 'inc/class-tasks.php';
-        require_once RPCARE_PLUGIN_PATH . 'inc/class-security.php';
-        require_once RPCARE_PLUGIN_PATH . 'inc/class-rest.php';
-        require_once RPCARE_PLUGIN_PATH . 'inc/class-utils.php';
+        $required_files = [
+            // Core classes
+            'inc/class-plan.php',
+            'inc/class-scheduler.php',
+            'inc/class-tasks.php',
+            'inc/class-security.php',
+            'inc/class-rest.php',
+            'inc/class-utils.php',
+            
+            // Task classes
+            'inc/task-updates.php',
+            'inc/task-wpo.php',
+            'inc/task-seo.php',
+            'inc/task-404.php',
+            'inc/task-health.php',
+            'inc/task-report.php',
+            'inc/task-security.php',
+            
+            // Integration classes
+            'inc/integrations-cache.php',
+            'inc/integrations-backup.php',
+            
+            // Admin page
+            'inc/settings-page.php'
+        ];
         
-        // Task classes
-        require_once RPCARE_PLUGIN_PATH . 'inc/task-updates.php';
-        require_once RPCARE_PLUGIN_PATH . 'inc/task-wpo.php';
-        require_once RPCARE_PLUGIN_PATH . 'inc/task-seo.php';
-        require_once RPCARE_PLUGIN_PATH . 'inc/task-404.php';
-        require_once RPCARE_PLUGIN_PATH . 'inc/task-health.php';
-        require_once RPCARE_PLUGIN_PATH . 'inc/task-report.php';
-        require_once RPCARE_PLUGIN_PATH . 'inc/task-security.php';
-        
-        // Integration classes
-        require_once RPCARE_PLUGIN_PATH . 'inc/integrations-cache.php';
-        require_once RPCARE_PLUGIN_PATH . 'inc/integrations-backup.php';
-        
-        // Admin page
-        require_once RPCARE_PLUGIN_PATH . 'inc/settings-page.php';
+        foreach ($required_files as $file) {
+            $file_path = RPCARE_PLUGIN_PATH . $file;
+            if (file_exists($file_path)) {
+                require_once $file_path;
+            } else {
+                error_log("Replanta Care: Missing required file - {$file}");
+            }
+        }
     }
     
     public function init_components() {
-        // Initialize scheduler based on plan
-        $plan = RP_Care_Plan::get_current();
-        if ($plan && $this->is_activated()) {
-            $scheduler = new RP_Care_Scheduler($plan);
-            $scheduler->ensure();
-        }
-        
-        // Initialize REST API
-        new RP_Care_REST();
-        
-        // Initialize 404 logger
-        new RP_Care_Task_404();
-        
-        // Initialize admin settings page
-        if (is_admin()) {
-            RP_Care_Settings_Page::get_instance();
+        try {
+            // Initialize scheduler based on plan
+            if (class_exists('RP_Care_Plan')) {
+                $plan = RP_Care_Plan::get_current();
+                if ($plan && $this->is_activated() && class_exists('RP_Care_Scheduler')) {
+                    $scheduler = new RP_Care_Scheduler($plan);
+                    $scheduler->ensure();
+                }
+            }
+            
+            // Initialize REST API
+            if (class_exists('RP_Care_REST')) {
+                new RP_Care_REST();
+            }
+            
+            // Initialize 404 logger
+            if (class_exists('RP_Care_Task_404')) {
+                new RP_Care_Task_404();
+            }
+            
+            // Initialize admin settings page
+            if (is_admin() && class_exists('RP_Care_Settings_Page')) {
+                RP_Care_Settings_Page::get_instance();
+            }
+        } catch (Exception $e) {
+            error_log('Replanta Care: Component initialization error - ' . $e->getMessage());
         }
     }
     

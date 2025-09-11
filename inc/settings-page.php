@@ -143,9 +143,33 @@ class RP_Care_Settings_Page {
     }
     
     public function enqueue_admin_scripts($hook) {
-        if ($hook !== 'settings_page_replanta-care') {
+        // Debug: log the current hook
+        error_log("Replanta Care: Hook actual = $hook");
+        error_log("Replanta Care: GET page = " . ($_GET['page'] ?? 'no-page'));
+        
+        // Load scripts on Replanta Care admin pages - more permissive check
+        $should_load = false;
+        
+        // Check if it's our settings page
+        if ($hook === 'settings_page_replanta-care' || 
+            strpos($hook, 'replanta-care') !== false ||
+            (isset($_GET['page']) && $_GET['page'] === 'replanta-care')) {
+            $should_load = true;
+        }
+        
+        // If we're not sure, load it anyway on admin pages for safety
+        if (!$should_load && is_admin()) {
+            $current_screen = get_current_screen();
+            if ($current_screen && strpos($current_screen->id, 'replanta') !== false) {
+                $should_load = true;
+            }
+        }
+        
+        if (!$should_load) {
             return;
         }
+        
+        error_log("Replanta Care: Cargando scripts admin");
         
         wp_enqueue_script(
             'rpcare-admin',

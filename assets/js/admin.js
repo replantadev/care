@@ -19,19 +19,37 @@
     });
 
     function initConnectionTest() {
+        console.log('🔧 Inicializando test de conexión...');
+        console.log('Botón #test-connection existe:', $('#test-connection').length > 0);
+        console.log('Variables rpcare_ajax:', typeof rpcare_ajax !== 'undefined' ? rpcare_ajax : 'NO DEFINIDO');
+        
         $('#test-connection').on('click', function(e) {
             e.preventDefault();
+            console.log('🔵 Click en botón test-connection');
             
             const button = $(this);
             const hubUrl = $('input[name="rpcare_options[hub_url]"]').val();
             const siteToken = $('input[name="rpcare_options[site_token]"]').val();
             
+            console.log('Hub URL:', hubUrl);
+            console.log('Site Token:', siteToken ? 'PRESENTE' : 'VACÍO');
+            
             if (!hubUrl || !siteToken) {
-                showNotification('Por favor, introduce URL del Hub y Token del Sitio', 'error');
+                const message = 'Por favor, introduce URL del Hub y Token del Sitio';
+                console.log('❌ Error:', message);
+                showNotification(message, 'error');
+                return;
+            }
+            
+            // Check if rpcare_ajax is defined
+            if (typeof rpcare_ajax === 'undefined') {
+                console.error('❌ rpcare_ajax no está definido');
+                showNotification('Error: Variables AJAX no cargadas', 'error');
                 return;
             }
             
             button.addClass('testing').html('<span class="dashicons dashicons-update spin"></span> Probando...');
+            console.log('🔄 Iniciando petición AJAX...');
             
             $.ajax({
                 url: rpcare_ajax.ajax_url,
@@ -43,6 +61,7 @@
                     site_token: siteToken
                 },
                 success: function(response) {
+                    console.log('✅ Respuesta AJAX exitosa:', response);
                     if (response.success) {
                         showConnectionStatus('success', response.data);
                         showNotification('Conexión exitosa con el Hub', 'success');
@@ -52,10 +71,13 @@
                     }
                 },
                 error: function(xhr, status, error) {
-                    showConnectionStatus('error', 'Error de conexión: ' + error);
-                    showNotification('Error de red: ' + error, 'error');
+                    console.error('❌ Error AJAX:', {xhr, status, error});
+                    const errorMsg = 'Error de red: ' + error;
+                    showConnectionStatus('error', errorMsg);
+                    showNotification(errorMsg, 'error');
                 },
                 complete: function() {
+                    console.log('🏁 Petición AJAX completada');
                     button.removeClass('testing').html('<span class="dashicons dashicons-admin-plugins"></span> Probar Conexión');
                 }
             });

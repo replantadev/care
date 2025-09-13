@@ -3,7 +3,7 @@
  * Plugin Name: Replanta Care
  * Plugin URI: https://replanta.dev
  * Description: Plugin de mantenimiento WordPress automático para clientes de Replanta
- * Version: 1.1.2
+ * Version: 1.1.3
  * Author: Replanta
  * Author URI: https://replanta.dev
  * License: GPL v2 or later
@@ -17,7 +17,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('RPCARE_VERSION', '1.1.2');
+define('RPCARE_VERSION', '1.1.3');
 define('RPCARE_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('RPCARE_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('RPCARE_PLUGIN_FILE', __FILE__);
@@ -62,6 +62,10 @@ class ReplantaCare {
         add_action('wp_enqueue_scripts', [$this, 'enqueue_frontend_assets']);
         add_action('admin_bar_menu', [$this, 'add_admin_bar_menu'], 999);
         
+        // AJAX actions
+        add_action('wp_ajax_rpcare_force_check', [$this, 'ajax_force_check']);
+        add_action('wp_ajax_rpcare_force_backup', [$this, 'ajax_force_backup']);
+        
         // Activation/Deactivation hooks
         register_activation_hook(__FILE__, [$this, 'activate']);
         register_deactivation_hook(__FILE__, [$this, 'deactivate']);
@@ -83,6 +87,9 @@ class ReplantaCare {
             'inc/class-security.php',
             'inc/class-rest.php',
             'inc/class-utils.php',
+            'inc/class-update-control.php',
+            'inc/class-dashboard.php',
+            'inc/class-dashboard-widget.php',
             
             // Task classes
             'inc/task-updates.php',
@@ -109,6 +116,9 @@ class ReplantaCare {
                 error_log("Replanta Care: Missing required file - {$file}");
             }
         }
+        
+        // Enqueue admin assets
+        add_action('admin_enqueue_scripts', array($this, 'enqueue_admin_assets'));
     }
     
     public function init_components() {
@@ -127,6 +137,11 @@ class ReplantaCare {
                 new RP_Care_REST();
             }
             
+            // Initialize Dashboard
+            if (class_exists('RP_Care_Dashboard')) {
+                new RP_Care_Dashboard();
+            }
+            
             // Initialize 404 logger
             if (class_exists('RP_Care_Task_404')) {
                 new RP_Care_Task_404();
@@ -142,37 +157,65 @@ class ReplantaCare {
     }
     
     public function enqueue_admin_assets($hook) {
-        if ($hook !== 'settings_page_replanta-care') {
-            return;
+        // Load admin assets on settings page
+        if ($hook === 'settings_page_replanta-care') {
+            wp_enqueue_style(
+                'replanta-care-admin',
+                RPCARE_PLUGIN_URL . 'assets/css/admin.css',
+                [],
+                RPCARE_VERSION
+            );
+            
+            wp_enqueue_script(
+                'replanta-care-admin',
+                RPCARE_PLUGIN_URL . 'assets/js/admin.js',
+                ['jquery'],
+                RPCARE_VERSION,
+                true
+            );
+            
+            wp_localize_script('replanta-care-admin', 'rpcare_ajax', [
+                'ajax_url' => admin_url('admin-ajax.php'),
+                'nonce' => wp_create_nonce('rpcare_ajax'),
+                'strings' => [
+                    'testing_connection' => 'Probando conexión...',
+                    'connection_success' => 'Conexión exitosa',
+                    'connection_failed' => 'Error de conexión',
+                    'running_task' => 'Ejecutando tarea...',
+                    'task_completed' => 'Tarea completada',
+                    'task_failed' => 'Error en la tarea'
+                ]
+            ]);
         }
         
-        wp_enqueue_style(
-            'replanta-care-admin',
-            RPCARE_PLUGIN_URL . 'assets/css/admin.css',
-            [],
-            RPCARE_VERSION
-        );
-        
-        wp_enqueue_script(
-            'replanta-care-admin',
-            RPCARE_PLUGIN_URL . 'assets/js/admin.js',
-            ['jquery'],
-            RPCARE_VERSION,
-            true
-        );
-        
-        wp_localize_script('replanta-care-admin', 'rpcare_ajax', [
-            'ajax_url' => admin_url('admin-ajax.php'),
-            'nonce' => wp_create_nonce('rpcare_ajax'),
-            'strings' => [
-                'testing_connection' => 'Probando conexión...',
-                'connection_success' => 'Conexión exitosa',
-                'connection_failed' => 'Error de conexión',
-                'running_task' => 'Ejecutando tarea...',
-                'task_completed' => 'Tarea completada',
-                'task_failed' => 'Error en la tarea'
-            ]
-        ]);
+        // Load dashboard assets on main dashboard page
+        if ($hook === 'index.php') {
+            wp_enqueue_style(
+                'rpcare-dashboard',
+                RPCARE_PLUGIN_URL . 'assets/css/dashboard.css',
+                array(),
+                RPCARE_VERSION
+            );
+            
+            wp_enqueue_script(
+                'rpcare-dashboard',
+                RPCARE_PLUGIN_URL . 'assets/js/dashboard.js',
+                array('jquery'),
+                RPCARE_VERSION,
+                true
+            );
+            
+            wp_localize_script('rpcare-dashboard', 'rpcare_ajax', array(
+                'ajax_url' => admin_url('admin-ajax.php'),
+                'nonce' => wp_create_nonce('rpcare_dashboard_nonce'),
+                'strings' => array(
+                    'loading' => __('Loading...', 'replanta-care'),
+                    'error' => __('An error occurred', 'replanta-care'),
+                    'success' => __('Operation completed successfully', 'replanta-care'),
+                    'confirm' => __('Are you sure?', 'replanta-care')
+                )
+            ));
+        }
     }
     
     public function enqueue_frontend_assets() {
@@ -362,6 +405,9 @@ class ReplantaCare {
             hits int(11) DEFAULT 1,
             first_seen datetime DEFAULT CURRENT_TIMESTAMP,
             last_seen datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            referer varchar(500) DEFAULT '',
+            user_agent text,
+            ip varchar(45) DEFAULT '',
             suggested_redirect varchar(500),
             status varchar(20) DEFAULT 'pending',
             PRIMARY KEY (id),
@@ -373,6 +419,28 @@ class ReplantaCare {
         require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
         dbDelta($sql);
         dbDelta($sql404);
+        
+        // Add missing columns to existing 404 table (for upgrades)
+        global $wpdb;
+        $table_404 = $wpdb->prefix . 'rpcare_404_logs';
+        
+        // Check if referer column exists, if not add it
+        $referer_column = $wpdb->get_results("SHOW COLUMNS FROM `$table_404` LIKE 'referer'");
+        if (empty($referer_column)) {
+            $wpdb->query("ALTER TABLE `$table_404` ADD COLUMN `referer` varchar(500) DEFAULT '' AFTER `last_seen`");
+        }
+        
+        // Check if user_agent column exists, if not add it
+        $user_agent_column = $wpdb->get_results("SHOW COLUMNS FROM `$table_404` LIKE 'user_agent'");
+        if (empty($user_agent_column)) {
+            $wpdb->query("ALTER TABLE `$table_404` ADD COLUMN `user_agent` text AFTER `referer`");
+        }
+        
+        // Check if ip column exists, if not add it
+        $ip_column = $wpdb->get_results("SHOW COLUMNS FROM `$table_404` LIKE 'ip'");
+        if (empty($ip_column)) {
+            $wpdb->query("ALTER TABLE `$table_404` ADD COLUMN `ip` varchar(45) DEFAULT '' AFTER `user_agent`");
+        }
     }
     
     public function is_activated() {
@@ -396,6 +464,65 @@ class ReplantaCare {
         return get_option('rpcare_activated', false) && 
                get_option('rpcare_token', '') !== '' && 
                $plan !== '';
+    }
+    
+    /**
+     * AJAX handler for force check
+     */
+    public function ajax_force_check() {
+        check_ajax_referer('rpcare_ajax', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('Permisos insuficientes');
+        }
+        
+        // Run health check
+        if (class_exists('RP_Care_Task_Health')) {
+            $health_task = new RP_Care_Task_Health();
+            $result = $health_task->run();
+            
+            if ($result) {
+                update_option('rpcare_last_check', current_time('mysql'));
+                wp_send_json_success('Verificación completada exitosamente');
+            } else {
+                wp_send_json_error('Error durante la verificación');
+            }
+        } else {
+            wp_send_json_error('Tarea de salud no disponible');
+        }
+    }
+    
+    /**
+     * AJAX handler for force backup
+     */
+    public function ajax_force_backup() {
+        check_ajax_referer('rpcare_ajax', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('Permisos insuficientes');
+        }
+        
+        // Check if backup is available for this plan
+        $plan = RP_Care_Plan::get_current();
+        $features = RP_Care_Plan::get_features($plan);
+        
+        if (!$features['backup']) {
+            wp_send_json_error('Backup no disponible en tu plan');
+        }
+        
+        // Run backup
+        if (class_exists('RP_Care_Task_Backup')) {
+            $result = RP_Care_Task_Backup::run();
+            
+            if ($result && $result['success']) {
+                wp_send_json_success('Backup creado exitosamente');
+            } else {
+                $message = isset($result['message']) ? $result['message'] : 'Error al crear backup';
+                wp_send_json_error($message);
+            }
+        } else {
+            wp_send_json_error('Sistema de backup no disponible');
+        }
     }
 }
 

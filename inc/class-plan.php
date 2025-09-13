@@ -17,7 +17,7 @@ class RP_Care_Plan {
     const PLAN_RAIZ = 'raiz';
     const PLAN_ECOSISTEMA = 'ecosistema';
     
-    const HUB_URL = 'https://sitios.replanta.dev';
+    const HUB_URL = 'http://repo.local';
     
     private static $plan_configs = [
         self::PLAN_BASIC => [
@@ -75,55 +75,55 @@ class RP_Care_Plan {
         ],
         self::PLAN_SEMILLA => [
             'name' => 'Plan Semilla',
-            'price' => '29€/mes',
+            'price' => '49€/mes',
             'updates' => 'monthly',
-            'backups' => 'monthly',
+            'backups' => 'weekly',
             'wpo' => 'basic',
-            'reviews' => 'none',
+            'reviews' => 'quarterly',
             'monitoring' => false,
             'priority_support' => false,
             'features' => [
                 'Actualizaciones mensuales',
-                'Copia de seguridad mensual',
-                'Optimización básica',
-                'Soporte básico'
+                'Copias de seguridad semanales',
+                'Optimización básica WPO',
+                'Revisión trimestral de rendimiento',
+                'Soporte por email'
             ]
         ],
         self::PLAN_RAIZ => [
             'name' => 'Plan Raíz',
-            'price' => '69€/mes',
+            'price' => '89€/mes',
             'updates' => 'weekly',
             'backups' => 'weekly',
             'wpo' => 'advanced',
             'reviews' => 'monthly',
             'monitoring' => true,
-            'priority_support' => false,
+            'priority_support' => true,
             'features' => [
+                'Todo lo del plan Semilla',
                 'Actualizaciones semanales',
-                'Copias de seguridad semanales',
-                'Optimización avanzada',
-                'Monitorización básica',
-                'Revisión mensual'
+                'Soporte prioritario',
+                'Monitorización 24/7',
+                'Revisión SEO + WPO mensual',
+                'Informes de estado mensuales'
             ]
         ],
         self::PLAN_ECOSISTEMA => [
             'name' => 'Plan Ecosistema',
-            'price' => '199€/mes',
-            'updates' => 'daily',
-            'backups' => 'daily',
+            'price' => '149€/mes',
+            'updates' => 'weekly',
+            'backups' => 'weekly',
             'wpo' => 'premium',
-            'reviews' => 'weekly',
+            'reviews' => 'quarterly',
             'monitoring' => true,
             'priority_support' => true,
             'hosting_included' => true,
             'features' => [
-                'Todo incluido',
-                'Actualizaciones diarias',
-                'Copias de seguridad diarias',
-                'Optimización premium',
-                'Monitorización completa',
-                'Soporte 24/7',
-                'Hosting incluido'
+                'Todo lo del plan Raíz',
+                'Consultoría técnica trimestral',
+                'Hosting ecológico incluido',
+                'Auditoría SEO/WPO trimestral',
+                'CDN y optimización avanzada'
             ]
         ]
     ];
@@ -162,6 +162,15 @@ class RP_Care_Plan {
      * Detect plan from Replanta hub
      */
     private static function detect_plan_from_hub() {
+        // Check if we should skip hub detection temporarily (backoff)
+        $backoff_key = 'rpcare_hub_backoff';
+        $backoff_time = get_transient($backoff_key);
+        
+        if ($backoff_time !== false) {
+            // Still in backoff period, don't attempt connection
+            return false;
+        }
+        
         $site_url = get_site_url();
         $domain = parse_url($site_url, PHP_URL_HOST);
         
@@ -172,19 +181,38 @@ class RP_Care_Plan {
                 'X-Site-URL' => $site_url,
                 'User-Agent' => 'Replanta-Care/' . RPCARE_VERSION . ' (WordPress/' . get_bloginfo('version') . ')'
             ],
-            'timeout' => 15
+            'timeout' => 3  // Reduced from 15 to 3 seconds
         ]);
         
         if (is_wp_error($response)) {
             error_log('Care Plugin: Error detecting plan from hub: ' . $response->get_error_message());
+            
+            // Implement exponential backoff: start with 5 minutes, max 1 hour
+            $failure_count = get_option('rpcare_hub_failures', 0) + 1;
+            update_option('rpcare_hub_failures', $failure_count);
+            
+            $backoff_seconds = min(300 * pow(2, $failure_count - 1), 3600); // 5min, 10min, 20min, 40min, 1hour
+            set_transient($backoff_key, time() + $backoff_seconds, $backoff_seconds);
+            
             return false;
         }
         
         $response_code = wp_remote_retrieve_response_code($response);
         if ($response_code !== 200) {
             error_log('Care Plugin: Hub returned HTTP ' . $response_code . ' for domain ' . $domain);
+            
+            // Implement backoff for HTTP errors too
+            $failure_count = get_option('rpcare_hub_failures', 0) + 1;
+            update_option('rpcare_hub_failures', $failure_count);
+            
+            $backoff_seconds = min(300 * pow(2, $failure_count - 1), 3600);
+            set_transient($backoff_key, time() + $backoff_seconds, $backoff_seconds);
+            
             return false;
         }
+        
+        // Success! Reset failure count
+        delete_option('rpcare_hub_failures');
         
         $body = wp_remote_retrieve_body($response);
         $data = json_decode($body, true);
@@ -348,6 +376,35 @@ class RP_Care_Plan {
     public static function has_hosting_included($plan = null) {
         $config = self::get_plan_config($plan);
         return $config['hosting_included'] ?? false;
+    }
+    
+    public static function get_plan_name($plan = null) {
+        $config = self::get_plan_config($plan);
+        return $config['name'] ?? 'Plan Desconocido';
+    }
+    
+    public static function get_features($plan = null) {
+        if (!$plan) {
+            $plan = self::get_current();
+        }
+        
+        $config = self::get_plan_config($plan);
+        
+        // Return basic features plus additional configuration
+        $features = [
+            'update_control' => true, // All plans have update control
+            'automatic_updates' => true,
+            'backup' => true,
+            'monitoring' => $config['monitoring'] ?? false,
+            'priority_support' => $config['priority_support'] ?? false,
+            'hosting_included' => $config['hosting_included'] ?? false,
+            'updates_frequency' => $config['updates'] ?? 'monthly',
+            'backup_frequency' => $config['backups'] ?? 'weekly',
+            'wpo_level' => $config['wpo'] ?? 'basic',
+            'review_frequency' => $config['reviews'] ?? 'quarterly'
+        ];
+        
+        return $features;
     }
     
     public static function can_access_feature($feature, $plan = null) {

@@ -615,7 +615,7 @@ class RP_Care_Settings_Page {
                         'site_token' => $site_token,
                         'site_url' => site_url()
                     ],
-                    'timeout' => 10
+                    'timeout' => 5  // Reduced from 10 to 5 seconds
                 ]);
             } else {
                 // Test via REST API
@@ -833,7 +833,7 @@ class RP_Care_Settings_Page {
                 'url' => home_url(),
                 'version' => RPCARE_VERSION
             ]),
-            'timeout' => 15
+            'timeout' => 5  // Reduced from 15 to 5 seconds
         ]);
         
         if (is_wp_error($response)) {

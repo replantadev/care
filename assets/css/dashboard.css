@@ -1,0 +1,408 @@
+/* Replanta Care Dashboard Styles */
+
+.rpcare-dashboard-widget {
+    position: relative;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+.rpcare-plan-info {
+    margin-bottom: 20px;
+    padding: 15px;
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+    border-radius: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border: 1px solid #dee2e6;
+}
+
+.rpcare-plan-info h3 {
+    margin: 0;
+    color: #333;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.rpcare-plan-badge {
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: bold;
+    color: white;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.rpcare-plan-semilla { 
+    background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+    box-shadow: 0 2px 4px rgba(76, 175, 80, 0.3);
+}
+
+.rpcare-plan-raiz { 
+    background: linear-gradient(135deg, #FF9800 0%, #f57c00 100%);
+    box-shadow: 0 2px 4px rgba(255, 152, 0, 0.3);
+}
+
+.rpcare-plan-ecosistema { 
+    background: linear-gradient(135deg, #9C27B0 0%, #7b1fa2 100%);
+    box-shadow: 0 2px 4px rgba(156, 39, 176, 0.3);
+}
+
+.rpcare-tab-nav {
+    display: flex;
+    border-bottom: 2px solid #e9ecef;
+    margin-bottom: 20px;
+    overflow-x: auto;
+}
+
+.rpcare-tab-btn {
+    background: none;
+    border: none;
+    padding: 12px 16px;
+    cursor: pointer;
+    border-bottom: 3px solid transparent;
+    font-weight: 500;
+    font-size: 14px;
+    color: #6c757d;
+    transition: all 0.3s ease;
+    white-space: nowrap;
+    position: relative;
+}
+
+.rpcare-tab-btn:hover {
+    color: #495057;
+    background-color: #f8f9fa;
+}
+
+.rpcare-tab-btn.active {
+    border-bottom-color: #0073aa;
+    color: #0073aa;
+    background-color: #f8f9fa;
+}
+
+.rpcare-tab-panel {
+    display: none;
+    animation: fadeIn 0.3s ease-in-out;
+}
+
+.rpcare-tab-panel.active {
+    display: block;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.rpcare-status-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+.rpcare-status-card {
+    display: flex;
+    align-items: center;
+    padding: 18px;
+    background: white;
+    border: 1px solid #e9ecef;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    transition: all 0.3s ease;
+}
+
+.rpcare-status-card:hover {
+    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+    transform: translateY(-2px);
+}
+
+.rpcare-status-icon {
+    font-size: 28px;
+    margin-right: 16px;
+    width: 40px;
+    text-align: center;
+}
+
+.rpcare-status-info {
+    flex: 1;
+}
+
+.rpcare-status-info h4 {
+    margin: 0 0 6px 0;
+    font-size: 14px;
+    color: #495057;
+    font-weight: 600;
+}
+
+.rpcare-status-info p {
+    margin: 0 0 4px 0;
+    font-weight: 600;
+    font-size: 15px;
+    color: #212529;
+}
+
+.rpcare-status-info small {
+    color: #6c757d;
+    font-size: 12px;
+}
+
+.rpcare-actions {
+    text-align: center;
+    padding: 20px 0;
+    border-top: 1px solid #e9ecef;
+    margin-top: 20px;
+}
+
+.rpcare-actions .button {
+    margin: 0 6px;
+    padding: 8px 16px;
+    border-radius: 6px;
+    transition: all 0.3s ease;
+}
+
+.rpcare-actions .button-primary {
+    background: linear-gradient(135deg, #0073aa 0%, #005a87 100%);
+    border-color: #005a87;
+}
+
+.rpcare-actions .button-primary:hover {
+    background: linear-gradient(135deg, #005a87 0%, #004666 100%);
+}
+
+.rpcare-backups-header, .rpcare-updates-header, .rpcare-health-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #e9ecef;
+}
+
+.rpcare-backups-header h4, .rpcare-updates-header h4, .rpcare-health-header h4 {
+    margin: 0;
+    color: #495057;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.rpcare-backup-info {
+    margin-top: 24px;
+    padding: 18px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border: 1px solid #e9ecef;
+}
+
+.rpcare-backup-info h5 {
+    margin: 0 0 12px 0;
+    color: #495057;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.rpcare-backup-info ul {
+    margin: 0;
+    padding-left: 20px;
+}
+
+.rpcare-backup-info li {
+    margin-bottom: 6px;
+    color: #6c757d;
+    font-size: 13px;
+}
+
+.rpcare-update-notice {
+    background: linear-gradient(135deg, #e7f3ff 0%, #cce7ff 100%);
+    padding: 14px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    border: 1px solid #b3d9ff;
+    font-size: 13px;
+    color: #0056b3;
+}
+
+.rpcare-backup-item, .rpcare-update-item {
+    padding: 12px;
+    margin-bottom: 8px;
+    background: #f8f9fa;
+    border-radius: 6px;
+    border: 1px solid #e9ecef;
+    font-size: 13px;
+}
+
+.rpcare-backup-item strong, .rpcare-update-item strong {
+    color: #495057;
+}
+
+.rpcare-health-score {
+    font-size: 24px;
+    font-weight: bold;
+    margin-bottom: 16px;
+    padding: 20px;
+    text-align: center;
+    background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
+    border-radius: 8px;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+}
+
+.rpcare-health-issues {
+    padding: 16px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border: 1px solid #e9ecef;
+    font-size: 14px;
+    color: #6c757d;
+}
+
+#rpcare-loading-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(255,255,255,0.95);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+    border-radius: 8px;
+}
+
+.rpcare-spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid #f3f3f3;
+    border-top: 4px solid #0073aa;
+    border-radius: 50%;
+    animation: rpcare-spin 1s linear infinite;
+    margin-bottom: 12px;
+}
+
+@keyframes rpcare-spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+#rpcare-loading-overlay p {
+    margin: 0;
+    color: #6c757d;
+    font-weight: 500;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+    .rpcare-status-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .rpcare-plan-info {
+        flex-direction: column;
+        text-align: center;
+    }
+    
+    .rpcare-plan-info h3 {
+        margin-bottom: 10px;
+    }
+    
+    .rpcare-backups-header, .rpcare-updates-header, .rpcare-health-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    
+    .rpcare-backups-header .button, 
+    .rpcare-updates-header .button, 
+    .rpcare-health-header .button {
+        margin-top: 10px;
+    }
+}
+
+/* Status indicators */
+.rpcare-status-online {
+    color: #28a745;
+}
+
+.rpcare-status-warning {
+    color: #ffc107;
+}
+
+.rpcare-status-error {
+    color: #dc3545;
+}
+
+.rpcare-status-pending {
+    color: #6c757d;
+}
+
+/* Button enhancements */
+.rpcare-actions .button,
+.rpcare-backups-header .button,
+.rpcare-updates-header .button,
+.rpcare-health-header .button {
+    position: relative;
+    overflow: hidden;
+}
+
+.rpcare-actions .button:before,
+.rpcare-backups-header .button:before,
+.rpcare-updates-header .button:before,
+.rpcare-health-header .button:before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0;
+    height: 0;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.3);
+    transition: width 0.6s, height 0.6s, top 0.6s, left 0.6s;
+    transform: translate(-50%, -50%);
+    z-index: 0;
+}
+
+.rpcare-actions .button:active:before,
+.rpcare-backups-header .button:active:before,
+.rpcare-updates-header .button:active:before,
+.rpcare-health-header .button:active:before {
+    width: 300px;
+    height: 300px;
+    top: 50%;
+    left: 50%;
+}
+
+/* Accessibility improvements */
+.rpcare-tab-btn:focus {
+    outline: 2px solid #0073aa;
+    outline-offset: 2px;
+}
+
+.rpcare-status-card:focus-within {
+    box-shadow: 0 0 0 2px #0073aa;
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+    .rpcare-dashboard-widget {
+        color: #e9ecef;
+    }
+    
+    .rpcare-status-card {
+        background: #343a40;
+        border-color: #495057;
+    }
+    
+    .rpcare-plan-info {
+        background: linear-gradient(135deg, #343a40 0%, #495057 100%);
+    }
+    
+    .rpcare-backup-info,
+    .rpcare-health-issues,
+    .rpcare-backup-item,
+    .rpcare-update-item {
+        background: #343a40;
+        border-color: #495057;
+        color: #e9ecef;
+    }
+}

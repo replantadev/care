@@ -593,8 +593,11 @@ class RP_Care_Settings_Page {
         }
         
         // Test connection to hub
-        // If hub_url ends with '/', remove it to avoid double slashes
+        // Clean and normalize hub URL
         $hub_url = rtrim($hub_url, '/');
+        
+        // Remove common incorrect paths that users might add
+        $hub_url = preg_replace('#/(api/test-connection|wp-admin/admin-ajax\.php)$#', '', $hub_url);
         
         // Use only the WordPress AJAX endpoint for simplicity and reliability
         $endpoint = $hub_url . '/wp-admin/admin-ajax.php';

@@ -181,7 +181,11 @@ class RP_Care_Plan {
         }
         
         $site_url = get_site_url();
+        
+        // Clean and normalize hub URL
         $hub_url = rtrim($hub_url, '/');
+        // Remove common incorrect paths that users might add
+        $hub_url = preg_replace('#/(api/test-connection|wp-admin/admin-ajax\.php)$#', '', $hub_url);
         
         $response = wp_remote_post($hub_url . '/wp-admin/admin-ajax.php', [
             'body' => [

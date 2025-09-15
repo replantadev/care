@@ -171,17 +171,25 @@ class RP_Care_Plan {
             return false;
         }
         
-        $site_url = get_site_url();
-        $domain = parse_url($site_url, PHP_URL_HOST);
+        // Get hub settings
+        $hub_url = get_option('rpcare_hub_url', '');
+        $site_token = get_option('rpcare_site_token', '');
         
-        $response = wp_remote_get(self::HUB_URL . '/api/sites/plan', [
-            'headers' => [
-                'Content-Type' => 'application/json',
-                'X-Site-Domain' => $domain,
-                'X-Site-URL' => $site_url,
-                'User-Agent' => 'Replanta-Care/' . RPCARE_VERSION . ' (WordPress/' . get_bloginfo('version') . ')'
+        if (empty($hub_url) || empty($site_token)) {
+            // No hub configured, can't detect plan
+            return false;
+        }
+        
+        $site_url = get_site_url();
+        $hub_url = rtrim($hub_url, '/');
+        
+        $response = wp_remote_post($hub_url . '/wp-admin/admin-ajax.php', [
+            'body' => [
+                'action' => 'rphub_get_site_plan',
+                'site_token' => $site_token,
+                'site_url' => $site_url
             ],
-            'timeout' => 3  // Reduced from 15 to 3 seconds
+            'timeout' => 5
         ]);
         
         if (is_wp_error($response)) {
@@ -199,7 +207,7 @@ class RP_Care_Plan {
         
         $response_code = wp_remote_retrieve_response_code($response);
         if ($response_code !== 200) {
-            error_log('Care Plugin: Hub returned HTTP ' . $response_code . ' for domain ' . $domain);
+            error_log('Care Plugin: Hub returned HTTP ' . $response_code);
             
             // Implement backoff for HTTP errors too
             $failure_count = get_option('rpcare_hub_failures', 0) + 1;
@@ -222,18 +230,22 @@ class RP_Care_Plan {
             return false;
         }
         
-        if (isset($data['plan']) && self::is_valid_plan($data['plan'])) {
-            // Mark as activated automatically
-            update_option('rpcare_activated', true);
-            update_option('rpcare_hub_connected', true);
-            update_option('rpcare_detected_plan', $data['plan']);
-            update_option('rpcare_hub_last_check', current_time('mysql'));
-            
-            error_log('Care Plugin: Successfully detected plan ' . $data['plan'] . ' for domain ' . $domain);
-            return $data['plan'];
+        // Handle WordPress AJAX response format
+        if (isset($data['success']) && $data['success'] && isset($data['data']['plan'])) {
+            $plan = $data['data']['plan'];
+            if (self::is_valid_plan($plan)) {
+                // Mark as activated automatically
+                update_option('rpcare_activated', true);
+                update_option('rpcare_hub_connected', true);
+                update_option('rpcare_detected_plan', $plan);
+                update_option('rpcare_hub_last_check', current_time('mysql'));
+                
+                error_log('Care Plugin: Successfully detected plan ' . $plan . ' for site ' . $site_url);
+                return $plan;
+            }
         }
         
-        error_log('Care Plugin: Invalid plan received from hub: ' . print_r($data, true));
+        error_log('Care Plugin: Invalid plan response from hub: ' . print_r($data, true));
         return false;
     }
     

@@ -4,7 +4,7 @@ Tags: maintenance, security, performance, updates, monitoring
 Requires at least: 5.0
 Tested up to: 6.6
 Requires PHP: 7.4
-Stable tag: 1.1.0
+Stable tag: 1.1.4
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -106,6 +106,14 @@ Solo si configuras integraciones específicas. El plugin respeta tu privacidad y
 4. Sistema de notificaciones y alertas
 
 == Changelog ==
+
+= 1.1.4 (2025-09-15) =
+* Fix: Corregida conexión con Hub usando endpoint AJAX correcto
+* Mejora: Widget del dashboard ahora obtiene el plan desde el Hub automáticamente
+* Nuevo: Detección automática del plan asignado desde sitios.replanta.dev
+* Fix: URL de conexión simplificada para evitar errores 404
+* Mejora: Sistema de respaldo exponencial para conexiones fallidas
+* Mantenimiento: Código optimizado para conexiones más estables
 
 = 1.1.0 (2025-09-11) =
 * Mayor: Auto-detección de plan desde sitios.replanta.dev

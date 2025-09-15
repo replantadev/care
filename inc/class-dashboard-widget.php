@@ -52,125 +52,100 @@ class RP_Care_Dashboard_Widget {
         
         ?>
         <div class="rpcare-dashboard-widget">
-            <!-- Plan Info -->
-            <div class="rpcare-plan-info">
-                <div class="rpcare-plan-badge <?php echo esc_attr($plan); ?>">
-                    <?php echo esc_html($plan_config['name']); ?>
+            <!-- Header compacto con plan y estado -->
+            <div class="rpcare-header">
+                <div class="rpcare-plan">
+                    <span class="plan-badge plan-<?php echo esc_attr($plan); ?>">
+                        <?php echo esc_html($plan_config['name']); ?>
+                    </span>
+                    <span class="plan-price"><?php echo esc_html($plan_config['price']); ?></span>
                 </div>
-                <div class="rpcare-plan-price">
-                    <?php echo esc_html($plan_config['price']); ?>
-                </div>
-            </div>
-            
-            <!-- Site Health -->
-            <div class="rpcare-health-section">
-                <h4>🩺 Estado del Sitio</h4>
-                <div class="rpcare-health-score">
-                    <div class="rpcare-health-circle" data-score="<?php echo $health_score; ?>">
-                        <span class="score"><?php echo $health_score; ?></span>
-                        <span class="label">Health Score</span>
-                    </div>
-                    <div class="rpcare-health-details">
-                        <div class="health-item">
-                            <span class="status <?php echo $hub_connected ? 'connected' : 'disconnected'; ?>"></span>
-                            Hub Replanta: <?php echo $hub_connected ? 'Conectado' : 'Desconectado'; ?>
-                        </div>
-                        <div class="health-item">
-                            <span class="status checking"></span>
-                            Última verificación: <?php echo esc_html($last_check); ?>
-                        </div>
-                    </div>
+                <div class="rpcare-status">
+                    <div class="status-indicator <?php echo $hub_connected ? 'connected' : 'disconnected'; ?>"></div>
+                    <span class="status-text"><?php echo $hub_connected ? 'Conectado' : 'Desconectado'; ?></span>
                 </div>
             </div>
             
-            <!-- Features -->
-            <div class="rpcare-features-section">
-                <h4>✨ Características Activas</h4>
-                <div class="rpcare-features-grid">
-                    <?php if ($features['automatic_updates']): ?>
-                    <div class="feature-item active">
-                        <span class="icon">🔄</span>
-                        <span class="label">Actualizaciones Automáticas</span>
-                        <span class="frequency"><?php echo ucfirst($features['updates_frequency']); ?></span>
-                    </div>
-                    <?php endif; ?>
-                    
-                    <?php if ($features['backup']): ?>
-                    <div class="feature-item active">
-                        <span class="icon">💾</span>
-                        <span class="label">Copias de Seguridad</span>
-                        <span class="frequency"><?php echo ucfirst($features['backup_frequency']); ?></span>
-                    </div>
-                    <?php endif; ?>
-                    
-                    <?php if ($features['monitoring']): ?>
-                    <div class="feature-item active">
-                        <span class="icon">📊</span>
-                        <span class="label">Monitorización 24/7</span>
-                        <span class="frequency">Activa</span>
-                    </div>
-                    <?php endif; ?>
-                    
-                    <?php if ($features['priority_support']): ?>
-                    <div class="feature-item active">
-                        <span class="icon">🚀</span>
-                        <span class="label">Soporte Prioritario</span>
-                        <span class="frequency">Disponible</span>
-                    </div>
-                    <?php endif; ?>
+            <!-- Métricas principales -->
+            <div class="rpcare-metrics">
+                <div class="metric">
+                    <div class="metric-value"><?php echo $health_score; ?><span class="metric-unit">%</span></div>
+                    <div class="metric-label">Health Score</div>
+                </div>
+                <div class="metric">
+                    <?php 
+                    $pending_updates = $this->get_pending_updates_count();
+                    ?>
+                    <div class="metric-value"><?php echo $pending_updates; ?></div>
+                    <div class="metric-label">Updates</div>
+                </div>
+                <div class="metric">
+                    <?php 
+                    $last_backup = $this->get_last_backup_days();
+                    ?>
+                    <div class="metric-value"><?php echo $last_backup; ?><span class="metric-unit">d</span></div>
+                    <div class="metric-label">Last Backup</div>
                 </div>
             </div>
             
-            <!-- Recent Activity -->
-            <div class="rpcare-activity-section">
-                <h4>📋 Actividad Reciente</h4>
-                <div class="rpcare-activity-list">
-                    <?php if (empty($recent_logs)): ?>
-                        <div class="no-activity">
-                            <span class="icon">💤</span>
-                            <span class="text">No hay actividad reciente</span>
-                        </div>
-                    <?php else: ?>
-                        <?php foreach ($recent_logs as $log): ?>
-                        <div class="activity-item <?php echo esc_attr($log->status); ?>">
-                            <span class="time"><?php echo human_time_diff(strtotime($log->created_at)); ?> ago</span>
-                            <span class="task"><?php echo esc_html($log->task_type); ?></span>
-                            <span class="status"><?php echo esc_html($log->status); ?></span>
-                        </div>
-                        <?php endforeach; ?>
-                    <?php endif; ?>
+            <!-- Features compactas -->
+            <div class="rpcare-features">
+                <?php if ($features['automatic_updates']): ?>
+                <div class="feature-item">
+                    <div class="feature-icon updates"></div>
+                    <div class="feature-content">
+                        <div class="feature-name">Auto Updates</div>
+                        <div class="feature-status"><?php echo ucfirst($features['updates_frequency']); ?></div>
+                    </div>
                 </div>
+                <?php endif; ?>
+                
+                <?php if ($features['backup']): ?>
+                <div class="feature-item">
+                    <div class="feature-icon backup"></div>
+                    <div class="feature-content">
+                        <div class="feature-name">Backups</div>
+                        <div class="feature-status"><?php echo ucfirst($features['backup_frequency']); ?></div>
+                    </div>
+                </div>
+                <?php endif; ?>
+                
+                <?php if ($features['monitoring']): ?>
+                <div class="feature-item">
+                    <div class="feature-icon monitoring"></div>
+                    <div class="feature-content">
+                        <div class="feature-name">Monitoring</div>
+                        <div class="feature-status">24/7 Active</div>
+                    </div>
+                </div>
+                <?php endif; ?>
+                
+                <?php if ($features['priority_support']): ?>
+                <div class="feature-item">
+                    <div class="feature-icon support"></div>
+                    <div class="feature-content">
+                        <div class="feature-name">Priority Support</div>
+                        <div class="feature-status">Available</div>
+                    </div>
+                </div>
+                <?php endif; ?>
             </div>
             
-            <!-- Quick Actions -->
-            <div class="rpcare-actions-section">
-                <h4>⚡ Acciones Rápidas</h4>
-                <div class="rpcare-quick-actions">
-                    <a href="<?php echo admin_url('options-general.php?page=replanta-care'); ?>" class="rpcare-btn primary">
-                        ⚙️ Configuración
+            <!-- Footer con última verificación y acciones -->
+            <div class="rpcare-footer">
+                <div class="last-check">
+                    <span class="check-label">Last check:</span>
+                    <span class="check-time"><?php echo esc_html($last_check); ?></span>
+                </div>
+                <div class="quick-actions">
+                    <a href="<?php echo admin_url('options-general.php?page=replanta-care'); ?>" class="action-btn">
+                        Settings
                     </a>
-                    <button type="button" class="rpcare-btn secondary" id="rpcare-force-check">
-                        🔍 Verificar Estado
+                    <button type="button" class="action-btn secondary" id="rpcare-force-check">
+                        Check Now
                     </button>
-                    <?php if ($features['backup']): ?>
-                    <button type="button" class="rpcare-btn secondary" id="rpcare-force-backup">
-                        💾 Backup Manual
-                    </button>
-                    <?php endif; ?>
                 </div>
             </div>
-            
-            <!-- Control de Actualizaciones -->
-            <?php if ($features['update_control']): ?>
-            <div class="rpcare-update-control-section">
-                <h4>🔒 Control de Actualizaciones</h4>
-                <div class="update-control-info">
-                    <p>Las actualizaciones están siendo gestionadas automáticamente por Replanta Care.</p>
-                    <p><small>Los plugins con licencia pueden actualizarse libremente.</small></p>
-                    <a href="<?php echo admin_url('plugins.php'); ?>" class="rpcare-link">Ver plugins →</a>
-                </div>
-            </div>
-            <?php endif; ?>
         </div>
         
         <style>

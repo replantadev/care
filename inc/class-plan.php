@@ -161,7 +161,7 @@ class RP_Care_Plan {
     /**
      * Detect plan from Replanta hub
      */
-    private static function detect_plan_from_hub() {
+    public static function detect_plan_from_hub($hub_url = null, $site_token = null) {
         // Check if we should skip hub detection temporarily (backoff)
         $backoff_key = 'rpcare_hub_backoff';
         $backoff_time = get_transient($backoff_key);
@@ -171,9 +171,9 @@ class RP_Care_Plan {
             return false;
         }
         
-        // Get hub settings
-        $hub_url = get_option('rpcare_hub_url', '');
-        $site_token = get_option('rpcare_site_token', '');
+        // Get hub settings - use provided parameters or fall back to options
+        $hub_url = $hub_url ?: get_option('rpcare_hub_url', '');
+        $site_token = $site_token ?: get_option('rpcare_site_token', '');
         
         if (empty($hub_url) || empty($site_token)) {
             // No hub configured, can't detect plan

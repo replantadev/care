@@ -13,6 +13,7 @@ class RP_Care_Dashboard_Widget {
     public function __construct() {
         add_action('wp_dashboard_setup', [$this, 'add_dashboard_widget']);
         add_action('wp_ajax_rpcare_get_dashboard_data', [$this, 'ajax_get_dashboard_data']);
+        add_action('wp_ajax_rpcare_force_check', [$this, 'ajax_force_check']);
         add_action('admin_enqueue_scripts', [$this, 'enqueue_dashboard_scripts']);
     }
     
@@ -466,11 +467,11 @@ class RP_Care_Dashboard_Widget {
                 $btn.prop('disabled', true).text('🔄 Verificando...');
                 
                 $.ajax({
-                    url: ajaxurl,
+                    url: rpcare_ajax.ajax_url,
                     type: 'POST',
                     data: {
                         action: 'rpcare_force_check',
-                        nonce: '<?php echo wp_create_nonce('rpcare_ajax'); ?>'
+                        nonce: rpcare_ajax.nonce
                     },
                     success: function(response) {
                         if (response.success) {
@@ -577,6 +578,12 @@ class RP_Care_Dashboard_Widget {
         }
         
         wp_enqueue_script('jquery');
+        
+        // Localize script with AJAX data
+        wp_localize_script('jquery', 'rpcare_ajax', [
+            'ajax_url' => admin_url('admin-ajax.php'),
+            'nonce' => wp_create_nonce('rpcare_ajax')
+        ]);
     }
     
     public function ajax_get_dashboard_data() {
@@ -595,6 +602,26 @@ class RP_Care_Dashboard_Widget {
         ];
         
         wp_send_json_success($data);
+    }
+    
+    public function ajax_force_check() {
+        check_ajax_referer('rpcare_ajax', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_die('Unauthorized');
+        }
+        
+        // Force update the last check time
+        update_option('rpcare_last_check', current_time('mysql'));
+        
+        // Run a quick health check
+        $health_score = $this->get_site_health_score();
+        
+        wp_send_json_success([
+            'message' => 'Verificación completada',
+            'health_score' => $health_score,
+            'last_check' => 'Hace unos segundos'
+        ]);
     }
     
     /**

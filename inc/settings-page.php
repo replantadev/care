@@ -198,6 +198,26 @@ class RP_Care_Settings_Page {
                 'task_failed' => 'Error en la tarea'
             ]
         ]);
+        
+        // Add inline CSS for plan detection display
+        $css = "
+        .rpcare-plan-detected {
+            background: #e7f5e7;
+            border: 1px solid #46b450;
+            border-radius: 4px;
+            padding: 10px;
+            margin-bottom: 10px;
+        }
+        .rpcare-plan-detected strong {
+            color: #135e96;
+            font-size: 16px;
+        }
+        .rpcare-plan-detected .plan-price {
+            color: #666;
+            margin-left: 10px;
+        }
+        ";
+        wp_add_inline_style('rpcare-admin', $css);
     }
     
     public function hide_other_plugin_notices() {
@@ -435,23 +455,43 @@ class RP_Care_Settings_Page {
     }
     
     public function current_plan_field() {
-        $options = get_option('rpcare_options', []);
-        $current = isset($options['plan']) ? $options['plan'] : 'semilla';
-        $plans = [
-            'semilla' => 'Semilla (€49/mes)',
-            'raiz' => 'Raíz (€89/mes)',
-            'ecosistema' => 'Ecosistema (€149/mes)'
-        ];
-        ?>
-        <select name="rpcare_options[plan]">
-            <?php foreach ($plans as $value => $label): ?>
-                <option value="<?php echo esc_attr($value); ?>" <?php selected($current, $value); ?>>
-                    <?php echo esc_html($label); ?>
-                </option>
-            <?php endforeach; ?>
-        </select>
-        <p class="description">Plan actual contratado con Replanta.</p>
-        <?php
+        $current = RP_Care_Plan::get_current();
+        $plan_config = RP_Care_Plan::get_plan_config($current);
+        $hub_connected = get_option('rpcare_hub_connected', false);
+        
+        if ($hub_connected && !empty($current)) {
+            // Show detected plan from Hub (read-only)
+            ?>
+            <div class="rpcare-plan-detected">
+                <strong><?php echo esc_html($plan_config['name'] ?? 'Plan no detectado'); ?></strong>
+                <span class="plan-price"><?php echo esc_html($plan_config['price'] ?? ''); ?></span>
+                <input type="hidden" name="rpcare_options[plan]" value="<?php echo esc_attr($current); ?>">
+            </div>
+            <p class="description">
+                ✅ Plan detectado automáticamente desde el Hub Replanta. 
+                <a href="#" onclick="jQuery('#test-connection').click(); return false;">Actualizar plan</a>
+            </p>
+            <?php
+        } else {
+            // Fallback: Show manual selector if not connected
+            $options = get_option('rpcare_options', []);
+            $current_manual = isset($options['plan']) ? $options['plan'] : 'semilla';
+            $plans = [
+                'semilla' => 'Semilla (€49/mes)',
+                'raiz' => 'Raíz (€89/mes)',
+                'ecosistema' => 'Ecosistema (€149/mes)'
+            ];
+            ?>
+            <select name="rpcare_options[plan]">
+                <?php foreach ($plans as $value => $label): ?>
+                    <option value="<?php echo esc_attr($value); ?>" <?php selected($current_manual, $value); ?>>
+                        <?php echo esc_html($label); ?>
+                    </option>
+                <?php endforeach; ?>
+            </select>
+            <p class="description">⚠️ Conecta con el Hub para detección automática del plan.</p>
+            <?php
+        }
     }
     
     public function auto_updates_field() {
@@ -619,7 +659,16 @@ class RP_Care_Settings_Page {
                 $data = json_decode($body, true);
                 
                 if ($data && isset($data['success']) && $data['success']) {
-                    wp_send_json_success('Conexión exitosa con el Hub');
+                    // Store successful connection
+                    update_option('rpcare_hub_connected', true);
+                    
+                    // Auto-detect plan from Hub
+                    $plan = RP_Care_Plan::detect_plan_from_hub($hub_url, $site_token);
+                    if ($plan) {
+                        wp_send_json_success("Conexión exitosa con el Hub. Plan detectado: " . RP_Care_Plan::get_plan_name($plan));
+                    } else {
+                        wp_send_json_success('Conexión exitosa con el Hub (plan no detectado)');
+                    }
                 } else {
                     $error_msg = isset($data['data']) ? $data['data'] : 'Respuesta inválida del Hub';
                     wp_send_json_error("Error del Hub: $error_msg");

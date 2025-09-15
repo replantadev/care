@@ -4,7 +4,7 @@ Tags: maintenance, security, performance, updates, monitoring
 Requires at least: 5.0
 Tested up to: 6.6
 Requires PHP: 7.4
-Stable tag: 1.1.4
+Stable tag: 1.1.5
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -106,6 +106,14 @@ Solo si configuras integraciones específicas. El plugin respeta tu privacidad y
 4. Sistema de notificaciones y alertas
 
 == Changelog ==
+
+= 1.1.5 (2025-09-15) =
+* Fix: Arreglado widget del dashboard que causaba errores fatales
+* Fix: Método get_pending_updates_count() agregado para mostrar actualizaciones pendientes
+* Fix: Manejo seguro de configuración de plan cuando no está disponible
+* Mejora: Auto-sanitización de URLs del Hub para evitar configuraciones incorrectas
+* Mejora: Conexión más robusta y estable con el Hub Replanta
+* Fix: Eliminados errores PHP de acceso a arrays nulos
 
 = 1.1.4 (2025-09-15) =
 * Fix: Corregida conexión con Hub usando endpoint AJAX correcto

@@ -45,38 +45,24 @@ class RP_Care_Task_404 {
         
         $table_name = $wpdb->prefix . 'rpcare_404_logs';
         
-        // Check if this URL already exists
-        $existing = $wpdb->get_row($wpdb->prepare(
-            "SELECT id, hits FROM $table_name WHERE url = %s",
-            $url
+        // Use INSERT ... ON DUPLICATE KEY UPDATE to handle race conditions
+        // This prevents "Duplicate entry" errors when two requests hit the same 404 simultaneously
+        $result = $wpdb->query($wpdb->prepare(
+            "INSERT INTO $table_name (url, hits, first_seen, last_seen, referer, user_agent, ip, status) 
+            VALUES (%s, 1, %s, %s, %s, %s, %s, 'pending')
+            ON DUPLICATE KEY UPDATE 
+                hits = hits + 1, 
+                last_seen = VALUES(last_seen)",
+            $url,
+            current_time('mysql'),
+            current_time('mysql'),
+            $referer,
+            $user_agent,
+            $ip
         ));
         
-        if ($existing) {
-            // Update hit count and last seen
-            $wpdb->update(
-                $table_name,
-                [
-                    'hits' => $existing->hits + 1,
-                    'last_seen' => current_time('mysql')
-                ],
-                ['id' => $existing->id]
-            );
-        } else {
-            // Insert new 404 record
-            $wpdb->insert(
-                $table_name,
-                [
-                    'url' => $url,
-                    'hits' => 1,
-                    'first_seen' => current_time('mysql'),
-                    'last_seen' => current_time('mysql'),
-                    'referer' => $referer,
-                    'user_agent' => $user_agent,
-                    'ip' => $ip,
-                    'status' => 'pending'
-                ]
-            );
-            
+        // Only suggest redirect for new entries (affected_rows = 1 means INSERT, 2 means UPDATE)
+        if ($result === 1) {
             // Auto-suggest redirects for new 404s
             $this->suggest_redirect($url);
         }

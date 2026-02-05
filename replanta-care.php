@@ -17,7 +17,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('RPCARE_VERSION', '1.1.6');
+define('RPCARE_VERSION', '1.2.0');
 define('RPCARE_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('RPCARE_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('RPCARE_PLUGIN_FILE', __FILE__);
@@ -63,7 +63,6 @@ class ReplantaCare {
         add_action('admin_bar_menu', [$this, 'add_admin_bar_menu'], 999);
         
         // AJAX actions
-        add_action('wp_ajax_rpcare_force_check', [$this, 'ajax_force_check']);
         add_action('wp_ajax_rpcare_force_backup', [$this, 'ajax_force_backup']);
         
         // Activation/Deactivation hooks
@@ -250,23 +249,25 @@ class ReplantaCare {
             return;
         }
         
-        $plan = get_option('rpcare_plan', '');
         $is_activated = $this->is_activated();
         
         if (!$is_activated) {
             return;
         }
+
+        // Use the same plan detection logic as settings page
+        $current_plan = RP_Care_Plan::get_current();
+        $plan_config = RP_Care_Plan::get_plan_config($current_plan);
+        $hub_connected = get_option('rpcare_hub_connected', false);
         
         // Get plan display name
-        $plan_names = [
-            'basic' => 'Básico',
-            'advanced' => 'Avanzado', 
-            'premium' => 'Premium'
-        ];
-        $plan_name = isset($plan_names[$plan]) ? $plan_names[$plan] : 'Detectando...';
+        if ($hub_connected && !empty($current_plan)) {
+            $plan_name = $plan_config['name'] ?? 'Plan no detectado';
+        } else {
+            $plan_name = 'Detectando...';
+        }
         
         // Show hub connection status
-        $hub_connected = get_option('rpcare_hub_connected', false);
         $status_text = $hub_connected ? '✅ Conectado al Hub Replanta' : '🔄 Detectando configuración...';
         
         // Main menu item
@@ -302,7 +303,7 @@ class ReplantaCare {
         ]);
         
         // Plan features
-        $features = $this->get_plan_features($plan);
+        $features = $this->get_plan_features($current_plan);
         foreach ($features as $feature) {
             $wp_admin_bar->add_menu([
                 'parent' => 'replanta-care',
@@ -324,30 +325,36 @@ class ReplantaCare {
     }
     
     private function get_plan_features($plan) {
-        $features = [
-            'basic' => [
-                'Actualizaciones automáticas',
-                'Monitoreo de seguridad básico',
-                'Reportes mensuales'
-            ],
-            'advanced' => [
-                'Actualizaciones automáticas',
-                'Monitoreo de seguridad avanzado', 
-                'Optimización de rendimiento',
-                'Backups automáticos',
-                'Reportes semanales'
-            ],
-            'premium' => [
-                'Actualizaciones automáticas',
-                'Monitoreo de seguridad completo',
-                'Optimización avanzada',
-                'Backups diarios',
-                'Soporte prioritario',
-                'Reportes en tiempo real'
-            ]
-        ];
+        if (empty($plan)) {
+            return ['Mantenimiento básico'];
+        }
         
-        return isset($features[$plan]) ? $features[$plan] : ['Mantenimiento básico'];
+        // Use RP_Care_Plan to get features
+        $features = RP_Care_Plan::get_features($plan);
+        $feature_list = [];
+        
+        if ($features['automatic_updates']) {
+            $feature_list[] = 'Actualizaciones automáticas';
+        }
+        
+        if ($features['backup']) {
+            $frequency = ucfirst($features['backup_frequency']);
+            $feature_list[] = "Backups {$frequency}";
+        }
+        
+        if ($features['security_monitoring']) {
+            $feature_list[] = 'Monitoreo de seguridad';
+        }
+        
+        if ($features['performance_optimization']) {
+            $feature_list[] = 'Optimización de rendimiento';
+        }
+        
+        if ($features['priority_support']) {
+            $feature_list[] = 'Soporte prioritario';
+        }
+        
+        return !empty($feature_list) ? $feature_list : ['Mantenimiento básico'];
     }
     
     public function activate() {
@@ -409,6 +416,7 @@ class ReplantaCare {
             user_agent text,
             ip varchar(45) DEFAULT '',
             suggested_redirect varchar(500),
+            suggestion_score decimal(5,2) DEFAULT NULL,
             status varchar(20) DEFAULT 'pending',
             PRIMARY KEY (id),
             UNIQUE KEY url (url),
@@ -441,6 +449,12 @@ class ReplantaCare {
         if (empty($ip_column)) {
             $wpdb->query("ALTER TABLE `$table_404` ADD COLUMN `ip` varchar(45) DEFAULT '' AFTER `user_agent`");
         }
+        
+        // Check if suggestion_score column exists, if not add it
+        $suggestion_score_column = $wpdb->get_results("SHOW COLUMNS FROM `$table_404` LIKE 'suggestion_score'");
+        if (empty($suggestion_score_column)) {
+            $wpdb->query("ALTER TABLE `$table_404` ADD COLUMN `suggestion_score` decimal(5,2) DEFAULT NULL AFTER `suggested_redirect`");
+        }
     }
     
     public function is_activated() {
@@ -465,33 +479,7 @@ class ReplantaCare {
                get_option('rpcare_token', '') !== '' && 
                $plan !== '';
     }
-    
-    /**
-     * AJAX handler for force check
-     */
-    public function ajax_force_check() {
-        check_ajax_referer('rpcare_ajax', 'nonce');
-        
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error('Permisos insuficientes');
-        }
-        
-        // Run health check
-        if (class_exists('RP_Care_Task_Health')) {
-            $health_task = new RP_Care_Task_Health();
-            $result = $health_task->run();
-            
-            if ($result) {
-                update_option('rpcare_last_check', current_time('mysql'));
-                wp_send_json_success('Verificación completada exitosamente');
-            } else {
-                wp_send_json_error('Error durante la verificación');
-            }
-        } else {
-            wp_send_json_error('Tarea de salud no disponible');
-        }
-    }
-    
+
     /**
      * AJAX handler for force backup
      */

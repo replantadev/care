@@ -3,7 +3,7 @@
  * Plugin Name: Replanta Care
  * Plugin URI: https://replanta.dev
  * Description: Plugin de mantenimiento WordPress automático para clientes de Replanta con integración completa Hub
- * Version: 1.2.8
+ * Version: 1.2.9
  * Author: Replanta
  * Author URI: https://replanta.dev
  * License: GPL v2 or later
@@ -22,7 +22,7 @@ define('RPCARE_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('RPCARE_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('RPCARE_PLUGIN_FILE', __FILE__);
 
-// Auto-updates from GitHub releases
+// Auto-updates from GitHub (branch-based)
 if (file_exists(RPCARE_PLUGIN_PATH . 'vendor/autoload.php')) {
     require_once RPCARE_PLUGIN_PATH . 'vendor/autoload.php';
     
@@ -32,8 +32,10 @@ if (file_exists(RPCARE_PLUGIN_PATH . 'vendor/autoload.php')) {
             __FILE__,
             'replanta-care'
         );
-        // Use GitHub releases (tags like v1.2.6)
-        $updateChecker->getVcsApi()->enableReleaseAssets();
+        // Compare version from main branch header
+        $updateChecker->setBranch('main');
+        // Check more frequently (every 6 hours)
+        $updateChecker->setCheckPeriod(6);
     } catch (Exception $e) {
         error_log('Replanta Care: Update checker failed - ' . $e->getMessage());
     }

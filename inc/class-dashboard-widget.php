@@ -660,5 +660,6 @@ class RP_Care_Dashboard_Widget {
     }
 }
 
-// Initialize dashboard widget
-new RP_Care_Dashboard_Widget();
+// DISABLED: Duplicate dashboard widget - functionality consolidated in class-dashboard.php
+// Uncomment only if class-dashboard.php is not loaded
+// new RP_Care_Dashboard_Widget();

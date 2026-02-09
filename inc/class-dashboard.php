@@ -14,7 +14,7 @@ class RP_Care_Dashboard {
         add_action('wp_dashboard_setup', [$this, 'add_dashboard_widget']);
         add_action('admin_enqueue_scripts', [$this, 'enqueue_assets']);
         add_action('wp_ajax_rpcare_get_dashboard_data', [$this, 'ajax_get_dashboard_data']);
-        add_action('wp_ajax_rpcare_run_task', [$this, 'ajax_run_task']);
+        // Note: rpcare_run_task handler is in settings-page.php - avoid duplicate
         add_action('wp_ajax_rpcare_get_backups', [$this, 'ajax_get_backups']);
         add_action('wp_ajax_rpcare_create_backup', [$this, 'ajax_create_backup']);
         add_action('wp_ajax_rpcare_get_updates', [$this, 'ajax_get_updates']);
@@ -656,14 +656,22 @@ class RP_Care_Dashboard {
     private function get_updraftplus_backups() {
         $backups = [];
         
-        if (function_exists('updraftplus_backup_history')) {
-            $history = updraftplus_backup_history();
+        // Use correct UpdraftPlus API - class method instead of non-existent global function
+        if (class_exists('UpdraftPlus_Backup_History')) {
+            $history = UpdraftPlus_Backup_History::get_history();
             
             foreach ($history as $timestamp => $backup) {
+                $size = 0;
+                // Calculate total size from backup sets
+                if (isset($backup['db-size'])) $size += $backup['db-size'];
+                if (isset($backup['plugins-size'])) $size += $backup['plugins-size'];
+                if (isset($backup['themes-size'])) $size += $backup['themes-size'];
+                if (isset($backup['uploads-size'])) $size += $backup['uploads-size'];
+                
                 $backups[] = [
                     'date' => date('Y-m-d H:i:s', $timestamp),
-                    'size' => $this->format_bytes($backup['size'] ?? 0),
-                    'type' => $backup['type'] ?? 'full'
+                    'size' => $this->format_bytes($size),
+                    'type' => isset($backup['db']) ? 'full' : 'partial'
                 ];
             }
         }
@@ -767,7 +775,7 @@ class RP_Care_Dashboard {
         $site_url = get_site_url();
         $domain = parse_url($site_url, PHP_URL_HOST);
         
-        $response = wp_remote_post(RP_Care_Plan::HUB_URL . '/wp-json/replanta/v1/sites/heartbeat', [
+        $response = wp_remote_post(RP_Care_Plan::get_hub_url() . '/wp-json/replanta/v1/sites/heartbeat', [
             'headers' => [
                 'Content-Type' => 'application/json',
                 'X-Site-Domain' => $domain,
@@ -812,8 +820,12 @@ class RP_Care_Dashboard {
     }
     
     private function create_updraftplus_backup() {
-        if (function_exists('updraftplus_backup_now')) {
-            updraftplus_backup_now();
+        // Use correct UpdraftPlus API - global instance method
+        global $updraftplus;
+        
+        if (class_exists('UpdraftPlus') && is_object($updraftplus)) {
+            // Trigger backup via UpdraftPlus
+            $updraftplus->boot_backup(true, true); // (true = include db, true = include files)
             update_option('rpcare_last_backup', current_time('mysql'));
             return true;
         }

@@ -29,7 +29,7 @@ echo '<table border="1" cellpadding="10">';
 echo '<tr><th>Setting</th><th>Current Value</th><th>Required Value</th></tr>';
 
 $required_config = [
-    'hub_url' => 'http://repo.local',
+    'hub_url' => 'https://sitios.replanta.dev',
     'site_token' => '[DEBE SER CONFIGURADO]'
 ];
 
@@ -49,7 +49,7 @@ echo '</table>';
 // Auto-configurar si se solicita
 if (isset($_GET['auto_configure'])) {
     $new_options = $current_options;
-    $new_options['hub_url'] = 'http://repo.local';
+    $new_options['hub_url'] = 'https://sitios.replanta.dev';
     
     // Mantener el token existente si ya está configurado
     if (empty($new_options['site_token'])) {
@@ -57,7 +57,7 @@ if (isset($_GET['auto_configure'])) {
             <p><strong>⚠️ ATENCIÓN:</strong> No se puede configurar automáticamente el token.</p>
             <p>Debes obtener el token desde el HUB:</p>
             <ol>
-                <li>Ve al HUB (http://repo.local/wp-admin)</li>
+                <li>Ve al HUB (https://sitios.replanta.dev/wp-admin)</li>
                 <li>Ve a Replanta HUB → Sites</li>
                 <li>Añade un nuevo sitio con la URL: <strong>' . site_url() . '</strong></li>
                 <li>Copia el token que se genere</li>

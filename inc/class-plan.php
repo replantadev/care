@@ -17,7 +17,17 @@ class RP_Care_Plan {
     const PLAN_RAIZ = 'raiz';
     const PLAN_ECOSISTEMA = 'ecosistema';
     
-    const HUB_URL = 'http://repo.local';
+    /**
+     * Get Hub URL from options with fallback
+     * @return string
+     */
+    public static function get_hub_url() {
+        $options = get_option('rpcare_options', []);
+        return !empty($options['hub_url']) ? rtrim($options['hub_url'], '/') : 'https://sitios.replanta.dev';
+    }
+    
+    // @deprecated Use get_hub_url() instead
+    const HUB_URL = 'https://sitios.replanta.dev';
     
     private static $plan_configs = [
         self::PLAN_BASIC => [

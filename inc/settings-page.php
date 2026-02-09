@@ -216,6 +216,178 @@ class RP_Care_Settings_Page {
             color: #666;
             margin-left: 10px;
         }
+        
+        /* Plan Selection Cards */
+        .rpcare-plans-wrapper {
+            max-width: 1200px;
+            margin: 20px 0;
+        }
+        .rpcare-plans-intro {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 6px;
+            padding: 15px;
+            margin-bottom: 20px;
+            color: #856404;
+        }
+        .rpcare-plans-cards {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            margin-top: 20px;
+        }
+        .rpcare-plan-card {
+            flex: 1;
+            min-width: 300px;
+            background: #fff;
+            border: 2px solid #e1e5e9;
+            border-radius: 12px;
+            overflow: hidden;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+        .rpcare-plan-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.1);
+        }
+        .rpcare-plan-card.selected {
+            border-color: #0073aa;
+            box-shadow: 0 0 0 1px #0073aa;
+        }
+        .rpcare-plan-card.plan-featured {
+            border-color: #d63384;
+            position: relative;
+        }
+        .rpcare-plan-card.plan-featured .featured-label {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: #d63384;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .plan-header {
+            padding: 25px 20px 20px;
+            text-align: center;
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        }
+        .plan-header h3 {
+            margin: 0 0 8px;
+            font-size: 24px;
+            font-weight: 700;
+            color: #2c3e50;
+        }
+        .plan-sub {
+            margin: 0 0 15px;
+            color: #6c757d;
+            font-size: 14px;
+        }
+        .plan-price {
+            font-size: 28px;
+            font-weight: 700;
+            color: #0073aa;
+        }
+        .plan-price small {
+            font-size: 16px;
+            color: #6c757d;
+            font-weight: 400;
+        }
+        .plan-features {
+            list-style: none;
+            padding: 20px;
+            margin: 0;
+        }
+        .plan-features li {
+            display: flex;
+            align-items: flex-start;
+            padding: 8px 0;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+        .check-icon {
+            color: #28a745;
+            margin-right: 10px;
+            font-weight: 600;
+            flex-shrink: 0;
+        }
+        .plan-cta {
+            padding: 20px;
+            border-top: 1px solid #e9ecef;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .plan-selector {
+            cursor: pointer;
+            display: block;
+        }
+        .plan-selector input[type='radio'] {
+            display: none;
+        }
+        .plan-btn {
+            display: block;
+            width: 100%;
+            padding: 12px 20px;
+            background: #f8f9fa;
+            border: 2px solid #e9ecef;
+            border-radius: 6px;
+            color: #495057;
+            text-decoration: none;
+            text-align: center;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        .plan-btn:hover, .plan-selector:hover .plan-btn {
+            background: #e9ecef;
+            border-color: #0073aa;
+            color: #0073aa;
+            text-decoration: none;
+        }
+        .plan-btn.primary {
+            background: #0073aa;
+            border-color: #0073aa;
+            color: white;
+        }
+        .plan-btn.primary:hover, .plan-selector:hover .plan-btn.primary {
+            background: #005a87;
+            border-color: #005a87;
+            color: white;
+        }
+        .plan-selector input[type='radio']:checked + .plan-btn {
+            background: #0073aa;
+            border-color: #0073aa;
+            color: white;
+        }
+        .plan-btn-external {
+            display: block;
+            padding: 8px 20px;
+            background: transparent;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            color: #6c757d;
+            text-decoration: none;
+            text-align: center;
+            font-size: 13px;
+            transition: all 0.3s ease;
+        }
+        .plan-btn-external:hover {
+            background: #f8f9fa;
+            color: #495057;
+            text-decoration: none;
+        }
+        
+        @media (max-width: 768px) {
+            .rpcare-plans-cards {
+                flex-direction: column;
+            }
+            .rpcare-plan-card {
+                min-width: auto;
+            }
+        }
         ";
         wp_add_inline_style('rpcare-admin', $css);
     }
@@ -252,6 +424,8 @@ class RP_Care_Settings_Page {
                     <span class="version">v<?php echo RPCARE_VERSION; ?></span>
                 </div>
             </div>
+            
+            <?php settings_errors('rpcare_messages'); ?>
             
             <?php if (isset($_GET['settings-updated'])): ?>
                 <div class="notice notice-success is-dismissible">
@@ -473,25 +647,97 @@ class RP_Care_Settings_Page {
             </p>
             <?php
         } else {
-            // Fallback: Show manual selector if not connected
-            $options = get_option('rpcare_options', []);
-            $current_manual = isset($options['plan']) ? $options['plan'] : 'semilla';
-            $plans = [
-                'semilla' => 'Semilla (€49/mes)',
-                'raiz' => 'Raíz (€89/mes)',
-                'ecosistema' => 'Ecosistema (€149/mes)'
-            ];
-            ?>
-            <select name="rpcare_options[plan]">
-                <?php foreach ($plans as $value => $label): ?>
-                    <option value="<?php echo esc_attr($value); ?>" <?php selected($current_manual, $value); ?>>
-                        <?php echo esc_html($label); ?>
-                    </option>
-                <?php endforeach; ?>
-            </select>
-            <p class="description">⚠️ Conecta con el Hub para detección automática del plan.</p>
-            <?php
+            // Show plan selection cards when not connected
+            $this->render_plan_selection();
         }
+    }
+    
+    private function render_plan_selection() {
+        $options = get_option('rpcare_options', []);
+        $current_manual = isset($options['plan']) ? $options['plan'] : 'semilla';
+        ?>
+        <div class="rpcare-plans-wrapper">
+            <p class="rpcare-plans-intro">
+                <strong>⚠️ No estás conectado al Hub Replanta.</strong><br>
+                Selecciona tu plan para configurar las características correspondientes, o conecta con el Hub para detección automática.
+            </p>
+            
+            <div class="rpcare-plans-cards">
+                
+                <!-- Plan Semilla -->
+                <div class="rpcare-plan-card <?php echo $current_manual === 'semilla' ? 'selected' : ''; ?>">
+                    <div class="plan-header">
+                        <h3>Plan Semilla</h3>
+                        <p class="plan-sub">Ideal para webs pequeñas pero importantes</p>
+                        <span class="plan-price">49€ <small>/mes</small></span>
+                    </div>
+                    <ul class="plan-features">
+                        <li><span class="check-icon">✔</span> Actualizaciones mensuales</li>
+                        <li><span class="check-icon">✔</span> Copias de seguridad semanales</li>
+                        <li><span class="check-icon">✔</span> Optimización básica WPO</li>
+                        <li><span class="check-icon">✔</span> Revisión trimestral de rendimiento</li>
+                        <li><span class="check-icon">✔</span> Soporte por email</li>
+                    </ul>
+                    <div class="plan-cta">
+                        <label class="plan-selector">
+                            <input type="radio" name="rpcare_options[plan]" value="semilla" <?php checked($current_manual, 'semilla'); ?>>
+                            <span class="plan-btn">Seleccionar este plan</span>
+                        </label>
+                        <a href="https://clientes.replanta.dev/order/product?pid=2e071d93-1d5e-4689-305b-646028758396" class="plan-btn-external" target="_blank" rel="nofollow noopener">Contratar plan</a>
+                    </div>
+                </div>
+
+                <!-- Plan Raíz -->
+                <div class="rpcare-plan-card plan-featured <?php echo $current_manual === 'raiz' ? 'selected' : ''; ?>">
+                    <div class="plan-header">
+                        <div class="featured-label">Más contratado</div>
+                        <h3>Plan Raíz</h3>
+                        <p class="plan-sub">Para empresas que viven de su web</p>
+                        <span class="plan-price">89€ <small>/mes</small></span>
+                    </div>
+                    <ul class="plan-features">
+                        <li><span class="check-icon">✔</span> Todo lo del plan Semilla</li>
+                        <li><span class="check-icon">✔</span> Actualizaciones semanales</li>
+                        <li><span class="check-icon">✔</span> Soporte prioritario</li>
+                        <li><span class="check-icon">✔</span> Monitorización 24/7</li>
+                        <li><span class="check-icon">✔</span> Revisión SEO + WPO mensual</li>
+                        <li><span class="check-icon">✔</span> Informes de estado mensuales</li>
+                    </ul>
+                    <div class="plan-cta">
+                        <label class="plan-selector">
+                            <input type="radio" name="rpcare_options[plan]" value="raiz" <?php checked($current_manual, 'raiz'); ?>>
+                            <span class="plan-btn primary">Seleccionar este plan</span>
+                        </label>
+                        <a href="https://clientes.replanta.dev/order/product?pid=d5308768-251d-4852-057a-147e390921e6" class="plan-btn-external" target="_blank" rel="nofollow noopener">Contratar plan</a>
+                    </div>
+                </div>
+
+                <!-- Plan Ecosistema -->
+                <div class="rpcare-plan-card <?php echo $current_manual === 'ecosistema' ? 'selected' : ''; ?>">
+                    <div class="plan-header">
+                        <h3>Plan Ecosistema</h3>
+                        <p class="plan-sub">Para proyectos que exigen velocidad y evolución</p>
+                        <span class="plan-price">149€ <small>/mes</small></span>
+                    </div>
+                    <ul class="plan-features">
+                        <li><span class="check-icon">✔</span> Todo lo del plan Raíz</li>
+                        <li><span class="check-icon">✔</span> Consultoría técnica trimestral</li>
+                        <li><span class="check-icon">✔</span> <strong>Hosting ecológico incluido</strong></li>
+                        <li><span class="check-icon">✔</span> Auditoría SEO/WPO trimestral</li>
+                        <li><span class="check-icon">✔</span> CDN y optimización avanzada</li>
+                    </ul>
+                    <div class="plan-cta">
+                        <label class="plan-selector">
+                            <input type="radio" name="rpcare_options[plan]" value="ecosistema" <?php checked($current_manual, 'ecosistema'); ?>>
+                            <span class="plan-btn">Seleccionar este plan</span>
+                        </label>
+                        <a href="https://clientes.replanta.dev/order/product?pid=2e071d93-1d5e-4689-088f-646028758396" class="plan-btn-external" target="_blank" rel="nofollow noopener">Contratar plan</a>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+        <?php
     }
     
     public function auto_updates_field() {
@@ -614,6 +860,14 @@ class RP_Care_Settings_Page {
         if (isset($input['notification_types'])) {
             $sanitized['notification_types'] = array_map('sanitize_text_field', $input['notification_types']);
         }
+        
+        // Add success message/toast
+        add_settings_error(
+            'rpcare_messages',
+            'rpcare_message',
+            '¡Configuración guardada exitosamente!',
+            'success'
+        );
         
         return $sanitized;
     }

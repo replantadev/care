@@ -109,9 +109,7 @@ class RP_Care_Dashboard {
             <!-- Header -->
             <div class="rpcare-header">
                 <div class="rpcare-brand">
-                    <svg class="rpcare-logo" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
+                    <img src="<?php echo RPCARE_PLUGIN_URL; ?>assets/img/ico.png" alt="Replanta" class="rpcare-logo">
                     <div class="rpcare-brand-text">
                         <span class="rpcare-title">Mantenimiento Activo</span>
                         <span class="rpcare-plan-label"><?php echo esc_html($plan_name); ?></span>
@@ -521,11 +519,18 @@ class RP_Care_Dashboard {
     
     private function get_widget_styles() {
         return '
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:wght@600&display=swap");
+
 #rpcare_dashboard .inside { padding: 0; margin: 0; }
 #rpcare_dashboard .postbox-header { display: none; }
 
 .rpcare-widget {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+    --rp-primary: #1E2F23;
+    --rp-accent: #93F1C9;
+    --rp-text: #7A7A7A;
+    --rp-teal: #41999F;
+    --rp-yellow: #F7D450;
 }
 
 .rpcare-header {
@@ -533,7 +538,7 @@ class RP_Care_Dashboard {
     justify-content: space-between;
     align-items: center;
     padding: 20px;
-    background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%);
+    background: var(--rp-primary);
     color: #fff;
 }
 
@@ -544,9 +549,9 @@ class RP_Care_Dashboard {
 }
 
 .rpcare-logo {
-    width: 32px;
-    height: 32px;
-    color: #4fd1c5;
+    width: 36px;
+    height: 36px;
+    object-fit: contain;
 }
 
 .rpcare-brand-text {
@@ -555,14 +560,16 @@ class RP_Care_Dashboard {
 }
 
 .rpcare-title {
-    font-size: 14px;
+    font-family: "Fraunces", Georgia, serif;
+    font-size: 15px;
     font-weight: 600;
-    letter-spacing: -0.01em;
+    letter-spacing: -0.02em;
+    color: #fff;
 }
 
 .rpcare-plan-label {
     font-size: 11px;
-    opacity: 0.85;
+    color: var(--rp-accent);
     text-transform: uppercase;
     letter-spacing: 0.05em;
 }
@@ -574,24 +581,24 @@ class RP_Care_Dashboard {
     font-size: 12px;
     padding: 6px 12px;
     border-radius: 20px;
-    background: rgba(255,255,255,0.15);
+    background: rgba(147, 241, 201, 0.15);
 }
 
 .status-dot {
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: #4fd1c5;
+    background: var(--rp-accent);
 }
 
-.status-ok .status-dot { background: #48bb78; }
-.status-warning .status-dot { background: #ed8936; }
+.status-ok .status-dot { background: var(--rp-accent); }
+.status-warning .status-dot { background: var(--rp-yellow); }
 
 .rpcare-metrics {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
     gap: 1px;
-    background: #e2e8f0;
+    background: #e8ebe9;
 }
 
 .rpcare-metric {
@@ -608,9 +615,9 @@ class RP_Care_Dashboard {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: #f7fafc;
+    background: rgba(147, 241, 201, 0.15);
     border-radius: 8px;
-    color: #4a5568;
+    color: var(--rp-teal);
 }
 
 .metric-icon svg {
@@ -626,7 +633,7 @@ class RP_Care_Dashboard {
 
 .metric-label {
     font-size: 11px;
-    color: #718096;
+    color: var(--rp-text);
     text-transform: uppercase;
     letter-spacing: 0.03em;
 }
@@ -634,19 +641,19 @@ class RP_Care_Dashboard {
 .metric-value {
     font-size: 14px;
     font-weight: 600;
-    color: #2d3748;
+    color: var(--rp-primary);
 }
 
 .metric-score {
-    color: #38a169;
+    color: var(--rp-teal);
 }
 
 .rpcare-info-bar {
     display: flex;
     justify-content: space-around;
     padding: 12px 16px;
-    background: #f7fafc;
-    border-top: 1px solid #e2e8f0;
+    background: #f8faf9;
+    border-top: 1px solid #e8ebe9;
 }
 
 .info-item {
@@ -658,14 +665,14 @@ class RP_Care_Dashboard {
 
 .info-label {
     font-size: 10px;
-    color: #a0aec0;
+    color: var(--rp-text);
     text-transform: uppercase;
 }
 
 .info-value {
     font-size: 13px;
     font-weight: 500;
-    color: #4a5568;
+    color: var(--rp-primary);
 }
 
 .rpcare-notice {
@@ -673,17 +680,17 @@ class RP_Care_Dashboard {
     align-items: center;
     gap: 10px;
     padding: 12px 16px;
-    background: #fffbeb;
-    border-top: 1px solid #fef3c7;
+    background: rgba(247, 212, 80, 0.12);
+    border-top: 1px solid rgba(247, 212, 80, 0.3);
     font-size: 12px;
-    color: #92400e;
+    color: #8a6d00;
 }
 
 .rpcare-notice svg {
     width: 16px;
     height: 16px;
     flex-shrink: 0;
-    color: #d97706;
+    color: var(--rp-yellow);
 }
 
 .rpcare-footer {
@@ -692,7 +699,7 @@ class RP_Care_Dashboard {
     align-items: center;
     padding: 14px 16px;
     background: #fff;
-    border-top: 1px solid #e2e8f0;
+    border-top: 1px solid #e8ebe9;
 }
 
 .rpcare-link {
@@ -701,13 +708,13 @@ class RP_Care_Dashboard {
     gap: 6px;
     font-size: 13px;
     font-weight: 500;
-    color: #3182ce;
+    color: var(--rp-teal);
     text-decoration: none;
     transition: color 0.15s;
 }
 
 .rpcare-link:hover {
-    color: #2c5282;
+    color: var(--rp-primary);
 }
 
 .rpcare-link svg {
@@ -717,13 +724,15 @@ class RP_Care_Dashboard {
 
 .rpcare-version {
     font-size: 11px;
-    color: #a0aec0;
+    color: var(--rp-text);
 }
 
-/* Plan-specific header colors */
-.rpcare-widget[data-plan="semilla"] .rpcare-header { background: linear-gradient(135deg, #276749 0%, #38a169 100%); }
-.rpcare-widget[data-plan="raiz"] .rpcare-header { background: linear-gradient(135deg, #744210 0%, #dd6b20 100%); }
-.rpcare-widget[data-plan="ecosistema"] .rpcare-header { background: linear-gradient(135deg, #553c9a 0%, #805ad5 100%); }
+/* All plans use the same dark header now */
+.rpcare-widget[data-plan="semilla"] .rpcare-header,
+.rpcare-widget[data-plan="raiz"] .rpcare-header,
+.rpcare-widget[data-plan="ecosistema"] .rpcare-header { 
+    background: var(--rp-primary); 
+}
         ';
     }
 }

@@ -642,7 +642,7 @@ class RP_Care_Settings_Page {
                 <input type="hidden" name="rpcare_options[plan]" value="<?php echo esc_attr($current); ?>">
             </div>
             <p class="description">
-                ✅ Plan detectado automáticamente desde el Hub Replanta. 
+                Plan detectado automáticamente desde el Hub Replanta. 
                 <a href="#" onclick="jQuery('#test-connection').click(); return false;">Actualizar plan</a>
             </p>
             <?php
@@ -976,6 +976,9 @@ class RP_Care_Settings_Page {
                 break;
             case '404':
                 $result = class_exists('RP_Care_Task_404') ? call_user_func(array('RP_Care_Task_404', 'cleanup'), ['manual' => true]) : ['success' => false, 'message' => '404 task not available'];
+                break;
+            case 'sync':
+                $result = $this->sync_with_hub();
                 break;
             default:
                 wp_send_json_error('Tarea no válida');
@@ -1393,5 +1396,47 @@ class RP_Care_Settings_Page {
     private function check_custom_login_url() {
         return get_option('rpcare_custom_login_url', false) || 
                is_plugin_active('wps-hide-login/wps-hide-login.php');
+    }
+    
+    /**
+     * Sync site data with Replanta Hub
+     */
+    private function sync_with_hub() {
+        $site_url = get_site_url();
+        $domain = parse_url($site_url, PHP_URL_HOST);
+        $hub_url = class_exists('RP_Care_Plan') ? RP_Care_Plan::get_hub_url() : 'https://sitios.replanta.dev';
+        
+        $response = wp_remote_post($hub_url . '/wp-json/replanta/v1/sites/heartbeat', [
+            'headers' => [
+                'Content-Type' => 'application/json',
+                'X-Site-Domain' => $domain,
+                'User-Agent' => 'Replanta-Care/' . RPCARE_VERSION
+            ],
+            'body' => json_encode([
+                'domain' => $domain,
+                'wp_version' => get_bloginfo('version'),
+                'plugin_version' => RPCARE_VERSION,
+                'php_version' => PHP_VERSION,
+                'last_update' => get_option('rpcare_last_update'),
+                'last_backup' => get_option('rpcare_last_backup'),
+                'plan' => get_option('rpcare_plan', 'unknown')
+            ]),
+            'timeout' => 30,
+            'sslverify' => true
+        ]);
+        
+        if (is_wp_error($response)) {
+            error_log('Care: Sync error - ' . $response->get_error_message());
+            return ['success' => false, 'message' => 'Error de conexión: ' . $response->get_error_message()];
+        }
+        
+        $code = wp_remote_retrieve_response_code($response);
+        
+        if ($code === 200) {
+            update_option('rpcare_last_sync', current_time('mysql'));
+            return ['success' => true, 'message' => 'Sincronización completada'];
+        }
+        
+        return ['success' => false, 'message' => 'Error del servidor Hub (código ' . $code . ')'];
     }
 }

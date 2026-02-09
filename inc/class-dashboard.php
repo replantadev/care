@@ -1,7 +1,10 @@
 <?php
 /**
- * Care Dashboard Widget
- * Main dashboard interface for clients
+ * Replanta Care Dashboard Widget
+ * Premium dashboard interface for maintenance clients
+ * 
+ * @package ReplantaCare
+ * @since 1.2.5
  */
 
 if (!defined('ABSPATH')) {
@@ -10,15 +13,37 @@ if (!defined('ABSPATH')) {
 
 class RP_Care_Dashboard {
     
+    private static $instance = null;
+    
+    public static function get_instance() {
+        if (self::$instance === null) {
+            self::$instance = new self();
+        }
+        return self::$instance;
+    }
+    
     public function __construct() {
-        add_action('wp_dashboard_setup', [$this, 'add_dashboard_widget']);
+        add_action('wp_dashboard_setup', [$this, 'add_dashboard_widget'], 1);
         add_action('admin_enqueue_scripts', [$this, 'enqueue_assets']);
         add_action('wp_ajax_rpcare_get_dashboard_data', [$this, 'ajax_get_dashboard_data']);
-        // Note: rpcare_run_task handler is in settings-page.php - avoid duplicate
-        add_action('wp_ajax_rpcare_get_backups', [$this, 'ajax_get_backups']);
         add_action('wp_ajax_rpcare_create_backup', [$this, 'ajax_create_backup']);
-        add_action('wp_ajax_rpcare_get_updates', [$this, 'ajax_get_updates']);
         add_action('wp_ajax_rpcare_get_health_report', [$this, 'ajax_get_health_report']);
+        
+        // Silent background sync on admin init
+        add_action('admin_init', [$this, 'maybe_background_sync']);
+    }
+    
+    /**
+     * Background sync - runs silently every 6 hours
+     */
+    public function maybe_background_sync() {
+        $last_sync = get_option('rpcare_last_sync_timestamp', 0);
+        $six_hours = 6 * HOUR_IN_SECONDS;
+        
+        if (time() - $last_sync > $six_hours) {
+            $this->sync_with_hub_silent();
+            update_option('rpcare_last_sync_timestamp', time());
+        }
     }
     
     public function add_dashboard_widget() {
@@ -30,8 +55,12 @@ class RP_Care_Dashboard {
         
         wp_add_dashboard_widget(
             'rpcare_dashboard',
-            '🛡️ Replanta Care - Estado del Mantenimiento',
-            [$this, 'render_dashboard_widget']
+            'Replanta Care',
+            [$this, 'render_dashboard_widget'],
+            null,
+            null,
+            'normal',
+            'high'
         );
     }
     
@@ -40,12 +69,8 @@ class RP_Care_Dashboard {
             return;
         }
         
-        wp_enqueue_style(
-            'rpcare-dashboard',
-            RPCARE_PLUGIN_URL . 'assets/css/dashboard.css',
-            [],
-            RPCARE_VERSION
-        );
+        // Inline styles - no external CSS needed
+        add_action('admin_head', [$this, 'output_inline_styles']);
         
         wp_enqueue_script(
             'rpcare-dashboard',
@@ -55,727 +80,318 @@ class RP_Care_Dashboard {
             true
         );
         
-        wp_localize_script('rpcare-dashboard', 'rpcare_dashboard', [
+        wp_localize_script('rpcare-dashboard', 'rpcare', [
             'ajax_url' => admin_url('admin-ajax.php'),
             'nonce' => wp_create_nonce('rpcare_ajax'),
-            'strings' => [
+            'i18n' => [
                 'loading' => 'Cargando...',
-                'error' => 'Error al cargar datos',
-                'success' => 'Operación completada',
-                'backup_created' => 'Copia de seguridad creada',
-                'task_running' => 'Ejecutando tarea...'
+                'error' => 'Error al procesar',
+                'success' => 'Completado',
+                'backup_started' => 'Copia de seguridad iniciada',
+                'syncing' => 'Sincronizando...'
             ]
         ]);
+    }
+    
+    public function output_inline_styles() {
+        echo '<style>' . $this->get_widget_styles() . '</style>';
     }
     
     public function render_dashboard_widget() {
         $plan = RP_Care_Plan::get_current();
         $plan_name = RP_Care_Plan::get_plan_name($plan);
         $features = RP_Care_Plan::get_features($plan);
+        $status = $this->get_status_data();
         
         ?>
-        <div class="rpcare-dashboard-widget">
-            <div class="rpcare-plan-info">
-                <h3>Plan Activo: <?php echo esc_html($plan_name); ?></h3>
-                <span class="rpcare-plan-badge rpcare-plan-<?php echo esc_attr($plan); ?>">
-                    <?php echo esc_html($plan_name); ?>
-                </span>
+        <div class="rpcare-widget" data-plan="<?php echo esc_attr($plan); ?>">
+            
+            <!-- Header -->
+            <div class="rpcare-header">
+                <div class="rpcare-brand">
+                    <svg class="rpcare-logo" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                    <div class="rpcare-brand-text">
+                        <span class="rpcare-title">Mantenimiento Activo</span>
+                        <span class="rpcare-plan-label"><?php echo esc_html($plan_name); ?></span>
+                    </div>
+                </div>
+                <div class="rpcare-status-indicator <?php echo $status['healthy'] ? 'status-ok' : 'status-warning'; ?>">
+                    <span class="status-dot"></span>
+                    <span class="status-text"><?php echo $status['healthy'] ? 'Todo en orden' : 'Requiere atención'; ?></span>
+                </div>
             </div>
             
-            <div class="rpcare-dashboard-tabs">
-                <div class="rpcare-tab-nav">
-                    <button class="rpcare-tab-btn active" data-tab="status">Estado General</button>
-                    <?php if ($features['backup']): ?>
-                    <button class="rpcare-tab-btn" data-tab="backups">Copias de Seguridad</button>
-                    <?php endif; ?>
-                    <button class="rpcare-tab-btn" data-tab="updates">Actualizaciones</button>
-                    <button class="rpcare-tab-btn" data-tab="health">Salud del Sitio</button>
+            <!-- Metrics Grid -->
+            <div class="rpcare-metrics">
+                
+                <!-- Last Backup -->
+                <div class="rpcare-metric">
+                    <div class="metric-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/>
+                            <polyline points="17,21 17,13 7,13 7,21"/>
+                            <polyline points="7,3 7,8 15,8"/>
+                        </svg>
+                    </div>
+                    <div class="metric-content">
+                        <span class="metric-label">Última copia</span>
+                        <span class="metric-value" id="rpcare-backup-time"><?php echo esc_html($status['last_backup']); ?></span>
+                    </div>
                 </div>
                 
-                <div class="rpcare-tab-content">
-                    <!-- Status Tab -->
-                    <div class="rpcare-tab-panel active" id="rpcare-tab-status">
-                        <div class="rpcare-status-grid">
-                            <div class="rpcare-status-card">
-                                <div class="rpcare-status-icon">🔄</div>
-                                <div class="rpcare-status-info">
-                                    <h4>Última Actualización</h4>
-                                    <p id="rpcare-last-update">Cargando...</p>
-                                    <small>Frecuencia: <?php echo esc_html($features['updates_frequency']); ?></small>
-                                </div>
-                            </div>
-                            
-                            <div class="rpcare-status-card">
-                                <div class="rpcare-status-icon">💾</div>
-                                <div class="rpcare-status-info">
-                                    <h4>Última Copia de Seguridad</h4>
-                                    <p id="rpcare-last-backup">Cargando...</p>
-                                    <small>Frecuencia: <?php echo esc_html($features['backup_frequency']); ?></small>
-                                </div>
-                            </div>
-                            
-                            <div class="rpcare-status-card">
-                                <div class="rpcare-status-icon">⚡</div>
-                                <div class="rpcare-status-info">
-                                    <h4>Optimización WPO</h4>
-                                    <p id="rpcare-wpo-status">Cargando...</p>
-                                    <small>Nivel: <?php echo esc_html($features['wpo_level']); ?></small>
-                                </div>
-                            </div>
-                            
-                            <?php if ($features['monitoring']): ?>
-                            <div class="rpcare-status-card">
-                                <div class="rpcare-status-icon">📊</div>
-                                <div class="rpcare-status-info">
-                                    <h4>Monitoreo 24/7</h4>
-                                    <p id="rpcare-monitoring-status">Activo</p>
-                                    <small>Estado: En línea</small>
-                                </div>
-                            </div>
-                            <?php endif; ?>
-                        </div>
-                        
-                        <div class="rpcare-actions">
-                            <button type="button" class="button button-primary" onclick="rpcareRunTask('sync')">
-                                🔄 Sincronizar con Hub
-                            </button>
-                            <button type="button" class="button" onclick="rpcareRefreshData()">
-                                ↻ Actualizar Datos
-                            </button>
-                        </div>
+                <!-- Last Update -->
+                <div class="rpcare-metric">
+                    <div class="metric-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="23,4 23,10 17,10"/>
+                            <path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/>
+                        </svg>
                     </div>
-                    
-                    <!-- Backups Tab -->
-                    <?php if ($features['backup']): ?>
-                    <div class="rpcare-tab-panel" id="rpcare-tab-backups">
-                        <div class="rpcare-backups-header">
-                            <h4>Gestión de Copias de Seguridad</h4>
-                            <button type="button" class="button button-secondary" onclick="rpcareCreateBackup()">
-                                💾 Crear Copia Ahora
-                            </button>
-                        </div>
-                        
-                        <div id="rpcare-backups-list">
-                            <p>Cargando copias de seguridad...</p>
-                        </div>
-                        
-                        <div class="rpcare-backup-info">
-                            <h5>Información del Plan:</h5>
-                            <ul>
-                                <li>Frecuencia: <?php echo esc_html($features['backup_frequency']); ?></li>
-                                <li>Retención: 30 días</li>
-                                <li>Restauración: Contactar soporte</li>
-                            </ul>
-                        </div>
+                    <div class="metric-content">
+                        <span class="metric-label">Última actualización</span>
+                        <span class="metric-value" id="rpcare-update-time"><?php echo esc_html($status['last_update']); ?></span>
                     </div>
-                    <?php endif; ?>
-                    
-                    <!-- Updates Tab -->
-                    <div class="rpcare-tab-panel" id="rpcare-tab-updates">
-                        <div class="rpcare-updates-header">
-                            <h4>Control de Actualizaciones</h4>
-                            <p class="rpcare-update-notice">
-                                ℹ️ Las actualizaciones están gestionadas automáticamente por Replanta Care según tu plan.
-                                Los plugins con licencia pueden actualizarse libremente.
-                            </p>
-                        </div>
-                        
-                        <div id="rpcare-updates-list">
-                            <p>Cargando estado de actualizaciones...</p>
-                        </div>
-                        
-                        <div class="rpcare-update-controls">
-                            <button type="button" class="button" onclick="rpcareCheckUpdates()">
-                                🔍 Verificar Actualizaciones
-                            </button>
-                        </div>
+                </div>
+                
+                <!-- Site Health -->
+                <div class="rpcare-metric">
+                    <div class="metric-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+                        </svg>
                     </div>
-                    
-                    <!-- Health Tab -->
-                    <div class="rpcare-tab-panel" id="rpcare-tab-health">
-                        <div class="rpcare-health-header">
-                            <h4>Salud del Sitio Web</h4>
-                        </div>
-                        
-                        <div id="rpcare-health-report">
-                            <p>Cargando informe de salud...</p>
-                        </div>
-                        
-                        <div class="rpcare-health-actions">
-                            <button type="button" class="button" onclick="rpcareRunHealthCheck()">
-                                🔍 Ejecutar Diagnóstico
-                            </button>
-                        </div>
+                    <div class="metric-content">
+                        <span class="metric-label">Salud del sitio</span>
+                        <span class="metric-value metric-score" id="rpcare-health-score"><?php echo intval($status['health_score']); ?>%</span>
                     </div>
+                </div>
+                
+                <!-- Security -->
+                <div class="rpcare-metric">
+                    <div class="metric-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                        </svg>
+                    </div>
+                    <div class="metric-content">
+                        <span class="metric-label">Seguridad</span>
+                        <span class="metric-value"><?php echo esc_html($status['security_status']); ?></span>
+                    </div>
+                </div>
+                
+            </div>
+            
+            <!-- Quick Info -->
+            <div class="rpcare-info-bar">
+                <div class="info-item">
+                    <span class="info-label">WordPress</span>
+                    <span class="info-value"><?php echo get_bloginfo('version'); ?></span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">PHP</span>
+                    <span class="info-value"><?php echo PHP_VERSION; ?></span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Plugins</span>
+                    <span class="info-value"><?php echo count(get_option('active_plugins', [])); ?></span>
                 </div>
             </div>
             
-            <!-- Loading Overlay -->
-            <div id="rpcare-loading-overlay" style="display: none;">
-                <div class="rpcare-spinner"></div>
-                <p>Cargando...</p>
+            <?php if (!empty($status['pending_updates']) && $status['pending_updates'] > 0): ?>
+            <!-- Pending Updates Notice -->
+            <div class="rpcare-notice">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="12" y1="8" x2="12" y2="12"/>
+                    <line x1="12" y1="16" x2="12.01" y2="16"/>
+                </svg>
+                <span><?php echo intval($status['pending_updates']); ?> actualizaciones pendientes serán aplicadas automáticamente</span>
             </div>
+            <?php endif; ?>
+            
+            <!-- Footer -->
+            <div class="rpcare-footer">
+                <a href="<?php echo admin_url('admin.php?page=replanta-care'); ?>" class="rpcare-link">
+                    Ver configuración completa
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="5" y1="12" x2="19" y2="12"/>
+                        <polyline points="12,5 19,12 12,19"/>
+                    </svg>
+                </a>
+                <span class="rpcare-version">v<?php echo RPCARE_VERSION; ?></span>
+            </div>
+            
         </div>
-        
-        <style>
-        .rpcare-dashboard-widget {
-            position: relative;
-        }
-        
-        .rpcare-plan-info {
-            margin-bottom: 20px;
-            padding: 15px;
-            background: #f8f9fa;
-            border-radius: 5px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        
-        .rpcare-plan-info h3 {
-            margin: 0;
-            color: #333;
-        }
-        
-        .rpcare-plan-badge {
-            padding: 5px 12px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: bold;
-            color: white;
-        }
-        
-        .rpcare-plan-semilla { background: #4CAF50; }
-        .rpcare-plan-raiz { background: #FF9800; }
-        .rpcare-plan-ecosistema { background: #9C27B0; }
-        
-        .rpcare-tab-nav {
-            display: flex;
-            border-bottom: 1px solid #ddd;
-            margin-bottom: 20px;
-        }
-        
-        .rpcare-tab-btn {
-            background: none;
-            border: none;
-            padding: 10px 15px;
-            cursor: pointer;
-            border-bottom: 2px solid transparent;
-            font-weight: 500;
-        }
-        
-        .rpcare-tab-btn.active {
-            border-bottom-color: #0073aa;
-            color: #0073aa;
-        }
-        
-        .rpcare-tab-panel {
-            display: none;
-        }
-        
-        .rpcare-tab-panel.active {
-            display: block;
-        }
-        
-        .rpcare-status-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-            margin-bottom: 20px;
-        }
-        
-        .rpcare-status-card {
-            display: flex;
-            align-items: center;
-            padding: 15px;
-            background: white;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-        }
-        
-        .rpcare-status-icon {
-            font-size: 24px;
-            margin-right: 15px;
-        }
-        
-        .rpcare-status-info h4 {
-            margin: 0 0 5px 0;
-            font-size: 14px;
-            color: #333;
-        }
-        
-        .rpcare-status-info p {
-            margin: 0 0 5px 0;
-            font-weight: bold;
-        }
-        
-        .rpcare-status-info small {
-            color: #666;
-            font-size: 12px;
-        }
-        
-        .rpcare-actions {
-            text-align: center;
-            padding: 15px 0;
-            border-top: 1px solid #eee;
-        }
-        
-        .rpcare-actions .button {
-            margin: 0 5px;
-        }
-        
-        .rpcare-backups-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 15px;
-        }
-        
-        .rpcare-backup-info {
-            margin-top: 20px;
-            padding: 15px;
-            background: #f8f9fa;
-            border-radius: 5px;
-        }
-        
-        .rpcare-backup-info h5 {
-            margin: 0 0 10px 0;
-        }
-        
-        .rpcare-backup-info ul {
-            margin: 0;
-            padding-left: 20px;
-        }
-        
-        .rpcare-update-notice {
-            background: #e7f3ff;
-            padding: 10px;
-            border-radius: 5px;
-            margin-bottom: 15px;
-        }
-        
-        #rpcare-loading-overlay {
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(255,255,255,0.9);
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            z-index: 1000;
-        }
-        
-        .rpcare-spinner {
-            width: 40px;
-            height: 40px;
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #0073aa;
-            border-radius: 50%;
-            animation: rpcare-spin 1s linear infinite;
-        }
-        
-        @keyframes rpcare-spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        </style>
-        
-        <script>
-        jQuery(document).ready(function($) {
-            // Tab functionality
-            $('.rpcare-tab-btn').on('click', function() {
-                var tab = $(this).data('tab');
-                
-                $('.rpcare-tab-btn').removeClass('active');
-                $(this).addClass('active');
-                
-                $('.rpcare-tab-panel').removeClass('active');
-                $('#rpcare-tab-' + tab).addClass('active');
-                
-                // Load tab data
-                rpcareLoadTabData(tab);
-            });
-            
-            // Load initial data
-            rpcareLoadTabData('status');
-        });
-        
-        function rpcareLoadTabData(tab) {
-            jQuery.post(rpcare_dashboard.ajax_url, {
-                action: 'rpcare_get_dashboard_data',
-                tab: tab,
-                nonce: rpcare_dashboard.nonce
-            }, function(response) {
-                if (response.success) {
-                    rpcareUpdateTabContent(tab, response.data);
-                }
-            });
-        }
-        
-        function rpcareUpdateTabContent(tab, data) {
-            switch(tab) {
-                case 'status':
-                    jQuery('#rpcare-last-update').text(data.last_update || 'Nunca');
-                    jQuery('#rpcare-last-backup').text(data.last_backup || 'Nunca');
-                    jQuery('#rpcare-wpo-status').text(data.wpo_status || 'Pendiente');
-                    break;
-                    
-                case 'backups':
-                    var backupsList = '<div class="rpcare-backups">';
-                    if (data.backups && data.backups.length > 0) {
-                        data.backups.forEach(function(backup) {
-                            backupsList += '<div class="rpcare-backup-item">';
-                            backupsList += '<strong>' + backup.date + '</strong> - ' + backup.size;
-                            backupsList += '</div>';
-                        });
-                    } else {
-                        backupsList += '<p>No hay copias de seguridad disponibles.</p>';
-                    }
-                    backupsList += '</div>';
-                    jQuery('#rpcare-backups-list').html(backupsList);
-                    break;
-                    
-                case 'updates':
-                    var updatesList = '<div class="rpcare-updates">';
-                    if (data.updates && data.updates.length > 0) {
-                        data.updates.forEach(function(update) {
-                            updatesList += '<div class="rpcare-update-item">';
-                            updatesList += '<strong>' + update.name + '</strong> - ' + update.status;
-                            updatesList += '</div>';
-                        });
-                    } else {
-                        updatesList += '<p>Todas las actualizaciones están al día.</p>';
-                    }
-                    updatesList += '</div>';
-                    jQuery('#rpcare-updates-list').html(updatesList);
-                    break;
-                    
-                case 'health':
-                    var healthReport = '<div class="rpcare-health">';
-                    if (data.health) {
-                        healthReport += '<div class="rpcare-health-score">Puntuación: ' + data.health.score + '/100</div>';
-                        healthReport += '<div class="rpcare-health-issues">' + (data.health.issues || 'Sin problemas detectados') + '</div>';
-                    } else {
-                        healthReport += '<p>Ejecuta un diagnóstico para ver el estado de salud.</p>';
-                    }
-                    healthReport += '</div>';
-                    jQuery('#rpcare-health-report').html(healthReport);
-                    break;
-            }
-        }
-        
-        function rpcareShowLoading() {
-            jQuery('#rpcare-loading-overlay').show();
-        }
-        
-        function rpcareHideLoading() {
-            jQuery('#rpcare-loading-overlay').hide();
-        }
-        
-        function rpcareRunTask(task) {
-            rpcareShowLoading();
-            
-            jQuery.post(rpcare_dashboard.ajax_url, {
-                action: 'rpcare_run_task',
-                task: task,
-                nonce: rpcare_dashboard.nonce
-            }, function(response) {
-                rpcareHideLoading();
-                
-                if (response.success) {
-                    alert(rpcare_dashboard.strings.success);
-                    rpcareRefreshData();
-                } else {
-                    alert(rpcare_dashboard.strings.error + ': ' + response.data);
-                }
-            });
-        }
-        
-        function rpcareCreateBackup() {
-            rpcareShowLoading();
-            
-            jQuery.post(rpcare_dashboard.ajax_url, {
-                action: 'rpcare_create_backup',
-                nonce: rpcare_dashboard.nonce
-            }, function(response) {
-                rpcareHideLoading();
-                
-                if (response.success) {
-                    alert(rpcare_dashboard.strings.backup_created);
-                    rpcareLoadTabData('backups');
-                } else {
-                    alert(rpcare_dashboard.strings.error + ': ' + response.data);
-                }
-            });
-        }
-        
-        function rpcareCheckUpdates() {
-            rpcareLoadTabData('updates');
-        }
-        
-        function rpcareRunHealthCheck() {
-            rpcareShowLoading();
-            
-            jQuery.post(rpcare_dashboard.ajax_url, {
-                action: 'rpcare_get_health_report',
-                nonce: rpcare_dashboard.nonce
-            }, function(response) {
-                rpcareHideLoading();
-                
-                if (response.success) {
-                    rpcareUpdateTabContent('health', response.data);
-                } else {
-                    alert(rpcare_dashboard.strings.error + ': ' + response.data);
-                }
-            });
-        }
-        
-        function rpcareRefreshData() {
-            var activeTab = jQuery('.rpcare-tab-btn.active').data('tab');
-            rpcareLoadTabData(activeTab);
-        }
-        </script>
         <?php
     }
     
-    // AJAX Handlers
-    public function ajax_get_dashboard_data() {
-        check_ajax_referer('rpcare_ajax', 'nonce');
+    /**
+     * Get current status data
+     */
+    private function get_status_data() {
+        $health = $this->get_health_data();
         
-        $tab = sanitize_text_field($_POST['tab'] ?? 'status');
-        
-        switch ($tab) {
-            case 'status':
-                $data = [
-                    'last_update' => get_option('rpcare_last_update', 'Nunca'),
-                    'last_backup' => get_option('rpcare_last_backup', 'Nunca'),
-                    'wpo_status' => get_option('rpcare_wpo_status', 'Pendiente'),
-                    'monitoring_status' => 'Activo'
-                ];
-                break;
-                
-            case 'backups':
-                $data = [
-                    'backups' => $this->get_backup_list()
-                ];
-                break;
-                
-            case 'updates':
-                $data = [
-                    'updates' => $this->get_updates_list()
-                ];
-                break;
-                
-            case 'health':
-                $data = [
-                    'health' => $this->get_health_data()
-                ];
-                break;
-                
-            default:
-                $data = [];
-        }
-        
-        wp_send_json_success($data);
+        return [
+            'last_backup' => $this->format_relative_time(get_option('rpcare_last_backup', '')),
+            'last_update' => $this->format_relative_time(get_option('rpcare_last_update', '')),
+            'health_score' => $health['score'] ?? 100,
+            'security_status' => $this->get_security_status(),
+            'pending_updates' => $this->count_pending_updates(),
+            'healthy' => ($health['score'] ?? 100) >= 80 && $this->count_pending_updates() <= 5
+        ];
     }
     
-    public function ajax_run_task() {
-        check_ajax_referer('rpcare_ajax', 'nonce');
-        
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error('Permisos insuficientes');
+    /**
+     * Format time as relative (hace X horas, etc)
+     */
+    private function format_relative_time($datetime) {
+        if (empty($datetime)) {
+            return 'Pendiente';
         }
         
-        $task = sanitize_text_field($_POST['task'] ?? '');
-        
-        switch ($task) {
-            case 'sync':
-                // Sync with hub
-                $result = $this->sync_with_hub();
-                break;
-                
-            default:
-                wp_send_json_error('Tarea no reconocida');
+        $timestamp = strtotime($datetime);
+        if (!$timestamp) {
+            return 'Pendiente';
         }
         
-        if ($result) {
-            wp_send_json_success('Tarea completada');
+        $diff = time() - $timestamp;
+        
+        if ($diff < HOUR_IN_SECONDS) {
+            $mins = round($diff / MINUTE_IN_SECONDS);
+            return $mins <= 1 ? 'Hace un momento' : "Hace {$mins} min";
+        } elseif ($diff < DAY_IN_SECONDS) {
+            $hours = round($diff / HOUR_IN_SECONDS);
+            return $hours == 1 ? 'Hace 1 hora' : "Hace {$hours} horas";
+        } elseif ($diff < WEEK_IN_SECONDS) {
+            $days = round($diff / DAY_IN_SECONDS);
+            return $days == 1 ? 'Ayer' : "Hace {$days} días";
         } else {
-            wp_send_json_error('Error al ejecutar la tarea');
+            return date_i18n('j M', $timestamp);
         }
     }
     
-    public function ajax_create_backup() {
-        check_ajax_referer('rpcare_ajax', 'nonce');
+    /**
+     * Get security status label
+     */
+    private function get_security_status() {
+        $issues = 0;
         
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error('Permisos insuficientes');
-        }
+        // Check SSL
+        if (!is_ssl()) $issues++;
         
-        // Create backup using available backup plugin
-        $result = $this->create_backup();
+        // Check debug mode
+        if (defined('WP_DEBUG') && WP_DEBUG) $issues++;
         
-        if ($result) {
-            wp_send_json_success('Copia de seguridad creada');
+        // Check file editing
+        if (!defined('DISALLOW_FILE_EDIT') || (defined('DISALLOW_FILE_EDIT') && !DISALLOW_FILE_EDIT)) $issues++;
+        
+        if ($issues === 0) {
+            return 'Óptima';
+        } elseif ($issues === 1) {
+            return 'Buena';
         } else {
-            wp_send_json_error('Error al crear la copia de seguridad');
+            return 'Revisar';
         }
     }
     
-    public function ajax_get_health_report() {
-        check_ajax_referer('rpcare_ajax', 'nonce');
+    /**
+     * Count pending updates
+     */
+    private function count_pending_updates() {
+        $count = 0;
         
-        $health_data = $this->generate_health_report();
-        
-        wp_send_json_success([
-            'health' => $health_data
-        ]);
-    }
-    
-    // Helper methods
-    private function get_backup_list() {
-        // Get backups from available backup plugins
-        $backups = [];
-        
-        // Check for UpdraftPlus
-        if (class_exists('UpdraftPlus_Admin')) {
-            // Get UpdraftPlus backups
-            $backups = $this->get_updraftplus_backups();
-        }
-        
-        // Check for other backup plugins
-        // Add more backup plugin integrations here
-        
-        return $backups;
-    }
-    
-    private function get_updraftplus_backups() {
-        $backups = [];
-        
-        // Use correct UpdraftPlus API - class method instead of non-existent global function
-        if (class_exists('UpdraftPlus_Backup_History')) {
-            $history = UpdraftPlus_Backup_History::get_history();
-            
-            foreach ($history as $timestamp => $backup) {
-                $size = 0;
-                // Calculate total size from backup sets
-                if (isset($backup['db-size'])) $size += $backup['db-size'];
-                if (isset($backup['plugins-size'])) $size += $backup['plugins-size'];
-                if (isset($backup['themes-size'])) $size += $backup['themes-size'];
-                if (isset($backup['uploads-size'])) $size += $backup['uploads-size'];
-                
-                $backups[] = [
-                    'date' => date('Y-m-d H:i:s', $timestamp),
-                    'size' => $this->format_bytes($size),
-                    'type' => isset($backup['db']) ? 'full' : 'partial'
-                ];
-            }
-        }
-        
-        return array_slice($backups, 0, 10); // Last 10 backups
-    }
-    
-    private function get_updates_list() {
-        $updates = [];
-        
-        // Get plugin updates
         $plugin_updates = get_site_transient('update_plugins');
         if ($plugin_updates && isset($plugin_updates->response)) {
-            foreach ($plugin_updates->response as $plugin_file => $plugin_data) {
-                $plugin_info = get_plugin_data(WP_PLUGIN_DIR . '/' . $plugin_file);
-                
-                $updates[] = [
-                    'name' => $plugin_info['Name'],
-                    'type' => 'plugin',
-                    'current_version' => $plugin_info['Version'],
-                    'new_version' => $plugin_data->new_version ?? '',
-                    'status' => 'Gestionado por Replanta'
-                ];
-            }
+            $count += count($plugin_updates->response);
         }
         
-        // Get theme updates
         $theme_updates = get_site_transient('update_themes');
         if ($theme_updates && isset($theme_updates->response)) {
-            foreach ($theme_updates->response as $theme_slug => $theme_data) {
-                $theme_info = wp_get_theme($theme_slug);
-                
-                $updates[] = [
-                    'name' => $theme_info->get('Name'),
-                    'type' => 'theme',
-                    'current_version' => $theme_info->get('Version'),
-                    'new_version' => $theme_data['new_version'] ?? '',
-                    'status' => 'Gestionado por Replanta'
-                ];
-            }
+            $count += count($theme_updates->response);
         }
         
-        return $updates;
+        return $count;
     }
     
+    /**
+     * Get health data
+     */
     private function get_health_data() {
-        // Get cached health data or generate new
-        $health_data = get_transient('rpcare_health_data');
-        
-        if (!$health_data) {
-            $health_data = $this->generate_health_report();
-            set_transient('rpcare_health_data', $health_data, HOUR_IN_SECONDS);
+        $cached = get_transient('rpcare_health_data');
+        if ($cached) {
+            return $cached;
         }
         
-        return $health_data;
+        $health = $this->calculate_health_score();
+        set_transient('rpcare_health_data', $health, HOUR_IN_SECONDS);
+        
+        return $health;
     }
     
-    private function generate_health_report() {
+    /**
+     * Calculate health score
+     */
+    private function calculate_health_score() {
         $score = 100;
         $issues = [];
         
-        // Check WordPress version
-        $wp_version = get_bloginfo('version');
-        $latest_wp = $this->get_latest_wp_version();
-        
-        if (version_compare($wp_version, $latest_wp, '<')) {
+        // WordPress version check
+        $updates = get_site_transient('update_core');
+        if ($updates && !empty($updates->updates) && $updates->updates[0]->response === 'upgrade') {
             $score -= 10;
-            $issues[] = 'WordPress no está en la última versión';
+            $issues[] = 'WordPress desactualizado';
         }
         
-        // Check SSL
+        // SSL check
         if (!is_ssl()) {
-            $score -= 20;
-            $issues[] = 'El sitio no tiene SSL habilitado';
-        }
-        
-        // Check memory limit
-        $memory_limit = ini_get('memory_limit');
-        $memory_mb = intval($memory_limit);
-        
-        if ($memory_mb < 256) {
             $score -= 15;
-            $issues[] = 'Límite de memoria PHP bajo (' . $memory_limit . ')';
+            $issues[] = 'SSL no activo';
         }
         
-        // Check for outdated plugins
-        $outdated_plugins = $this->count_outdated_plugins();
-        if ($outdated_plugins > 5) {
+        // PHP version check
+        if (version_compare(PHP_VERSION, '8.0', '<')) {
             $score -= 10;
-            $issues[] = $outdated_plugins . ' plugins desactualizados';
+            $issues[] = 'PHP desactualizado';
+        }
+        
+        // Memory limit check
+        $memory = wp_convert_hr_to_bytes(ini_get('memory_limit'));
+        if ($memory < 256 * MB_IN_BYTES) {
+            $score -= 5;
+            $issues[] = 'Memoria limitada';
+        }
+        
+        // Too many pending updates
+        $pending = $this->count_pending_updates();
+        if ($pending > 10) {
+            $score -= 10;
+            $issues[] = 'Muchas actualizaciones pendientes';
+        } elseif ($pending > 5) {
+            $score -= 5;
         }
         
         return [
             'score' => max(0, $score),
-            'issues' => empty($issues) ? 'Sin problemas detectados' : implode(', ', $issues)
+            'issues' => $issues
         ];
     }
     
-    private function sync_with_hub() {
-        // Sync data with Replanta Hub
+    /**
+     * Silent sync with hub (non-blocking)
+     */
+    private function sync_with_hub_silent() {
         $site_url = get_site_url();
         $domain = parse_url($site_url, PHP_URL_HOST);
         
-        $response = wp_remote_post(RP_Care_Plan::get_hub_url() . '/wp-json/replanta/v1/sites/heartbeat', [
+        if (!class_exists('RP_Care_Plan')) {
+            return;
+        }
+        
+        $hub_url = RP_Care_Plan::get_hub_url();
+        
+        wp_remote_post($hub_url . '/wp-json/replanta/v1/sites/heartbeat', [
             'headers' => [
                 'Content-Type' => 'application/json',
                 'X-Site-Domain' => $domain,
@@ -785,81 +401,329 @@ class RP_Care_Dashboard {
                 'domain' => $domain,
                 'wp_version' => get_bloginfo('version'),
                 'plugin_version' => RPCARE_VERSION,
-                'last_update' => get_option('rpcare_last_update'),
-                'last_backup' => get_option('rpcare_last_backup')
+                'php_version' => PHP_VERSION,
+                'health_score' => $this->get_health_data()['score'] ?? 100,
+                'pending_updates' => $this->count_pending_updates(),
+                'last_backup' => get_option('rpcare_last_backup'),
+                'plan' => get_option('rpcare_plan', 'unknown')
             ]),
-            'timeout' => 30
+            'timeout' => 10,
+            'blocking' => false,
+            'sslverify' => true
         ]);
         
-        if (is_wp_error($response)) {
-            error_log('Care: Sync error - ' . $response->get_error_message());
-            return false;
-        }
-        
-        $response_code = wp_remote_retrieve_response_code($response);
-        
-        if ($response_code === 200) {
-            update_option('rpcare_last_sync', current_time('mysql'));
-            return true;
-        }
-        
-        return false;
+        update_option('rpcare_last_sync', current_time('mysql'));
     }
     
-    private function create_backup() {
-        // Try to create backup using available backup plugins
+    // =========================================================================
+    // AJAX Handlers
+    // =========================================================================
+    
+    public function ajax_get_dashboard_data() {
+        check_ajax_referer('rpcare_ajax', 'nonce');
         
-        // UpdraftPlus
-        if (class_exists('UpdraftPlus_Admin')) {
-            return $this->create_updraftplus_backup();
-        }
-        
-        // Add other backup plugin integrations here
-        
-        return false;
+        wp_send_json_success([
+            'status' => $this->get_status_data(),
+            'health' => $this->get_health_data()
+        ]);
     }
     
-    private function create_updraftplus_backup() {
-        // Use correct UpdraftPlus API - global instance method
-        global $updraftplus;
+    public function ajax_create_backup() {
+        check_ajax_referer('rpcare_ajax', 'nonce');
         
-        if (class_exists('UpdraftPlus') && is_object($updraftplus)) {
-            // Trigger backup via UpdraftPlus
-            $updraftplus->boot_backup(true, true); // (true = include db, true = include files)
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => 'Sin permisos']);
+        }
+        
+        $result = $this->trigger_backup();
+        
+        if ($result) {
             update_option('rpcare_last_backup', current_time('mysql'));
+            wp_send_json_success(['message' => 'Copia de seguridad iniciada']);
+        } else {
+            wp_send_json_error(['message' => 'Plugin de backup no disponible']);
+        }
+    }
+    
+    public function ajax_get_health_report() {
+        check_ajax_referer('rpcare_ajax', 'nonce');
+        
+        // Force refresh
+        delete_transient('rpcare_health_data');
+        $health = $this->calculate_health_score();
+        set_transient('rpcare_health_data', $health, HOUR_IN_SECONDS);
+        
+        wp_send_json_success(['health' => $health]);
+    }
+    
+    // =========================================================================
+    // Backup Integration (Backuply)
+    // =========================================================================
+    
+    /**
+     * Get backup list from Backuply
+     */
+    private function get_backup_list() {
+        $backups = [];
+        
+        // Backuply integration
+        if (defined('SUSPENDED_BACKUPLY') || class_exists('backuply_backup')) {
+            $backups = $this->get_backuply_backups();
+        }
+        
+        return $backups;
+    }
+    
+    /**
+     * Get backups from Backuply
+     */
+    private function get_backuply_backups() {
+        $backups = [];
+        
+        // Backuply stores backup info in options
+        $backup_list = get_option('backuply_backup_list', []);
+        
+        if (is_array($backup_list)) {
+            foreach (array_slice($backup_list, 0, 5) as $backup) {
+                $backups[] = [
+                    'date' => isset($backup['time']) ? date('Y-m-d H:i', $backup['time']) : '',
+                    'size' => isset($backup['size']) ? size_format($backup['size']) : 'N/A',
+                    'type' => isset($backup['type']) ? $backup['type'] : 'full'
+                ];
+            }
+        }
+        
+        return $backups;
+    }
+    
+    /**
+     * Trigger backup via Backuply
+     */
+    private function trigger_backup() {
+        // Backuply Pro integration
+        if (function_exists('backuply_cron_backup')) {
+            do_action('backuply_cron_backup');
+            return true;
+        }
+        
+        // Backuply free version
+        if (class_exists('Suspended_Backuply') || defined('SUSPENDED_BACKUPLY')) {
+            do_action('backuply_instant_backup');
             return true;
         }
         
         return false;
     }
     
-    private function format_bytes($bytes, $precision = 2) {
-        $units = array('B', 'KB', 'MB', 'GB', 'TB');
-        
-        for ($i = 0; $bytes > 1024 && $i < count($units) - 1; $i++) {
-            $bytes /= 1024;
-        }
-        
-        return round($bytes, $precision) . ' ' . $units[$i];
-    }
+    // =========================================================================
+    // Widget Styles
+    // =========================================================================
     
-    private function get_latest_wp_version() {
-        $version_check = get_site_transient('update_core');
-        
-        if ($version_check && isset($version_check->updates[0])) {
-            return $version_check->updates[0]->current;
-        }
-        
-        return get_bloginfo('version');
-    }
-    
-    private function count_outdated_plugins() {
-        $plugin_updates = get_site_transient('update_plugins');
-        
-        if ($plugin_updates && isset($plugin_updates->response)) {
-            return count($plugin_updates->response);
-        }
-        
-        return 0;
+    private function get_widget_styles() {
+        return '
+#rpcare_dashboard .inside { padding: 0; margin: 0; }
+#rpcare_dashboard .postbox-header { display: none; }
+
+.rpcare-widget {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+}
+
+.rpcare-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px;
+    background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%);
+    color: #fff;
+}
+
+.rpcare-brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.rpcare-logo {
+    width: 32px;
+    height: 32px;
+    color: #4fd1c5;
+}
+
+.rpcare-brand-text {
+    display: flex;
+    flex-direction: column;
+}
+
+.rpcare-title {
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+}
+
+.rpcare-plan-label {
+    font-size: 11px;
+    opacity: 0.85;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.rpcare-status-indicator {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    padding: 6px 12px;
+    border-radius: 20px;
+    background: rgba(255,255,255,0.15);
+}
+
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #4fd1c5;
+}
+
+.status-ok .status-dot { background: #48bb78; }
+.status-warning .status-dot { background: #ed8936; }
+
+.rpcare-metrics {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1px;
+    background: #e2e8f0;
+}
+
+.rpcare-metric {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px;
+    background: #fff;
+}
+
+.metric-icon {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #f7fafc;
+    border-radius: 8px;
+    color: #4a5568;
+}
+
+.metric-icon svg {
+    width: 18px;
+    height: 18px;
+}
+
+.metric-content {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.metric-label {
+    font-size: 11px;
+    color: #718096;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.metric-value {
+    font-size: 14px;
+    font-weight: 600;
+    color: #2d3748;
+}
+
+.metric-score {
+    color: #38a169;
+}
+
+.rpcare-info-bar {
+    display: flex;
+    justify-content: space-around;
+    padding: 12px 16px;
+    background: #f7fafc;
+    border-top: 1px solid #e2e8f0;
+}
+
+.info-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+}
+
+.info-label {
+    font-size: 10px;
+    color: #a0aec0;
+    text-transform: uppercase;
+}
+
+.info-value {
+    font-size: 13px;
+    font-weight: 500;
+    color: #4a5568;
+}
+
+.rpcare-notice {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    background: #fffbeb;
+    border-top: 1px solid #fef3c7;
+    font-size: 12px;
+    color: #92400e;
+}
+
+.rpcare-notice svg {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    color: #d97706;
+}
+
+.rpcare-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 16px;
+    background: #fff;
+    border-top: 1px solid #e2e8f0;
+}
+
+.rpcare-link {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    color: #3182ce;
+    text-decoration: none;
+    transition: color 0.15s;
+}
+
+.rpcare-link:hover {
+    color: #2c5282;
+}
+
+.rpcare-link svg {
+    width: 14px;
+    height: 14px;
+}
+
+.rpcare-version {
+    font-size: 11px;
+    color: #a0aec0;
+}
+
+/* Plan-specific header colors */
+.rpcare-widget[data-plan="semilla"] .rpcare-header { background: linear-gradient(135deg, #276749 0%, #38a169 100%); }
+.rpcare-widget[data-plan="raiz"] .rpcare-header { background: linear-gradient(135deg, #744210 0%, #dd6b20 100%); }
+.rpcare-widget[data-plan="ecosistema"] .rpcare-header { background: linear-gradient(135deg, #553c9a 0%, #805ad5 100%); }
+        ';
     }
 }

@@ -3,7 +3,7 @@
  * Plugin Name: Replanta Care
  * Plugin URI: https://replanta.dev
  * Description: Plugin de mantenimiento WordPress automático para clientes de Replanta con integración completa Hub
- * Version: 1.2.4
+ * Version: 1.2.5
  * Author: Replanta
  * Author URI: https://replanta.dev
  * License: GPL v2 or later
@@ -17,7 +17,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('RPCARE_VERSION', '1.2.4');
+define('RPCARE_VERSION', '1.2.5');
 define('RPCARE_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('RPCARE_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('RPCARE_PLUGIN_FILE', __FILE__);
@@ -90,7 +90,6 @@ class ReplantaCare {
             'inc/class-utils.php',
             'inc/class-update-control.php',
             'inc/class-dashboard.php',
-            'inc/class-dashboard-widget.php',
             
             // Task classes
             'inc/task-updates.php',
@@ -270,7 +269,7 @@ class ReplantaCare {
         }
         
         // Show hub connection status
-        $status_text = $hub_connected ? '✅ Conectado al Hub Replanta' : '🔄 Detectando configuración...';
+        $status_text = $hub_connected ? 'Conectado al Hub' : 'Detectando...';
         
         // Main menu item
         $wp_admin_bar->add_menu([
@@ -293,14 +292,14 @@ class ReplantaCare {
         $wp_admin_bar->add_menu([
             'parent' => 'replanta-care',
             'id' => 'replanta-care-plan',
-            'title' => "📋 Plan: {$plan_name}",
+            'title' => "Plan: {$plan_name}",
             'href' => false
         ]);
         
         $wp_admin_bar->add_menu([
             'parent' => 'replanta-care',
             'id' => 'replanta-care-features',
-            'title' => '🔧 Características activas:',
+            'title' => 'Características activas',
             'href' => false
         ]);
         

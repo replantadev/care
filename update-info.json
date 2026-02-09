@@ -1,0 +1,14 @@
+{
+    "name": "Replanta Care",
+    "version": "1.2.6",
+    "download_url": "https://github.com/replantadev/care/archive/refs/heads/main.zip",
+    "author": "Replanta",
+    "author_homepage": "https://replanta.dev",
+    "requires": "5.0",
+    "tested": "6.7",
+    "requires_php": "7.4",
+    "sections": {
+        "description": "Plugin de mantenimiento automatico para clientes de Replanta.",
+        "changelog": "<h4>1.2.5</h4><ul><li>Dashboard premium rediseñado</li><li>Integración Backuply</li><li>Sin emojis en UI</li></ul>"
+    }
+}

@@ -2,13 +2,13 @@
 Contributors: replanta
 Tags: maintenance, security, performance, updates, monitoring
 Requires at least: 5.0
-Tested up to: 6.6
+Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 1.1.5
+Stable tag: 1.2.5
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
-Plugin de mantenimiento WordPress automático para clientes de Replanta.
+Plugin de mantenimiento WordPress automatico para clientes de Replanta.
 
 == Description ==
 
@@ -106,6 +106,31 @@ Solo si configuras integraciones específicas. El plugin respeta tu privacidad y
 4. Sistema de notificaciones y alertas
 
 == Changelog ==
+
+= 1.2.5 (2026-02-09) =
+* Mayor: Dashboard widget premium completamente rediseñado
+* Mayor: Iconos SVG en toda la UI (sin emojis)
+* Mayor: Integracion con Backuply para copias de seguridad
+* Nuevo: Sincronizacion silenciosa con Hub cada 6 horas
+* Nuevo: Cabecera con gradiente segun plan (semilla/raiz/ecosistema)
+* Nuevo: Metricas de salud, seguridad, backups y actualizaciones
+* Fix: Corregido handler de sincronizacion manual
+
+= 1.2.4 (2026-02-09) =
+* Test: Verificacion de deteccion de actualizaciones desde branch main
+
+= 1.2.3 (2026-02-09) =
+* Fix: Configurado update checker para usar branch main
+* Fix: Añadido setBranch('main') al Plugin Update Checker
+
+= 1.2.2 (2026-02-09) =
+* Fix: Corregido error UpdraftPlus API cuando el plugin no esta activo
+* Fix: Eliminados handlers duplicados de tareas AJAX
+* Fix: Corregidas inconsistencias de nonces
+
+= 1.2.1 (2026-02-09) =
+* Fix: Configuracion de Hub URL corregida
+* Mejora: Deteccion de entorno mejorada
 
 = 1.1.5 (2025-09-15) =
 * Fix: Arreglado widget del dashboard que causaba errores fatales

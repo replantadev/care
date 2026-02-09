@@ -1,21 +1,46 @@
 # Replanta Care - WordPress Maintenance Plugin
 
-Un plugin completo de mantenimiento para WordPress que proporciona automatización de tareas, monitoreo de seguridad, optimización de rendimiento y reportes detallados.
+Plugin de mantenimiento automático para clientes de Replanta. Gestiona actualizaciones, backups, seguridad y reportes de forma invisible para el usuario final.
 
-**Versión actual:** 1.0.3  
-**Probado hasta:** WordPress 6.6  
+**Versión actual:** 1.2.5  
+**Probado hasta:** WordPress 6.7  
 **Requiere:** WordPress 5.0+, PHP 7.4+
 
 ## Changelog
 
+### v1.2.5 (2026-02-09)
+- Dashboard widget premium completamente rediseñado
+- Iconos SVG (sin emojis en toda la UI)
+- Integración con Backuply para copias de seguridad
+- Sincronización silenciosa con Hub cada 6 horas
+- Cabecera con gradiente según plan (semilla/raiz/ecosistema)
+- Métricas: última copia, última actualización, salud del sitio, seguridad
+- Corregido handler de sincronización manual
+
+### v1.2.4 (2026-02-09)
+- Test de detección de actualizaciones desde branch main
+
+### v1.2.3 (2026-02-09)
+- Configurado update checker para usar branch main en lugar de releases
+- Añadido `setBranch('main')` al Plugin Update Checker
+
+### v1.2.2 (2026-02-09)
+- Corregido error UpdraftPlus API cuando el plugin no está activo
+- Eliminados handlers duplicados de tareas AJAX
+- Corregidas inconsistencias de nonces
+
+### v1.2.1 (2026-02-09)
+- Configuración de Hub URL corregida
+- Mejoras en detección de entorno
+
 ### v1.0.3 (2025-09-11)
-- **Fix:** Corregida URL del update checker GitHub (eliminado sufijo .git)
-- **Fix:** Mejorado sistema de detección de actualizaciones
+- Fix: Corregida URL del update checker GitHub (eliminado sufijo .git)
+- Fix: Mejorado sistema de detección de actualizaciones
 
 ### v1.0.2 (2025-09-11)
-- **Fix:** Corregido error de sintaxis PHP en task-security.php (faltaba tag <?php)
-- **Mejora:** Plugin ahora se instala correctamente desde GitHub
-- **Mejora:** Sistema de auto-actualización mejorado
+- Fix: Corregido error de sintaxis PHP en task-security.php (faltaba tag <?php)
+- Mejora: Plugin ahora se instala correctamente desde GitHub
+- Mejora: Sistema de auto-actualización mejorado
 
 ### v1.0.1 (2025-09-11)
 - Versión inicial con sistema de auto-actualización
@@ -23,28 +48,28 @@ Un plugin completo de mantenimiento para WordPress que proporciona automatizaci�
 
 ## Características Principales
 
-### 🔧 Automatización de Tareas
+### Automatización de Tareas
 - Actualizaciones automáticas de WordPress, plugins y temas
 - Copias de seguridad programadas
 - Limpieza automática de caché
 - Optimización de base de datos
 - Monitoreo de enlaces rotos (404)
 
-### 🔒 Seguridad
+### Seguridad
 - Escaneo de vulnerabilidades
 - Monitoreo de malware
 - Verificación de integridad de archivos
 - Análisis de permisos de archivos
 - Monitoreo de uptime
 
-### 📊 Reportes y Análisis
+### Reportes y Análisis
 - Reportes HTML personalizados con marca blanca
 - Métricas de rendimiento
 - Estado de SEO
 - Análisis de salud del sitio
 - Historial de tareas realizadas
 
-### 🎯 Planes de Servicio
+### Planes de Servicio
 - **Semilla (€49/mes)**: Actualizaciones básicas y monitoreo
 - **Raíz (€89/mes)**: Incluye copias de seguridad y optimización
 - **Ecosistema (€149/mes)**: Suite completa con soporte prioritario

@@ -4,7 +4,7 @@ Tags: maintenance, security, performance, updates, monitoring
 Requires at least: 5.0
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 1.2.8
+Stable tag: 1.4.0
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -106,6 +106,24 @@ Solo si configuras integraciones específicas. El plugin respeta tu privacidad y
 4. Sistema de notificaciones y alertas
 
 == Changelog ==
+
+= 1.4.0 (2026-02-19) =
+* Mayor: Sistema de planes unificado — normalize_plan() mapea nombres ingleses a españoles
+* Mayor: can_access_feature() corregido — ahora reconoce semilla/raiz/ecosistema
+* Mayor: run_task REST devuelve resultados reales (apply_filters en vez de do_action)
+* Mayor: Backups protegidos — directorio secreto, .htaccess deny, SQL batched, SHA-256
+* Mayor: Scanner de seguridad no se auto-detecta, eliminados falsos positivos
+* Mayor: Limpieza automática diaria — logs 30d, 404 90d, transients, debug.log, backups
+* Seguridad: Eliminados configure.php y force-update-care.php
+* Seguridad: Inyección .htaccess sanitizada con regex + esc_url_raw
+* Seguridad: SQL injection en task-404 corregida con $wpdb->prepare()
+* Fix: get_current() cacheado en transient 6h (eliminado HTTP bloqueante en cada página)
+* Fix: class-security::can_execute_task delega a can_access_feature (mapa unificado)
+* Fix: error_log() debug envuelto en WP_DEBUG check
+* Eliminado: class-dashboard-widget.php (666 líneas, código muerto)
+
+= 1.3.0 (2026-02-17) =
+* Fix: Corregido error fatal setCheckPeriod
 
 = 1.2.5 (2026-02-09) =
 * Mayor: Dashboard widget premium completamente rediseñado

@@ -34,6 +34,10 @@ if (file_exists(RPCARE_PLUGIN_PATH . 'vendor/autoload.php')) {
         );
         // Compare version from main branch header
         $updateChecker->setBranch('main');
+        // GitHub API auth to avoid 60 req/hr rate limit (define in wp-config.php)
+        if (defined('RPCARE_GITHUB_TOKEN') && RPCARE_GITHUB_TOKEN) {
+            $updateChecker->setAuthentication(RPCARE_GITHUB_TOKEN);
+        }
     } catch (Exception $e) {
         error_log('Replanta Care: Update checker failed - ' . $e->getMessage());
     }

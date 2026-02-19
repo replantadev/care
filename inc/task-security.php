@@ -217,13 +217,26 @@ class RP_Care_Task_Security {
             'system(',
             'exec(',
             'passthru(',
-            'file_get_contents(',
             'curl_exec('
         ];
         
         $suspicious_files = [];
         $scanned_files = 0;
         $max_files = 100; // Limit to avoid timeouts
+        
+        // Exclude our own plugin directory to avoid flagging ourselves
+        $exclude_dirs = [
+            dirname(RPCARE_PLUGIN_PATH), // replanta-care plugin directory
+        ];
+        // Normalize: RPCARE_PLUGIN_PATH may have trailing slash
+        $exclude_dirs = array_map(function($d) {
+            return rtrim(wp_normalize_path($d), '/');
+        }, $exclude_dirs);
+        // Always exclude our own plugin path (with or without trailing slash)
+        $own_plugin_dir = rtrim(wp_normalize_path(RPCARE_PLUGIN_PATH), '/');
+        if (!in_array($own_plugin_dir, $exclude_dirs, true)) {
+            $exclude_dirs[] = $own_plugin_dir;
+        }
         
         $upload_dir = wp_upload_dir();
         $scan_dirs = [
@@ -234,7 +247,7 @@ class RP_Care_Task_Security {
         
         foreach ($scan_dirs as $dir) {
             if (is_dir($dir)) {
-                $files = self::scan_directory_for_php_files($dir, $max_files - $scanned_files);
+                $files = self::scan_directory_for_php_files($dir, $max_files - $scanned_files, $exclude_dirs);
                 
                 foreach ($files as $file) {
                     if ($scanned_files >= $max_files) break;
@@ -268,7 +281,7 @@ class RP_Care_Task_Security {
         ];
     }
     
-    private static function scan_directory_for_php_files($dir, $max_files) {
+    private static function scan_directory_for_php_files($dir, $max_files, $exclude_dirs = []) {
         $php_files = [];
         
         if (!is_dir($dir)) {
@@ -286,7 +299,18 @@ class RP_Care_Task_Security {
             }
             
             if ($file->isFile() && $file->getExtension() === 'php') {
-                $php_files[] = $file->getPathname();
+                // Skip files inside excluded directories
+                $normalized_path = wp_normalize_path($file->getPathname());
+                $is_excluded = false;
+                foreach ($exclude_dirs as $excluded) {
+                    if (strpos($normalized_path, $excluded . '/') === 0) {
+                        $is_excluded = true;
+                        break;
+                    }
+                }
+                if (!$is_excluded) {
+                    $php_files[] = $file->getPathname();
+                }
             }
         }
         
@@ -456,5 +480,14 @@ class RP_Care_Task_Security {
             'next_scheduled' => wp_next_scheduled('rpcare_task_security'),
             'status' => $security_score >= 80 ? 'good' : ($security_score >= 60 ? 'warning' : 'critical')
         ];
+    }
+    
+    /**
+     * Get the stored security score.
+     *
+     * @return int Security score 0-100.
+     */
+    public static function get_security_score() {
+        return (int) get_option('rpcare_security_score', 0);
     }
 }

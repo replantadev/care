@@ -73,6 +73,9 @@ class RP_Care_Scheduler {
         // Schedule 404 cleanup
         $this->maybe_schedule('rpcare_task_404_cleanup', 'weekly');
         
+        // Schedule daily maintenance (log rotation, transient cleanup, old backups)
+        $this->maybe_schedule('rpcare_task_maintenance', 'daily');
+        
         // Schedule reports based on plan
         $this->maybe_schedule('rpcare_task_report', 'monthly');
         
@@ -127,6 +130,9 @@ class RP_Care_Scheduler {
         
         // Reports
         add_filter('rpcare_task_report', ['RP_Care_Task_Report', 'generate_monthly']);
+        
+        // Daily maintenance / cleanup
+        add_filter('rpcare_task_maintenance', ['RP_Care_Utils', 'cleanup_all']);
     }
     
     public function clear_all() {
@@ -140,6 +146,7 @@ class RP_Care_Scheduler {
             'rpcare_task_monitor',
             'rpcare_task_health',
             'rpcare_task_404_cleanup',
+            'rpcare_task_maintenance',
             'rpcare_task_report'
         ];
         
@@ -161,6 +168,7 @@ class RP_Care_Scheduler {
             'rpcare_task_monitor' => 'Monitorización',
             'rpcare_task_health' => 'Chequeo de salud',
             'rpcare_task_404_cleanup' => 'Limpieza 404',
+            'rpcare_task_maintenance' => 'Mantenimiento diario',
             'rpcare_task_report' => 'Informe mensual'
         ];
         
@@ -198,6 +206,7 @@ class RP_Care_Scheduler {
             'monitor' => 'rpcare_task_monitor',
             'health' => 'rpcare_task_health',
             '404_cleanup' => 'rpcare_task_404_cleanup',
+            'maintenance' => 'rpcare_task_maintenance',
             'report' => 'rpcare_task_report'
         ];
         

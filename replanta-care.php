@@ -66,6 +66,9 @@ class ReplantaCare {
         // AJAX actions
         add_action('wp_ajax_rpcare_force_backup', [$this, 'ajax_force_backup']);
         
+        // Daily check hook → also run maintenance cleanup
+        add_action('rpcare_daily_check', ['RP_Care_Utils', 'cleanup_all']);
+        
         // Activation/Deactivation hooks
         register_activation_hook(__FILE__, [$this, 'activate']);
         register_deactivation_hook(__FILE__, [$this, 'deactivate']);
@@ -372,6 +375,11 @@ class ReplantaCare {
         if (!wp_next_scheduled('rpcare_daily_check')) {
             wp_schedule_event(time() + 3600, 'daily', 'rpcare_daily_check');
         }
+        
+        // Schedule daily maintenance (log cleanup, transient purge, backup rotation)
+        if (!wp_next_scheduled('rpcare_task_maintenance')) {
+            wp_schedule_event(time() + 7200, 'daily', 'rpcare_task_maintenance');
+        }
     }
     
     public function deactivate() {
@@ -382,6 +390,7 @@ class ReplantaCare {
         wp_clear_scheduled_hook('rpcare_task_review');
         wp_clear_scheduled_hook('rpcare_task_monitor');
         wp_clear_scheduled_hook('rpcare_daily_check');
+        wp_clear_scheduled_hook('rpcare_task_maintenance');
     }
     
     private function create_tables() {

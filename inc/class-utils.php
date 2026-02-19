@@ -77,6 +77,202 @@ class RP_Care_Utils {
         
         return $deleted;
     }
+
+    /**
+     * Run all cleanup/maintenance tasks.
+     * Hooked to rpcare_task_maintenance (daily) and rpcare_daily_check.
+     *
+     * @param mixed $args Ignored – present so it can be used as filter callback.
+     * @return array Summary of cleanup actions performed.
+     */
+    public static function cleanup_all($args = []) {
+        $results = [];
+
+        // 1. Clean rpcare_logs table (older than 30 days)
+        $results['logs_deleted'] = self::clean_old_logs(30);
+
+        // 2. Clean rpcare_404_logs – remove entries older than 90 days
+        $results['404_logs_deleted'] = self::clean_old_404_logs(90);
+
+        // 3. Clean expired rpcare transients from wp_options
+        $results['transients_deleted'] = self::clean_expired_transients();
+
+        // 4. Rotate / trim the PHP debug.log if it exceeds 50 MB
+        $results['debug_log_rotated'] = self::rotate_debug_log(50);
+
+        // 5. Remove old backup directories (older than 30 days)
+        $results['old_backups_deleted'] = self::clean_old_backups(30);
+
+        self::log('maintenance', 'success', 'Daily cleanup completed', $results);
+
+        return $results;
+    }
+
+    /**
+     * Delete rows from rpcare_404_logs older than $days days.
+     */
+    public static function clean_old_404_logs($days = 90) {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'rpcare_404_logs';
+
+        // Bail if table doesn't exist yet
+        if ($wpdb->get_var("SHOW TABLES LIKE '$table'") !== $table) {
+            return 0;
+        }
+
+        $deleted = $wpdb->query($wpdb->prepare(
+            "DELETE FROM $table WHERE last_seen < DATE_SUB(NOW(), INTERVAL %d DAY)",
+            $days
+        ));
+
+        return $deleted !== false ? $deleted : 0;
+    }
+
+    /**
+     * Remove expired transients that belong to this plugin.
+     */
+    public static function clean_expired_transients() {
+        global $wpdb;
+
+        $now = time();
+        $count = 0;
+
+        // Find transient timeout keys that have our prefix and are expired
+        $expired = $wpdb->get_col($wpdb->prepare(
+            "SELECT option_name FROM {$wpdb->options}
+             WHERE option_name LIKE %s
+             AND option_value < %d",
+            $wpdb->esc_like('_transient_timeout_rpcare_') . '%',
+            $now
+        ));
+
+        foreach ($expired as $timeout_key) {
+            // _transient_timeout_rpcare_xxx → rpcare_xxx
+            $transient_name = str_replace('_transient_timeout_', '', $timeout_key);
+            delete_transient($transient_name);
+            $count++;
+        }
+
+        // Also clean any orphaned rpcare_ transients that lost their timeout row
+        $orphaned = $wpdb->get_col($wpdb->prepare(
+            "SELECT option_name FROM {$wpdb->options}
+             WHERE option_name LIKE %s
+             AND option_name NOT LIKE %s",
+            $wpdb->esc_like('_transient_rpcare_') . '%',
+            $wpdb->esc_like('_transient_timeout_rpcare_') . '%'
+        ));
+
+        foreach ($orphaned as $opt) {
+            $transient_name = str_replace('_transient_', '', $opt);
+            // Only delete if there is no corresponding timeout key
+            $timeout_exists = $wpdb->get_var($wpdb->prepare(
+                "SELECT COUNT(*) FROM {$wpdb->options} WHERE option_name = %s",
+                '_transient_timeout_' . $transient_name
+            ));
+            if (!$timeout_exists) {
+                delete_transient($transient_name);
+                $count++;
+            }
+        }
+
+        return $count;
+    }
+
+    /**
+     * Rotate the PHP debug.log when it exceeds $max_mb megabytes.
+     * Keeps one .old backup and truncates the current file.
+     *
+     * @param int $max_mb Maximum size in megabytes before rotation.
+     * @return bool Whether a rotation was performed.
+     */
+    public static function rotate_debug_log($max_mb = 50) {
+        $log_file = WP_CONTENT_DIR . '/debug.log';
+
+        if (!file_exists($log_file)) {
+            return false;
+        }
+
+        $size_mb = filesize($log_file) / (1024 * 1024);
+        if ($size_mb < $max_mb) {
+            return false;
+        }
+
+        // Rotate: rename current to .old (overwrites previous .old)
+        $old_file = WP_CONTENT_DIR . '/debug.old.log';
+        @rename($log_file, $old_file);
+
+        // Create a fresh empty file so PHP can keep logging
+        @file_put_contents($log_file, '');
+
+        return true;
+    }
+
+    /**
+     * Remove rpcare backup directories older than $days days.
+     *
+     * @param int $days Maximum age in days.
+     * @return int Number of backup directories removed.
+     */
+    public static function clean_old_backups($days = 30) {
+        if (!class_exists('RP_Care_Task_Backup')) {
+            return 0;
+        }
+
+        // Reconstruct the base dir the same way integrations-backup.php does.
+        $secret = get_option('rpcare_backup_dir_secret');
+        if (!$secret) {
+            return 0;
+        }
+
+        $upload_dir = wp_upload_dir();
+        $base_dir   = $upload_dir['basedir'] . '/rpcare-backups-' . $secret;
+
+        if (!is_dir($base_dir)) {
+            return 0;
+        }
+
+        $cutoff  = time() - ($days * DAY_IN_SECONDS);
+        $removed = 0;
+
+        foreach (new DirectoryIterator($base_dir) as $item) {
+            if ($item->isDot() || !$item->isDir()) {
+                continue;
+            }
+
+            // Each sub-directory is named Y-m-d_H-i-s
+            if ($item->getMTime() < $cutoff) {
+                self::delete_directory($item->getPathname());
+                $removed++;
+            }
+        }
+
+        return $removed;
+    }
+
+    /**
+     * Recursively delete a directory and its contents.
+     */
+    private static function delete_directory($dir) {
+        if (!is_dir($dir)) {
+            return;
+        }
+
+        $iterator = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($dir, RecursiveDirectoryIterator::SKIP_DOTS),
+            RecursiveIteratorIterator::CHILD_FIRST
+        );
+
+        foreach ($iterator as $file) {
+            if ($file->isDir()) {
+                @rmdir($file->getPathname());
+            } else {
+                @unlink($file->getPathname());
+            }
+        }
+
+        @rmdir($dir);
+    }
     
     public static function send_notification($type, $subject, $message, $data = null) {
         $hub_url = get_option('rpcare_hub_url', 'https://sitios.replanta.dev');

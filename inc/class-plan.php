@@ -293,12 +293,16 @@ class RP_Care_Plan {
                 update_option('rpcare_detected_plan', $plan);
                 update_option('rpcare_hub_last_check', current_time('mysql'));
                 
-                error_log('Care Plugin: Successfully detected plan ' . $plan . ' for site ' . $site_url);
+                if (defined('WP_DEBUG') && WP_DEBUG) {
+                    error_log('Care Plugin: Successfully detected plan ' . $plan . ' for site ' . $site_url);
+                }
                 return $plan;
             }
         }
         
-        error_log('Care Plugin: Invalid plan response from hub: ' . print_r($data, true));
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('Care Plugin: Invalid plan response from hub: ' . print_r($data, true));
+        }
         return false;
     }
     

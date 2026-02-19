@@ -97,31 +97,36 @@ class RP_Care_Scheduler {
     }
     
     private function register_task_hooks() {
+        // Use add_filter (1 arg) so that task handlers can return their
+        // result back through apply_filters() in the REST run_task endpoint.
+        // Each handler receives ($args) — the same signature they already have
+        // — and returns its result array.
+        
         // Updates
-        add_action('rpcare_task_updates', ['RP_Care_Task_Updates', 'run']);
+        add_filter('rpcare_task_updates', ['RP_Care_Task_Updates', 'run']);
         
         // Backups
-        add_action('rpcare_task_backup', ['RP_Care_Task_Backup', 'run']);
+        add_filter('rpcare_task_backup', ['RP_Care_Task_Backup', 'run']);
         
         // WPO
-        add_action('rpcare_task_wpo', ['RP_Care_Task_WPO', 'run']);
+        add_filter('rpcare_task_wpo', ['RP_Care_Task_WPO', 'run']);
         
         // SEO/Reviews
-        add_action('rpcare_task_seo_review', ['RP_Care_Task_SEO', 'run_monthly_review']);
-        add_action('rpcare_task_seo_audit', ['RP_Care_Task_SEO', 'run_quarterly_audit']);
-        add_action('rpcare_task_basic_review', ['RP_Care_Task_SEO', 'run_basic_review']);
+        add_filter('rpcare_task_seo_review', ['RP_Care_Task_SEO', 'run_monthly_review']);
+        add_filter('rpcare_task_seo_audit', ['RP_Care_Task_SEO', 'run_quarterly_audit']);
+        add_filter('rpcare_task_basic_review', ['RP_Care_Task_SEO', 'run_basic_review']);
         
         // Monitoring
-        add_action('rpcare_task_monitor', ['RP_Care_Task_Health', 'run_monitoring']);
+        add_filter('rpcare_task_monitor', ['RP_Care_Task_Health', 'run_monitoring']);
         
         // Health checks
-        add_action('rpcare_task_health', ['RP_Care_Task_Health', 'run']);
+        add_filter('rpcare_task_health', ['RP_Care_Task_Health', 'run']);
         
         // 404 management
-        add_action('rpcare_task_404_cleanup', ['RP_Care_Task_404', 'cleanup']);
+        add_filter('rpcare_task_404_cleanup', ['RP_Care_Task_404', 'cleanup']);
         
         // Reports
-        add_action('rpcare_task_report', ['RP_Care_Task_Report', 'generate_monthly']);
+        add_filter('rpcare_task_report', ['RP_Care_Task_Report', 'generate_monthly']);
     }
     
     public function clear_all() {

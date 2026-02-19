@@ -321,18 +321,36 @@ class RP_Care_Task_Backup {
         return $results;
     }
     
-    private static function create_backup_directory() {
+    private static function get_backup_base_dir() {
+        // Use a randomised directory name so the path cannot be guessed.
+        $secret = get_option('rpcare_backup_dir_secret');
+        if (!$secret) {
+            $secret = wp_generate_password(16, false);
+            update_option('rpcare_backup_dir_secret', $secret, false);
+        }
         $upload_dir = wp_upload_dir();
-        $backup_base_dir = $upload_dir['basedir'] . '/rpcare-backups';
+        return $upload_dir['basedir'] . '/rpcare-backups-' . $secret;
+    }
+
+    private static function create_backup_directory() {
+        $backup_base_dir = self::get_backup_base_dir();
         $backup_dir = $backup_base_dir . '/' . date('Y-m-d_H-i-s');
         
         if (!wp_mkdir_p($backup_dir)) {
             return false;
         }
         
-        // Create .htaccess to protect backups
-        $htaccess_content = "Order deny,allow\nDeny from all\n";
-        file_put_contents($backup_base_dir . '/.htaccess', $htaccess_content);
+        // Protect directory: .htaccess
+        $htaccess_file = $backup_base_dir . '/.htaccess';
+        if (!file_exists($htaccess_file)) {
+            file_put_contents($htaccess_file, "# Deny direct access\nOrder deny,allow\nDeny from all\n");
+        }
+        
+        // Protect directory: index.php
+        $index_file = $backup_base_dir . '/index.php';
+        if (!file_exists($index_file)) {
+            file_put_contents($index_file, "<?php\n// Silence is golden\n");
+        }
         
         return $backup_dir;
     }
@@ -341,56 +359,90 @@ class RP_Care_Task_Backup {
         global $wpdb;
         
         $backup_file = $backup_dir . '/database.sql';
+        $batch_size  = 1000;
         
         try {
             $tables = $wpdb->get_col('SHOW TABLES');
-            $backup_content = '';
             
-            // Add database creation info
-            $backup_content .= "-- Replanta Care Database Backup\n";
-            $backup_content .= "-- Generated on: " . current_time('mysql') . "\n";
-            $backup_content .= "-- Database: " . DB_NAME . "\n\n";
+            // Open file handle for streaming writes instead of building one huge string
+            $fh = fopen($backup_file, 'w');
+            if (!$fh) {
+                return [
+                    'success' => false,
+                    'message' => 'Failed to open database backup file for writing'
+                ];
+            }
+            
+            // Header
+            fwrite($fh, "-- Replanta Care Database Backup\n");
+            fwrite($fh, "-- Generated on: " . current_time('mysql') . "\n");
+            fwrite($fh, "-- Database: " . DB_NAME . "\n\n");
             
             foreach ($tables as $table) {
-                // Get table structure
+                // Table structure
                 $create_table = $wpdb->get_row("SHOW CREATE TABLE `$table`", ARRAY_N);
-                $backup_content .= "\n\n-- Table structure for table `$table`\n";
-                $backup_content .= "DROP TABLE IF EXISTS `$table`;\n";
-                $backup_content .= $create_table[1] . ";\n\n";
+                fwrite($fh, "\n\n-- Table structure for table `$table`\n");
+                fwrite($fh, "DROP TABLE IF EXISTS `$table`;\n");
+                fwrite($fh, $create_table[1] . ";\n\n");
                 
-                // Get table data
-                $rows = $wpdb->get_results("SELECT * FROM `$table`", ARRAY_A);
+                // Batched data dump — avoids memory exhaustion on large tables
+                $offset = 0;
+                $first_batch = true;
                 
-                if (!empty($rows)) {
-                    $backup_content .= "-- Dumping data for table `$table`\n";
+                while (true) {
+                    $rows = $wpdb->get_results(
+                        $wpdb->prepare(
+                            "SELECT * FROM `$table` LIMIT %d OFFSET %d",
+                            $batch_size,
+                            $offset
+                        ),
+                        ARRAY_A
+                    );
+                    
+                    if (empty($rows)) {
+                        break;
+                    }
+                    
+                    if ($first_batch) {
+                        fwrite($fh, "-- Dumping data for table `$table`\n");
+                        $first_batch = false;
+                    }
                     
                     foreach ($rows as $row) {
                         $values = array_map(function($value) use ($wpdb) {
                             return $value === null ? 'NULL' : "'" . $wpdb->_escape($value) . "'";
                         }, array_values($row));
                         
-                        $backup_content .= "INSERT INTO `$table` VALUES (" . implode(', ', $values) . ");\n";
+                        fwrite($fh, "INSERT INTO `$table` VALUES (" . implode(', ', $values) . ");\n");
+                    }
+                    
+                    $offset += $batch_size;
+                    
+                    // If the batch returned fewer rows than the limit we're done
+                    if (count($rows) < $batch_size) {
+                        break;
                     }
                 }
             }
             
-            $written = file_put_contents($backup_file, $backup_content);
+            fclose($fh);
             
-            if ($written === false) {
-                return [
-                    'success' => false,
-                    'message' => 'Failed to write database backup file'
-                ];
-            }
+            // Generate SHA-256 checksum for integrity verification
+            $hash = hash_file('sha256', $backup_file);
+            file_put_contents($backup_file . '.sha256', $hash . '  database.sql' . "\n");
             
             return [
-                'success' => true,
-                'message' => 'Database backup completed',
-                'file' => $backup_file,
-                'size' => filesize($backup_file)
+                'success'  => true,
+                'message'  => 'Database backup completed',
+                'file'     => $backup_file,
+                'size'     => filesize($backup_file),
+                'sha256'   => $hash
             ];
             
         } catch (Exception $e) {
+            if (isset($fh) && is_resource($fh)) {
+                fclose($fh);
+            }
             return [
                 'success' => false,
                 'message' => 'Database backup error: ' . $e->getMessage()
@@ -524,8 +576,7 @@ class RP_Care_Task_Backup {
     }
     
     private static function cleanup_old_backups() {
-        $upload_dir = wp_upload_dir();
-        $backup_base_dir = $upload_dir['basedir'] . '/rpcare-backups';
+        $backup_base_dir = self::get_backup_base_dir();
         
         if (!is_dir($backup_base_dir)) {
             return;

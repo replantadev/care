@@ -177,18 +177,42 @@ class RP_Care_REST {
             
             $hook = $task_hooks[$task];
             
-            // Execute the task
-            do_action($hook, $args);
+            // Execute the task and capture the result.
+            // Task handlers are registered via add_filter and receive $args
+            // as the filtered value, returning their result array.
+            // If no handler is hooked the raw $args pass through unchanged;
+            // we detect that with the __rpcare_unhandled sentinel.
+            $sentinel = is_array($args) ? $args : [];
+            $sentinel['__rpcare_unhandled'] = true;
+            $task_result = apply_filters($hook, $sentinel);
             
             $execution_time = round((microtime(true) - $start_time) * 1000, 2);
             
-            return [
-                'success' => true,
+            // If the sentinel survived, no handler processed the task
+            if (is_array($task_result) && !empty($task_result['__rpcare_unhandled'])) {
+                return new WP_Error(
+                    'task_no_handler',
+                    "No handler registered for task '$task'",
+                    ['status' => 500]
+                );
+            }
+            
+            // Normalise: if the handler returned a non-array, wrap it
+            if (!is_array($task_result)) {
+                $task_result = ['success' => true, 'data' => $task_result];
+            }
+            
+            // If the handler didn't set 'success', assume true
+            if (!isset($task_result['success'])) {
+                $task_result['success'] = true;
+            }
+            
+            return array_merge($task_result, [
                 'task' => $task,
                 'executed_at' => current_time('mysql'),
                 'execution_time_ms' => $execution_time,
                 'forced' => $force
-            ];
+            ]);
             
         } catch (Exception $e) {
             RP_Care_Utils::log('api_task', 'error', "Task '$task' failed: " . $e->getMessage());

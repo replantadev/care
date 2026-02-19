@@ -10,12 +10,27 @@ if (!defined('ABSPATH')) {
 
 class RP_Care_Plan {
     
-    const PLAN_BASIC = 'basic';
-    const PLAN_ADVANCED = 'advanced';
-    const PLAN_PREMIUM = 'premium';
+    // Canonical plan names (Spanish — match replanta.net pricing)
     const PLAN_SEMILLA = 'semilla';
     const PLAN_RAIZ = 'raiz';
     const PLAN_ECOSISTEMA = 'ecosistema';
+
+    // Legacy aliases — kept for backwards compat only
+    const PLAN_BASIC = 'basic';
+    const PLAN_ADVANCED = 'advanced';
+    const PLAN_PREMIUM = 'premium';
+
+    /**
+     * Normalize any plan slug to the canonical (Spanish) name.
+     */
+    public static function normalize_plan($plan) {
+        $map = [
+            'basic'    => self::PLAN_SEMILLA,
+            'advanced' => self::PLAN_RAIZ,
+            'premium'  => self::PLAN_ECOSISTEMA,
+        ];
+        return $map[$plan] ?? $plan;
+    }
     
     /**
      * Get Hub URL from options with fallback
@@ -299,26 +314,11 @@ class RP_Care_Plan {
         return self::$plan_configs;
     }
     
+    /**
+     * @deprecated Use get_current() instead — kept as alias.
+     */
     public static function get_current_plan() {
-        // First try to get auto-detected plan
-        $detected_plan = get_option('rpcare_detected_plan', '');
-        if ($detected_plan && self::is_valid_plan($detected_plan)) {
-            return $detected_plan;
-        }
-        
-        // Fallback to manually set plan
-        $options = get_option('rpcare_options', []);
-        $manual_plan = isset($options['plan']) ? $options['plan'] : '';
-        
-        // If no manual plan, try auto-detection
-        if (!$manual_plan) {
-            $auto_plan = self::get_current();
-            if ($auto_plan) {
-                return $auto_plan;
-            }
-        }
-        
-        return $manual_plan ?: 'semilla';
+        return self::normalize_plan(self::get_current());
     }
     
     public static function get_plan_features($plan = null) {
@@ -461,25 +461,33 @@ class RP_Care_Plan {
         if ($plan === null) {
             $plan = self::get_current();
         }
-        
+
+        // Always normalize to canonical names so old slugs still work
+        $plan = self::normalize_plan($plan);
+
         if (!self::is_valid_plan($plan)) {
             return false;
         }
-        
+
         $features_by_plan = [
-            'updates' => [self::PLAN_BASIC, self::PLAN_ADVANCED, self::PLAN_PREMIUM],
-            'backups' => [self::PLAN_BASIC, self::PLAN_ADVANCED, self::PLAN_PREMIUM],
-            'wpo_basic' => [self::PLAN_BASIC, self::PLAN_ADVANCED, self::PLAN_PREMIUM],
-            'wpo_advanced' => [self::PLAN_ADVANCED, self::PLAN_PREMIUM],
-            'wpo_premium' => [self::PLAN_PREMIUM],
-            'monitoring' => [self::PLAN_ADVANCED, self::PLAN_PREMIUM],
-            'priority_support' => [self::PLAN_ADVANCED, self::PLAN_PREMIUM],
-            'seo_reviews' => [self::PLAN_ADVANCED, self::PLAN_PREMIUM],
-            'quarterly_audit' => [self::PLAN_PREMIUM],
-            'cdn_optimization' => [self::PLAN_PREMIUM],
-            'technical_consulting' => [self::PLAN_PREMIUM]
+            'updates'              => [self::PLAN_SEMILLA, self::PLAN_RAIZ, self::PLAN_ECOSISTEMA],
+            'backups'              => [self::PLAN_SEMILLA, self::PLAN_RAIZ, self::PLAN_ECOSISTEMA],
+            'backup'               => [self::PLAN_SEMILLA, self::PLAN_RAIZ, self::PLAN_ECOSISTEMA], // alias
+            'wpo_basic'            => [self::PLAN_SEMILLA, self::PLAN_RAIZ, self::PLAN_ECOSISTEMA],
+            'wpo_advanced'         => [self::PLAN_RAIZ, self::PLAN_ECOSISTEMA],
+            'wpo_premium'          => [self::PLAN_ECOSISTEMA],
+            'monitoring'           => [self::PLAN_RAIZ, self::PLAN_ECOSISTEMA],
+            'priority_support'     => [self::PLAN_RAIZ, self::PLAN_ECOSISTEMA],
+            'seo_reviews'          => [self::PLAN_RAIZ, self::PLAN_ECOSISTEMA],
+            'seo_basic'            => [self::PLAN_SEMILLA, self::PLAN_RAIZ, self::PLAN_ECOSISTEMA],
+            'seo_advanced'         => [self::PLAN_RAIZ, self::PLAN_ECOSISTEMA],
+            'quarterly_audit'      => [self::PLAN_ECOSISTEMA],
+            'audit'                => [self::PLAN_ECOSISTEMA], // alias
+            'cdn_optimization'     => [self::PLAN_ECOSISTEMA],
+            'cdn_config'           => [self::PLAN_ECOSISTEMA], // alias
+            'technical_consulting' => [self::PLAN_ECOSISTEMA],
         ];
-        
+
         return in_array($plan, $features_by_plan[$feature] ?? []);
     }
     
@@ -500,13 +508,17 @@ class RP_Care_Plan {
         }
         
         $plan_hierarchy = [
-            self::PLAN_SEMILLA => 1,
-            self::PLAN_RAIZ => 2,
-            self::PLAN_ECOSISTEMA => 3
+            self::PLAN_SEMILLA     => 1,
+            self::PLAN_RAIZ        => 2,
+            self::PLAN_ECOSISTEMA  => 3,
+            // Legacy aliases
+            self::PLAN_BASIC       => 1,
+            self::PLAN_ADVANCED    => 2,
+            self::PLAN_PREMIUM     => 3,
         ];
-        
-        $current_level = $plan_hierarchy[$current_plan] ?? 0;
-        $new_level = $plan_hierarchy[$new_plan] ?? 0;
+
+        $current_level = $plan_hierarchy[self::normalize_plan($current_plan)] ?? 0;
+        $new_level = $plan_hierarchy[self::normalize_plan($new_plan)] ?? 0;
         
         if ($new_level < $current_level) {
             return new WP_Error('downgrade_not_allowed', 'No se permite degradar el plan automáticamente');

@@ -135,25 +135,14 @@ class RP_Care_Security {
         }
         
         $plan = $payload['plan'] ?? '';
+        // Normalize old English names to canonical Spanish names
+        $plan = RP_Care_Plan::normalize_plan($plan);
         if (!RP_Care_Plan::is_valid_plan($plan)) {
             return false;
         }
         
-        // Define task permissions by plan
-        $task_permissions = [
-            'updates' => [RP_Care_Plan::PLAN_SEMILLA, RP_Care_Plan::PLAN_RAIZ, RP_Care_Plan::PLAN_ECOSISTEMA],
-            'backup' => [RP_Care_Plan::PLAN_SEMILLA, RP_Care_Plan::PLAN_RAIZ, RP_Care_Plan::PLAN_ECOSISTEMA],
-            'wpo_basic' => [RP_Care_Plan::PLAN_SEMILLA, RP_Care_Plan::PLAN_RAIZ, RP_Care_Plan::PLAN_ECOSISTEMA],
-            'wpo_advanced' => [RP_Care_Plan::PLAN_RAIZ, RP_Care_Plan::PLAN_ECOSISTEMA],
-            'wpo_premium' => [RP_Care_Plan::PLAN_ECOSISTEMA],
-            'seo_basic' => [RP_Care_Plan::PLAN_SEMILLA, RP_Care_Plan::PLAN_RAIZ, RP_Care_Plan::PLAN_ECOSISTEMA],
-            'seo_advanced' => [RP_Care_Plan::PLAN_RAIZ, RP_Care_Plan::PLAN_ECOSISTEMA],
-            'monitoring' => [RP_Care_Plan::PLAN_RAIZ, RP_Care_Plan::PLAN_ECOSISTEMA],
-            'audit' => [RP_Care_Plan::PLAN_ECOSISTEMA],
-            'cdn_config' => [RP_Care_Plan::PLAN_ECOSISTEMA]
-        ];
-        
-        return in_array($plan, $task_permissions[$task] ?? []);
+        // Delegate to unified feature map
+        return RP_Care_Plan::can_access_feature($task, $plan);
     }
     
     public static function set_activation_data($token, $plan, $hub_url = '') {

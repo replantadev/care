@@ -139,21 +139,45 @@ class RP_Care_Plan {
     ];
     
     public static function get_current() {
-        // Auto-detect from hub
+        // 1. Check transient cache first (avoids HTTP call on every page load)
+        $cached_plan = get_transient('rpcare_plan_cache');
+        if ($cached_plan !== false) {
+            return $cached_plan;
+        }
+        
+        // 2. Try to detect from Hub (only runs when transient expired)
         $plan = self::detect_plan_from_hub();
         if ($plan) {
             update_option('rpcare_plan', $plan);
             update_option('rpcare_detected_plan', $plan);
+            // Cache for 6 hours to avoid hitting Hub on every request
+            set_transient('rpcare_plan_cache', $plan, 6 * HOUR_IN_SECONDS);
             return $plan;
         }
         
-        // Fallback to previously detected plan
+        // 3. Fallback to previously detected plan (from DB)
         $detected_plan = get_option('rpcare_detected_plan', '');
         if ($detected_plan) {
+            // Cache the fallback too so we don't keep trying
+            set_transient('rpcare_plan_cache', $detected_plan, 1 * HOUR_IN_SECONDS);
             return $detected_plan;
         }
         
-        return get_option('rpcare_plan', '');
+        $saved_plan = get_option('rpcare_plan', '');
+        if ($saved_plan) {
+            set_transient('rpcare_plan_cache', $saved_plan, 1 * HOUR_IN_SECONDS);
+        }
+        return $saved_plan;
+    }
+    
+    /**
+     * Force refresh plan from Hub (manual sync button)
+     */
+    public static function refresh() {
+        delete_transient('rpcare_plan_cache');
+        delete_transient('rpcare_hub_backoff');
+        delete_option('rpcare_hub_failures');
+        return self::get_current();
     }
     
     public static function set_current($plan) {

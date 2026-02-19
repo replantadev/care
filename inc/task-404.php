@@ -206,19 +206,25 @@ class RP_Care_Task_404 {
             return $suggestions;
         }
         
-        // Search in post titles and slugs
-        $search_query = "SELECT ID, post_title, post_name, post_type 
-                        FROM {$wpdb->posts} 
-                        WHERE post_status = 'publish' 
-                        AND post_type IN ('post', 'page', 'product')";
-        
+        // Search in post titles and slugs using prepared statements
         $conditions = [];
+        $values = [];
         foreach ($keywords as $keyword) {
-            $conditions[] = "(post_title LIKE '%" . esc_sql($keyword) . "%' OR post_name LIKE '%" . esc_sql($keyword) . "%')";
+            $like = '%' . $wpdb->esc_like($keyword) . '%';
+            $conditions[] = '(post_title LIKE %s OR post_name LIKE %s)';
+            $values[] = $like;
+            $values[] = $like;
         }
         
         if (!empty($conditions)) {
-            $search_query .= " AND (" . implode(' OR ', $conditions) . ") LIMIT 10";
+            $search_query = $wpdb->prepare(
+                "SELECT ID, post_title, post_name, post_type 
+                FROM {$wpdb->posts} 
+                WHERE post_status = 'publish' 
+                AND post_type IN ('post', 'page', 'product')
+                AND (" . implode(' OR ', $conditions) . ") LIMIT 10",
+                $values
+            );
             
             $results = $wpdb->get_results($search_query);
             

@@ -469,8 +469,28 @@ class RP_Care_REST {
             return false;
         }
         
+        // Sanitize inputs to prevent .htaccess injection
+        // $from must be a relative path starting with /
+        $from = '/' . ltrim(sanitize_text_field($from), '/');
+        if (preg_match('/[\r\n]/', $from) || !preg_match('#^/[a-zA-Z0-9/_.-]+$#', $from)) {
+            error_log('Replanta Care: Rejected invalid redirect source: ' . $from);
+            return false;
+        }
+        
+        // $to must be a valid URL
+        $to = esc_url_raw($to);
+        if (empty($to) || preg_match('/[\r\n]/', $to)) {
+            error_log('Replanta Care: Rejected invalid redirect target: ' . $to);
+            return false;
+        }
+        
         $redirect_rule = "Redirect 301 $from $to\n";
         $htaccess_content = file_get_contents($htaccess_file);
+        
+        // Avoid duplicate redirects
+        if (strpos($htaccess_content, "Redirect 301 $from ") !== false) {
+            return true; // Already exists
+        }
         
         // Add redirect at the beginning of .htaccess
         $new_content = $redirect_rule . $htaccess_content;

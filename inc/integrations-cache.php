@@ -576,17 +576,20 @@ class RP_Care_Task_Cache {
     public static function schedule_cache_clearing($args = []) {
         // Schedule cache clearing based on plan
         $plan = RP_Care_Plan::get_current_plan();
-        
-        if ($plan === 'semilla') {
-            // Weekly cache clearing for Semilla plan
-            if (!wp_next_scheduled('rpcare_clear_cache')) {
-                wp_schedule_event(time(), 'weekly', 'rpcare_clear_cache');
+
+        $recurrence = ($plan === 'semilla') ? 'weekly' : 'daily';
+        $intervals  = ['weekly' => WEEK_IN_SECONDS, 'daily' => DAY_IN_SECONDS];
+
+        if (!in_array($plan, ['semilla', 'raiz', 'ecosistema'], true)) {
+            return;
+        }
+
+        if (function_exists('as_next_scheduled_action')) {
+            if (!as_next_scheduled_action('rpcare_clear_cache', [], 'replanta-care')) {
+                as_schedule_recurring_action(time(), $intervals[$recurrence], 'rpcare_clear_cache', [], 'replanta-care');
             }
-        } elseif (in_array($plan, ['raiz', 'ecosistema'])) {
-            // More frequent cache clearing for higher plans
-            if (!wp_next_scheduled('rpcare_clear_cache')) {
-                wp_schedule_event(time(), 'daily', 'rpcare_clear_cache');
-            }
+        } elseif (!wp_next_scheduled('rpcare_clear_cache')) {
+            wp_schedule_event(time(), $recurrence, 'rpcare_clear_cache');
         }
     }
     

@@ -11,7 +11,8 @@
     ],
     "require": {
         "php": ">=7.4",
-        "yahnis-elsts/plugin-update-checker": "^5.0"
+        "yahnis-elsts/plugin-update-checker": "^5.0",
+        "woocommerce/action-scheduler": "^3.9"
     },
     "autoload": {
         "psr-4": {

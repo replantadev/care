@@ -1,8 +1,8 @@
-<?php
+﻿<?php
 /**
  * Plugin Name: Replanta Care
  * Plugin URI: https://replanta.dev
- * Description: Plugin de mantenimiento WordPress automático para clientes de Replanta con integración completa Hub
+ * Description: Plugin de mantenimiento WordPress automÃ¡tico para clientes de Replanta con integraciÃ³n completa Hub
  * Version: 1.5.0
  * Author: Replanta
  * Author URI: https://replanta.dev
@@ -17,7 +17,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('RPCARE_VERSION', '1.5.0');
+define('RPCARE_VERSION', '1.6.0');
 define('RPCARE_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('RPCARE_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('RPCARE_PLUGIN_FILE', __FILE__);
@@ -36,6 +36,11 @@ if (file_exists($config_file)) {
     require_once $config_file;
 } else {
     require_once RPCARE_PLUGIN_PATH . 'config-sample.php';
+}
+
+// Load Action Scheduler (bundled; defers to WooCommerce copy if newer)
+if (file_exists(RPCARE_PLUGIN_PATH . 'vendor/woocommerce/action-scheduler/action-scheduler.php')) {
+    require_once RPCARE_PLUGIN_PATH . 'vendor/woocommerce/action-scheduler/action-scheduler.php';
 }
 
 // Auto-updates from GitHub (branch-based)
@@ -107,7 +112,7 @@ class ReplantaCare {
         // AJAX actions
         add_action('wp_ajax_rpcare_force_backup', [$this, 'ajax_force_backup']);
         
-        // Daily check hook → also run maintenance cleanup
+        // Daily check hook â†’ also run maintenance cleanup
         add_action('rpcare_daily_check', ['RP_Care_Utils', 'cleanup_all']);
         
         // Activation/Deactivation hooks
@@ -221,9 +226,9 @@ class ReplantaCare {
                 'ajax_url' => admin_url('admin-ajax.php'),
                 'nonce' => wp_create_nonce('rpcare_ajax'),
                 'strings' => [
-                    'testing_connection' => 'Probando conexión...',
-                    'connection_success' => 'Conexión exitosa',
-                    'connection_failed' => 'Error de conexión',
+                    'testing_connection' => 'Probando conexiÃ³n...',
+                    'connection_success' => 'ConexiÃ³n exitosa',
+                    'connection_failed' => 'Error de conexiÃ³n',
                     'running_task' => 'Ejecutando tarea...',
                     'task_completed' => 'Tarea completada',
                     'task_failed' => 'Error en la tarea'
@@ -320,7 +325,7 @@ class ReplantaCare {
             'title' => '<span class="ab-icon" style="background: url(' . RPCARE_PLUGIN_URL . 'assets/img/ico.png) center/16px no-repeat; width: 20px; height: 20px; margin-top: 6px;"></span><span class="ab-label">Mantenimiento Activo</span>',
             'href' => admin_url('options-general.php?page=replanta-care'),
             'meta' => [
-                'title' => 'Replanta Care - Mantenimiento Automático'
+                'title' => 'Replanta Care - Mantenimiento AutomÃ¡tico'
             ]
         ]);
         
@@ -342,7 +347,7 @@ class ReplantaCare {
         $wp_admin_bar->add_menu([
             'parent' => 'replanta-care',
             'id' => 'replanta-care-features',
-            'title' => 'Características activas',
+            'title' => 'CaracterÃ­sticas activas',
             'href' => false
         ]);
         
@@ -352,7 +357,7 @@ class ReplantaCare {
             $wp_admin_bar->add_menu([
                 'parent' => 'replanta-care',
                 'id' => 'replanta-care-feature-' . sanitize_title($feature),
-                'title' => "  • {$feature}",
+                'title' => "  â€¢ {$feature}",
                 'href' => false
             ]);
         }
@@ -360,7 +365,7 @@ class ReplantaCare {
         $wp_admin_bar->add_menu([
             'parent' => 'replanta-care',
             'id' => 'replanta-care-dashboard',
-            'title' => '🎛️ Acceder al Dashboard',
+            'title' => 'ðŸŽ›ï¸ Acceder al Dashboard',
             'href' => admin_url('options-general.php?page=replanta-care'),
             'meta' => [
                 'class' => 'rpcare-dashboard-link'
@@ -370,7 +375,7 @@ class ReplantaCare {
     
     private function get_plan_features($plan) {
         if (empty($plan)) {
-            return ['Mantenimiento básico'];
+            return ['Mantenimiento bÃ¡sico'];
         }
         
         // Use RP_Care_Plan to get features
@@ -378,7 +383,7 @@ class ReplantaCare {
         $feature_list = [];
         
         if ($features['automatic_updates']) {
-            $feature_list[] = 'Actualizaciones automáticas';
+            $feature_list[] = 'Actualizaciones automÃ¡ticas';
         }
         
         if ($features['backup']) {
@@ -391,14 +396,14 @@ class ReplantaCare {
         }
         
         if ($features['performance_optimization']) {
-            $feature_list[] = 'Optimización de rendimiento';
+            $feature_list[] = 'OptimizaciÃ³n de rendimiento';
         }
         
         if ($features['priority_support']) {
             $feature_list[] = 'Soporte prioritario';
         }
         
-        return !empty($feature_list) ? $feature_list : ['Mantenimiento básico'];
+        return !empty($feature_list) ? $feature_list : ['Mantenimiento bÃ¡sico'];
     }
     
     public function activate() {
@@ -412,26 +417,43 @@ class ReplantaCare {
         add_option('rpcare_token', '');
         add_option('rpcare_hub_url', 'https://sitios.replanta.dev');
         
-        // Schedule initial check
-        if (!wp_next_scheduled('rpcare_daily_check')) {
-            wp_schedule_event(time() + 3600, 'daily', 'rpcare_daily_check');
-        }
-        
-        // Schedule daily maintenance (log cleanup, transient purge, backup rotation)
-        if (!wp_next_scheduled('rpcare_task_maintenance')) {
-            wp_schedule_event(time() + 7200, 'daily', 'rpcare_task_maintenance');
-        }
+        // Schedule initial check via Action Scheduler (falls back to WP Cron)
+        $this->rpcare_maybe_schedule('rpcare_daily_check',       'daily',  3600);
+        $this->rpcare_maybe_schedule('rpcare_task_maintenance',  'daily',  7200);
     }
     
     public function deactivate() {
-        // Clear all scheduled tasks
-        wp_clear_scheduled_hook('rpcare_task_updates');
-        wp_clear_scheduled_hook('rpcare_task_backup');
-        wp_clear_scheduled_hook('rpcare_task_wpo');
-        wp_clear_scheduled_hook('rpcare_task_review');
-        wp_clear_scheduled_hook('rpcare_task_monitor');
-        wp_clear_scheduled_hook('rpcare_daily_check');
-        wp_clear_scheduled_hook('rpcare_task_maintenance');
+        // Clear all scheduled tasks (Action Scheduler + WP Cron fallback)
+        $hooks = [
+            'rpcare_task_updates', 'rpcare_task_backup', 'rpcare_task_wpo',
+            'rpcare_task_review', 'rpcare_task_monitor', 'rpcare_daily_check',
+            'rpcare_task_maintenance',
+        ];
+        foreach ($hooks as $hook) {
+            if (function_exists('as_unschedule_all_actions')) {
+                as_unschedule_all_actions($hook, [], 'replanta-care');
+            }
+            wp_clear_scheduled_hook($hook);
+        }
+    }
+
+    /**
+     * Helper: schedule a recurring action once (AS-aware).
+     */
+    private function rpcare_maybe_schedule(string $hook, string $recurrence, int $delay = 0): void {
+        $intervals = [
+            'daily'   => DAY_IN_SECONDS,
+            'weekly'  => WEEK_IN_SECONDS,
+            'monthly' => 30 * DAY_IN_SECONDS,
+        ];
+        if (function_exists('as_next_scheduled_action')) {
+            if (!as_next_scheduled_action($hook, [], 'replanta-care')) {
+                $interval = $intervals[$recurrence] ?? DAY_IN_SECONDS;
+                as_schedule_recurring_action(time() + $delay, $interval, $hook, [], 'replanta-care');
+            }
+        } elseif (!wp_next_scheduled($hook)) {
+            wp_schedule_event(time() + $delay, $recurrence, $hook);
+        }
     }
     
     private function create_tables() {
@@ -566,3 +588,4 @@ class ReplantaCare {
 
 // Initialize the plugin
 ReplantaCare::getInstance();
+

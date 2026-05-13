@@ -84,19 +84,47 @@ class RP_Care_Scheduler {
     }
     
     private function maybe_schedule($hook, $recurrence) {
-        if (!wp_next_scheduled($hook)) {
-            // Add some randomization to avoid all sites hitting at the same time
-            $delay = rand(300, 3600); // 5 minutes to 1 hour delay
-            $timestamp = time() + $delay;
-            
-            $result = wp_schedule_event($timestamp, $recurrence, $hook);
-            
-            if ($result === false) {
-                RP_Care_Utils::log('scheduler', 'error', "Failed to schedule $hook with $recurrence frequency");
-            } else {
-                RP_Care_Utils::log('scheduler', 'success', "Scheduled $hook with $recurrence frequency");
+        $as_available = function_exists('as_next_scheduled_action');
+
+        if ($as_available) {
+            if (!as_next_scheduled_action($hook, [], 'replanta-care')) {
+                $interval = $this->interval_to_seconds($recurrence);
+                $delay = rand(300, 3600); // spread load across sites
+                as_schedule_recurring_action(time() + $delay, $interval, $hook, [], 'replanta-care');
+                RP_Care_Utils::log('scheduler', 'success', "Scheduled $hook with $recurrence via Action Scheduler");
+            }
+        } else {
+            // Fallback: WP Cron
+            if (!wp_next_scheduled($hook)) {
+                $delay = rand(300, 3600);
+                $result = wp_schedule_event(time() + $delay, $recurrence, $hook);
+                if ($result === false) {
+                    RP_Care_Utils::log('scheduler', 'error', "Failed to schedule $hook with $recurrence frequency");
+                } else {
+                    RP_Care_Utils::log('scheduler', 'success', "Scheduled $hook with $recurrence via WP Cron");
+                }
             }
         }
+    }
+
+    /**
+     * Convert WP Cron interval name to seconds.
+     */
+    private function interval_to_seconds(string $name): int {
+        $map = [
+            'hourly'     => HOUR_IN_SECONDS,
+            'twicedaily' => 12 * HOUR_IN_SECONDS,
+            'daily'      => DAY_IN_SECONDS,
+            'weekly'     => WEEK_IN_SECONDS,
+            'monthly'    => 30 * DAY_IN_SECONDS,
+            'quarterly'  => 90 * DAY_IN_SECONDS,
+        ];
+        if (isset($map[$name])) {
+            return $map[$name];
+        }
+        // Query WP cron_schedules for custom intervals
+        $schedules = wp_get_schedules();
+        return isset($schedules[$name]['interval']) ? (int) $schedules[$name]['interval'] : DAY_IN_SECONDS;
     }
     
     private function register_task_hooks() {
@@ -151,7 +179,10 @@ class RP_Care_Scheduler {
         ];
         
         foreach ($hooks as $hook) {
-            wp_clear_scheduled_hook($hook);
+            if (function_exists('as_unschedule_all_actions')) {
+                as_unschedule_all_actions($hook, [], 'replanta-care');
+            }
+            wp_clear_scheduled_hook($hook); // also clear any legacy WP Cron entries
         }
         
         RP_Care_Utils::log('scheduler', 'info', 'Cleared all scheduled tasks');
@@ -173,16 +204,23 @@ class RP_Care_Scheduler {
         ];
         
         $next_runs = [];
+        $as_available = function_exists('as_next_scheduled_action');
         
         foreach ($hooks as $hook => $label) {
-            $timestamp = wp_next_scheduled($hook);
+            if ($as_available) {
+                $timestamp = as_next_scheduled_action($hook, [], 'replanta-care');
+            } else {
+                $timestamp = wp_next_scheduled($hook);
+            }
+
             if ($timestamp) {
                 $next_runs[] = [
                     'task' => $label,
                     'hook' => $hook,
                     'timestamp' => $timestamp,
                     'human_time' => human_time_diff($timestamp, time()),
-                    'formatted_date' => date_i18n('Y-m-d H:i:s', $timestamp)
+                    'formatted_date' => date_i18n('Y-m-d H:i:s', $timestamp),
+                    'engine' => $as_available ? 'Action Scheduler' : 'WP Cron',
                 ];
             }
         }

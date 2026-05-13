@@ -17,7 +17,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('RPCARE_VERSION', '1.6.0');
+define('RPCARE_VERSION', '1.7.0');
 define('RPCARE_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('RPCARE_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('RPCARE_PLUGIN_FILE', __FILE__);
@@ -588,4 +588,5 @@ class ReplantaCare {
 
 // Initialize the plugin
 ReplantaCare::getInstance();
+
 

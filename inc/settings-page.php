@@ -68,6 +68,14 @@ class RP_Care_Settings_Page {
             'rpcare_settings',
             'rpcare_general'
         );
+
+        add_settings_field(
+            'github_token',
+            'Token GitHub (updates)',
+            [$this, 'github_token_field'],
+            'rpcare_settings',
+            'rpcare_general'
+        );
         
         add_settings_field(
             'current_plan',
@@ -485,6 +493,7 @@ class RP_Care_Settings_Page {
                     <?php submit_button('Guardar Configuración', 'primary large', 'submit', false, [
                         'style' => 'background: linear-gradient(135deg, var(--replanta-primary), var(--replanta-secondary)); border: none; padding: 12px 24px; border-radius: 8px;'
                     ]); ?>
+                    <?php submit_button('Comprobar actualizaciones ahora', 'secondary', 'rpcare_check_updates', false); ?>
                 </div>
             </form>
             
@@ -629,6 +638,14 @@ class RP_Care_Settings_Page {
         ?>
         <input type="text" name="rpcare_options[site_token]" value="<?php echo esc_attr($value); ?>" class="regular-text" />
         <p class="description">Token único proporcionado por Replanta para este sitio.</p>
+        <?php
+    }
+
+    public function github_token_field() {
+        $value = get_option('rpcare_github_token', '');
+        ?>
+        <input type="password" name="rpcare_options[github_token]" value="<?php echo esc_attr($value); ?>" class="regular-text" autocomplete="off" />
+        <p class="description">Token de GitHub para acceder al repositorio privado y detectar actualizaciones.</p>
         <?php
     }
     
@@ -842,6 +859,10 @@ class RP_Care_Settings_Page {
         if (isset($input['site_token'])) {
             $sanitized['site_token'] = sanitize_text_field($input['site_token']);
         }
+
+        if (isset($input['github_token'])) {
+            update_option('rpcare_github_token', sanitize_text_field($input['github_token']));
+        }
         
         if (isset($input['plan'])) {
             $valid_plans = ['semilla', 'raiz', 'ecosistema'];
@@ -863,6 +884,18 @@ class RP_Care_Settings_Page {
         
         if (isset($input['notification_types'])) {
             $sanitized['notification_types'] = array_map('sanitize_text_field', $input['notification_types']);
+        }
+
+        if (isset($_POST['rpcare_check_updates'])) {
+            delete_site_transient('update_plugins');
+            wp_clean_plugins_cache(true);
+            wp_update_plugins();
+            add_settings_error(
+                'rpcare_messages',
+                'rpcare_update_check',
+                'Comprobación de actualizaciones ejecutada. Revisa Plugins > Plugins instalados.',
+                'info'
+            );
         }
         
         // Add success message/toast

@@ -36,3 +36,6 @@ ehthumbs.db
 *.bak
 *.backup
 *.old
+
+# Local secure config
+config.php

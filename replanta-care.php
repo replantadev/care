@@ -3,7 +3,7 @@
  * Plugin Name: Replanta Care
  * Plugin URI: https://replanta.dev
  * Description: Plugin de mantenimiento WordPress automático para clientes de Replanta con integración completa Hub
- * Version: 1.4.0
+ * Version: 1.5.0
  * Author: Replanta
  * Author URI: https://replanta.dev
  * License: GPL v2 or later
@@ -17,29 +17,66 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('RPCARE_VERSION', '1.4.0');
+define('RPCARE_VERSION', '1.5.0');
 define('RPCARE_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('RPCARE_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('RPCARE_PLUGIN_FILE', __FILE__);
+
+if (!defined('RPCARE_GITHUB_REPO_URL')) {
+    define('RPCARE_GITHUB_REPO_URL', 'https://github.com/replantadev/care/');
+}
+
+if (!defined('RPCARE_GITHUB_BRANCH')) {
+    define('RPCARE_GITHUB_BRANCH', 'main');
+}
+
+// Load secure configuration if available
+$config_file = RPCARE_PLUGIN_PATH . 'config.php';
+if (file_exists($config_file)) {
+    require_once $config_file;
+} else {
+    require_once RPCARE_PLUGIN_PATH . 'config-sample.php';
+}
 
 // Auto-updates from GitHub (branch-based)
 if (file_exists(RPCARE_PLUGIN_PATH . 'vendor/autoload.php')) {
     require_once RPCARE_PLUGIN_PATH . 'vendor/autoload.php';
     
     try {
-        $updateChecker = \YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
-            'https://github.com/replantadev/care/',
-            __FILE__,
-            'replanta-care'
-        );
-        // Compare version from main branch header
-        $updateChecker->setBranch('main');
-        // GitHub API auth to avoid 60 req/hr rate limit (define in wp-config.php)
-        if (defined('RPCARE_GITHUB_TOKEN') && RPCARE_GITHUB_TOKEN) {
-            $updateChecker->setAuthentication(RPCARE_GITHUB_TOKEN);
+        if (class_exists('\\YahnisElsts\\PluginUpdateChecker\\v5\\PucFactory')) {
+            $updateChecker = \YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
+                RPCARE_GITHUB_REPO_URL,
+                __FILE__,
+                'replanta-care'
+            );
+
+            $updateChecker->setBranch(RPCARE_GITHUB_BRANCH);
+
+            $github_token = get_option('rpcare_github_token');
+            if (empty($github_token) && defined('RPCARE_GITHUB_TOKEN')) {
+                $github_token = RPCARE_GITHUB_TOKEN;
+            }
+            if (empty($github_token)) {
+                $github_token = getenv('RPCARE_GITHUB_TOKEN') ?: '';
+            }
+
+            if (!empty($github_token)) {
+                $updateChecker->setAuthentication($github_token);
+            }
+
+            $updateChecker->addFilter('request_info_result', function($result) {
+                if (is_wp_error($result) && defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
+                    error_log('Replanta Care: Update checker error - ' . $result->get_error_message());
+                }
+                return $result;
+            }, 10, 2);
+        } elseif (defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
+            error_log('Replanta Care: Plugin Update Checker classes not found. Auto-updates disabled.');
         }
-    } catch (Exception $e) {
-        error_log('Replanta Care: Update checker failed - ' . $e->getMessage());
+    } catch (\Throwable $e) {
+        if (defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
+            error_log('Replanta Care: Update checker failed - ' . $e->getMessage());
+        }
     }
 }
 

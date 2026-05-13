@@ -2,11 +2,17 @@
 
 Plugin de mantenimiento automático para clientes de Replanta. Gestiona actualizaciones, backups, seguridad y reportes de forma invisible para el usuario final.
 
-**Versión actual:** 1.2.5  
+**Versión actual:** 1.5.0  
 **Probado hasta:** WordPress 6.7  
 **Requiere:** WordPress 5.0+, PHP 7.4+
 
 ## Changelog
+
+### v1.5.0 (2026-05-13)
+- Sistema de auto-actualización GitHub unificado con Replanta Hub
+- Repo y branch configurables por constantes (`RPCARE_GITHUB_REPO_URL`, `RPCARE_GITHUB_BRANCH`)
+- Token GitHub con prioridad: opción WP > constante > variable de entorno
+- Manejo robusto de errores del update checker (sin fatales)
 
 ### v1.2.5 (2026-02-09)
 - Dashboard widget premium completamente rediseñado

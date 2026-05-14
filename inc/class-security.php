@@ -10,7 +10,7 @@ if (!defined('ABSPATH')) {
 
 class RP_Care_Security {
     
-    private static $token_expiry = 7 * DAY_IN_SECONDS; // 7 days
+    private static $token_expiry = 365 * DAY_IN_SECONDS; // 1 year
     
     public static function generate_token($site_data = []) {
         $payload = [

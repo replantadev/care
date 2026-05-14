@@ -3,7 +3,7 @@
  * Plugin Name: Replanta Care
  * Plugin URI: https://replanta.dev
  * Description: Plugin de mantenimiento WordPress automÃ¡tico para clientes de Replanta con integraciÃ³n completa Hub
- * Version: 1.5.0
+ * Version: 1.7.1
  * Author: Replanta
  * Author URI: https://replanta.dev
  * License: GPL v2 or later
@@ -17,7 +17,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('RPCARE_VERSION', '1.7.0');
+define('RPCARE_VERSION', '1.7.1');
 define('RPCARE_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('RPCARE_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('RPCARE_PLUGIN_FILE', __FILE__);
@@ -111,6 +111,7 @@ class ReplantaCare {
         
         // AJAX actions
         add_action('wp_ajax_rpcare_force_backup', [$this, 'ajax_force_backup']);
+        add_action('wp_ajax_rpcare_regenerate_token', [$this, 'ajax_regenerate_token']);
         
         // Daily check hook â†’ also run maintenance cleanup
         add_action('rpcare_daily_check', ['RP_Care_Utils', 'cleanup_all']);
@@ -550,6 +551,26 @@ class ReplantaCare {
         return get_option('rpcare_activated', false) && 
                get_option('rpcare_token', '') !== '' && 
                $plan !== '';
+    }
+
+    /**
+     * AJAX handler — regenerate the Care REST API token and return it.
+     * Used by the admin to obtain a fresh token to paste into Hub.
+     */
+    public function ajax_regenerate_token() {
+        check_ajax_referer('rpcare_ajax', 'nonce');
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('Permisos insuficientes');
+        }
+
+        $new_token = RP_Care_Security::generate_token();
+        update_option('rpcare_token', $new_token);
+
+        wp_send_json_success([
+            'token' => $new_token,
+            'message' => 'Token regenerado correctamente. Copia este token y pégalo en Replanta Hub para el sitio correspondiente.',
+        ]);
     }
 
     /**

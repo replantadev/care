@@ -121,7 +121,15 @@ class RP_Care_REST {
                 'settings' => [
                     'required' => false,
                     'type' => 'object'
-                ]
+                ],
+                'update_managed' => [
+                    'required' => false,
+                    'type'     => 'boolean',
+                ],
+                'vulnerability_data' => [
+                    'required' => false,
+                    'type'     => 'object',
+                ],
             ]
         ]);
         
@@ -134,7 +142,12 @@ class RP_Care_REST {
     }
     
     public function check_permissions($request) {
-        return RP_Care_Security::validate_request($request);
+        try {
+            return RP_Care_Security::validate_request($request);
+        } catch (\Throwable $e) {
+            error_log('[Replanta Care] check_permissions fatal: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
+            return new WP_Error('auth_error', 'Authentication error: ' . $e->getMessage(), ['status' => 500]);
+        }
     }
     
     public function run_task($request) {
@@ -240,24 +253,36 @@ class RP_Care_REST {
     }
     
     public function ping($request) {
-        // Update uptime status
-        update_option('rpcare_last_uptime_check', time());
-        update_option('rpcare_uptime_status', 'up');
-        
-        // Send basic site info
-        return [
-            'status' => 'ok',
-            'timestamp' => time(),
-            'site_url' => get_site_url(),
-            'wp_version' => get_bloginfo('version'),
-            'plugin_version' => RPCARE_VERSION,
-            'plan' => RP_Care_Plan::get_current(),
-            'memory_usage' => [
-                'current' => memory_get_usage(true),
-                'peak' => memory_get_peak_usage(true),
-                'limit' => ini_get('memory_limit')
-            ]
-        ];
+        try {
+            // Update uptime status
+            update_option('rpcare_last_uptime_check', time());
+            update_option('rpcare_uptime_status', 'up');
+
+            // Read plan from DB (no HTTP call) to avoid blocking remote request
+            $plan = get_option('rpcare_plan', get_option('rpcare_detected_plan', ''));
+            if (!$plan) {
+                // Only use the cached transient — never trigger an outgoing Hub call inside a REST handler
+                $plan = get_transient('rpcare_plan_cache') ?: '';
+            }
+
+            // Send basic site info
+            return [
+                'status' => 'ok',
+                'timestamp' => time(),
+                'site_url' => get_site_url(),
+                'wp_version' => get_bloginfo('version'),
+                'plugin_version' => RPCARE_VERSION,
+                'plan' => $plan,
+                'memory_usage' => [
+                    'current' => memory_get_usage(true),
+                    'peak' => memory_get_peak_usage(true),
+                    'limit' => ini_get('memory_limit')
+                ]
+            ];
+        } catch (\Throwable $e) {
+            error_log('[Replanta Care] ping fatal: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
+            return new WP_Error('ping_error', $e->getMessage(), ['status' => 500]);
+        }
     }
     
     public function get_logs($request) {
@@ -356,8 +381,25 @@ class RP_Care_REST {
             }
         }
         
+        // Hub telling Care whether it manages updates (WP Toolkit Pro)
+        $update_managed = $request->get_param('update_managed');
+        if (!is_null($update_managed)) {
+            update_option('rpcare_update_managed', (bool) $update_managed);
+            $updated['update_managed'] = (bool) $update_managed;
+        }
+
+        // Vulnerability scan results pushed by Hub (from WP Toolkit Pro)
+        $vulnerability_data = $request->get_param('vulnerability_data');
+        if ($vulnerability_data && is_array($vulnerability_data)) {
+            $vulnerability_data['received_at'] = current_time('mysql');
+            update_option('rpcare_vulnerability_data', $vulnerability_data);
+            $updated['vulnerability_data'] = [
+                'count' => count($vulnerability_data['vulnerabilities_found'] ?? []),
+            ];
+        }
+
         RP_Care_Utils::log('config_update', 'info', 'Configuration updated via API', $updated);
-        
+
         return [
             'success' => true,
             'updated' => $updated,

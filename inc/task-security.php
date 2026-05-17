@@ -85,9 +85,36 @@ class RP_Care_Task_Security {
     
     private static function check_plugin_vulnerabilities() {
         $plugins = get_plugins();
+
+        // Prioritise data pushed by Hub/WP Toolkit Pro (authoritative, real-time DB)
+        $hub_data  = get_option('rpcare_vulnerability_data', []);
+        $fresh_hub = !empty($hub_data['received_at']) &&
+                     strtotime($hub_data['received_at']) > strtotime('-24 hours');
+
+        if ($fresh_hub) {
+            $vulns = $hub_data['vulnerabilities_found'] ?? [];
+            return [
+                'status'               => empty($vulns) ? 'good' : 'critical',
+                'source'               => 'wptoolkit',
+                'plugins_checked'      => count($plugins),
+                'vulnerabilities_found' => count($vulns),
+                'vulnerabilities'      => $vulns,
+                'risk_level'           => $hub_data['risk_level'] ?? (empty($vulns) ? 'low' : 'high'),
+                'scanned_at'           => $hub_data['received_at'],
+                'message'              => empty($vulns)
+                    ? 'WP Toolkit Pro: no se encontraron vulnerabilidades'
+                    : sprintf('WP Toolkit Pro detectó %d vulnerabilidad(es)', count($vulns)),
+            ];
+        }
+
+        // Fallback: basic local check (limited hardcoded list — upgrade path is Hub integration)
+        return self::run_local_vuln_scan($plugins);
+    }
+
+    private static function run_local_vuln_scan($plugins) {
         $vulnerabilities = [];
-        $checked = 0;
-        
+        $checked         = 0;
+
         foreach ($plugins as $plugin_file => $plugin_data) {
             if (is_plugin_active($plugin_file)) {
                 $vuln_check = self::check_plugin_vuln($plugin_data);
@@ -97,15 +124,16 @@ class RP_Care_Task_Security {
                 $checked++;
             }
         }
-        
+
         return [
-            'status' => empty($vulnerabilities) ? 'good' : 'critical',
-            'plugins_checked' => $checked,
+            'status'                => empty($vulnerabilities) ? 'good' : 'critical',
+            'source'                => 'local',
+            'plugins_checked'       => $checked,
             'vulnerabilities_found' => count($vulnerabilities),
-            'vulnerabilities' => $vulnerabilities,
-            'message' => empty($vulnerabilities) ? 
-                'No se encontraron vulnerabilidades conocidas' : 
-                sprintf('Se encontraron %d vulnerabilidades', count($vulnerabilities))
+            'vulnerabilities'       => $vulnerabilities,
+            'message'               => empty($vulnerabilities)
+                ? 'No se encontraron vulnerabilidades conocidas'
+                : sprintf('Se encontraron %d vulnerabilidades', count($vulnerabilities)),
         ];
     }
     

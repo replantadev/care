@@ -100,32 +100,48 @@ class RP_Care_Security {
         if (!$auth_header) {
             return new WP_Error('no_auth', 'No authorization header', ['status' => 401]);
         }
-        
-        // Extract token from "Bearer TOKEN" format
+
         if (strpos($auth_header, 'Bearer ') !== 0) {
             return new WP_Error('invalid_auth_format', 'Invalid authorization format', ['status' => 401]);
         }
-        
+
         $token = substr($auth_header, 7);
+
+        // Primary: simple opaque-token comparison against the Hub-assigned site token.
+        // The admin copies the token from Hub and pastes it into Care → Settings → Token del Sitio.
+        // Using hash_equals to prevent timing attacks.
+        $options    = get_option('rpcare_options', []);
+        $site_token = $options['site_token'] ?? '';
+        if (!empty($site_token) && hash_equals($site_token, $token)) {
+            $request->set_param('_rpcare_payload', [
+                'plan'     => RP_Care_Plan::get_current(),
+                'site_url' => get_site_url(),
+            ]);
+            return self::apply_ip_whitelist($request);
+        }
+
+        // Fallback: JWT validation (tokens generated via gen-token.php or set_activation_data).
         $payload = self::validate_token($token);
-        
         if (!$payload) {
             return new WP_Error('invalid_token', 'Invalid or expired token', ['status' => 401]);
         }
-        
-        // Check IP whitelist if configured
+
+        $request->set_param('_rpcare_payload', $payload);
+        return self::apply_ip_whitelist($request);
+    }
+
+    /**
+     * Checks the IP whitelist if configured. Returns true or WP_Error.
+     */
+    private static function apply_ip_whitelist($request) {
         $allowed_ips = get_option('rpcare_allowed_ips', []);
         if (!empty($allowed_ips)) {
             $client_ip = RP_Care_Utils::get_client_ip();
-            if (!in_array($client_ip, $allowed_ips)) {
+            if (!in_array($client_ip, $allowed_ips, true)) {
                 RP_Care_Utils::log('security', 'warning', "Blocked request from unauthorized IP: $client_ip");
                 return new WP_Error('ip_not_allowed', 'IP not in whitelist', ['status' => 403]);
             }
         }
-        
-        // Store validated payload for use in request
-        $request->set_param('_rpcare_payload', $payload);
-        
         return true;
     }
     

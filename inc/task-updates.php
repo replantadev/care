@@ -11,6 +11,18 @@ if (!defined('ABSPATH')) {
 class RP_Care_Task_Updates {
     
     public static function run($args = []) {
+        // When Hub/WP Toolkit Pro manages updates for this site, skip Care's own task
+        if (get_option('rpcare_update_managed', false)) {
+            $msg = 'Actualizaciones gestionadas por Replanta Hub vía WP Toolkit Pro';
+            RP_Care_Utils::log('updates', 'info', $msg);
+            return [
+                'success'         => true,
+                'managed_by_hub'  => true,
+                'message'         => $msg,
+                'skipped'         => true,
+            ];
+        }
+
         $plan       = RP_Care_Plan::get_current();
         $exclusions = RP_Care_Tasks::get_exclusions();
 

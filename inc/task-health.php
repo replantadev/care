@@ -27,11 +27,15 @@ class RP_Care_Task_Health {
         $health_score = self::calculate_health_score($health_checks);
         $health_checks['overall_score'] = $health_score;
         
+        // Persist score so the dashboard widget reads the same value
+        update_option('rpcare_health_score', $health_score);
+        update_option('rpcare_last_health_check', current_time('mysql'));
+
         // Log critical issues
         self::log_critical_issues($health_checks);
-        
+
         RP_Care_Utils::log('health_check', 'success', "Health check completed with score: $health_score%", $health_checks);
-        
+
         return $health_checks;
     }
     

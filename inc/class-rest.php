@@ -139,6 +139,29 @@ class RP_Care_REST {
             'callback' => [$this, 'get_schedule'],
             'permission_callback' => [$this, 'check_permissions']
         ]);
+
+        // Backuply: list backups
+        register_rest_route($this->namespace, '/backuply/list', [
+            'methods' => 'GET',
+            'callback' => [$this, 'backuply_list'],
+            'permission_callback' => [$this, 'check_permissions'],
+            'args' => [
+                'limit' => [
+                    'required' => false,
+                    'type' => 'integer',
+                    'default' => 50,
+                    'minimum' => 1,
+                    'maximum' => 200,
+                ],
+            ],
+        ]);
+
+        // Backuply: trigger a new backup
+        register_rest_route($this->namespace, '/backuply/create', [
+            'methods' => 'POST',
+            'callback' => [$this, 'backuply_create'],
+            'permission_callback' => [$this, 'check_permissions'],
+        ]);
     }
     
     public function check_permissions($request) {
@@ -560,7 +583,67 @@ class RP_Care_REST {
         
         // Add redirect at the beginning of .htaccess
         $new_content = $redirect_rule . $htaccess_content;
-        
+
         return file_put_contents($htaccess_file, $new_content) !== false;
+    }
+
+    /**
+     * GET /backuply/list — returns backups stored by Backuply plugin.
+     */
+    public function backuply_list($request) {
+        $limit = (int) $request->get_param('limit');
+
+        $backup_list = get_option('backuply_backup_list', []);
+
+        if (!is_array($backup_list)) {
+            return rest_ensure_response(['backups' => [], 'total' => 0, 'plugin_active' => false]);
+        }
+
+        $plugin_active = is_plugin_active('backuply/backuply.php');
+
+        // Normalize and sort by timestamp descending
+        $backups = [];
+        foreach ($backup_list as $key => $b) {
+            $ts = isset($b['time']) ? (int) $b['time'] : (int) strtotime($b['date'] ?? '');
+            $backups[] = [
+                'id'           => is_string($key) ? $key : ($b['id'] ?? uniqid('bkp_')),
+                'name'         => $b['name'] ?? $b['filename'] ?? 'Backup',
+                'type'         => $b['type'] ?? 'full',
+                'status'       => $b['status'] ?? 'completed',
+                'size'         => $b['size'] ?? 0,
+                'created_at'   => $ts ? date('Y-m-d H:i:s', $ts) : '',
+                'completed_at' => $ts ? date('Y-m-d H:i:s', $ts) : '',
+                'is_restorable' => true,
+            ];
+        }
+
+        usort($backups, function ($a, $b) {
+            return strcmp($b['created_at'], $a['created_at']);
+        });
+
+        return rest_ensure_response([
+            'backups'       => array_slice($backups, 0, $limit),
+            'total'         => count($backups),
+            'plugin_active' => $plugin_active,
+        ]);
+    }
+
+    /**
+     * POST /backuply/create — triggers a Backuply backup.
+     */
+    public function backuply_create($request) {
+        if (!is_plugin_active('backuply/backuply.php')) {
+            return new WP_Error('backuply_inactive', 'Backuply no está activo en este sitio', ['status' => 503]);
+        }
+
+        do_action('backuply_cron_backup');
+
+        RP_Care_Utils::log('backup', 'info', 'Backup Backuply solicitado desde Hub via REST');
+
+        return rest_ensure_response([
+            'success'    => true,
+            'message'    => 'Backup iniciado con Backuply',
+            'started_at' => current_time('mysql'),
+        ]);
     }
 }

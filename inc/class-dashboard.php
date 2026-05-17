@@ -314,17 +314,33 @@ class RP_Care_Dashboard {
     }
     
     /**
-     * Get health data
+     * Get health data.
+     *
+     * Priority: score persisted by the full health task (authoritative, matches
+     * what the Care settings page shows) → quick in-memory calculation as
+     * fallback when the task has never run yet.
      */
     private function get_health_data() {
+        $stored_score = get_option('rpcare_health_score');
+        $last_check   = get_option('rpcare_last_health_check', '');
+
+        if ($stored_score !== false && $last_check !== '') {
+            return [
+                'score'  => (int) $stored_score,
+                'source' => 'health_task',
+                'last_check' => $last_check,
+            ];
+        }
+
+        // Health task has never run — use quick transient-cached calculation.
         $cached = get_transient('rpcare_health_data');
         if ($cached) {
             return $cached;
         }
-        
+
         $health = $this->calculate_health_score();
         set_transient('rpcare_health_data', $health, HOUR_IN_SECONDS);
-        
+
         return $health;
     }
     
@@ -514,25 +530,40 @@ class RP_Care_Dashboard {
     }
     
     // =========================================================================
-    // Widget Styles
+    // Widget Styles — split into sections to stay under the 150-line limit
     // =========================================================================
-    
+
     private function get_widget_styles() {
+        return $this->get_widget_base_styles()
+             . $this->get_widget_header_styles()
+             . $this->get_widget_metrics_styles()
+             . $this->get_widget_chrome_styles();
+    }
+
+    /** Fonts, CSS variables, WP dashboard chrome reset */
+    private function get_widget_base_styles() {
         return '
-@import url("https://fonts.googleapis.com/css2?family=Fraunces:wght@600&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Inter:wght@400;500;600&display=swap");
 
 #rpcare_dashboard .inside { padding: 0; margin: 0; }
 #rpcare_dashboard .postbox-header { display: none; }
 
 .rpcare-widget {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
-    --rp-primary: #1E2F23;
-    --rp-accent: #93F1C9;
-    --rp-text: #7A7A7A;
-    --rp-teal: #41999F;
-    --rp-yellow: #F7D450;
+    font-family: "Inter", sans-serif;
+    --rp-primary:  #1E2F23;
+    --rp-accent:   #93F1C9;
+    --rp-bg:       #F7FBF9;
+    --rp-text:     #7A7A7A;
+    --rp-teal:     #41999F;
+    --rp-yellow:   #F7D450;
+    --rp-gradient: linear-gradient(135deg, #93F1C9 0%, #41999F 50%, #2A6B70 100%);
 }
+';
+    }
 
+    /** Header: brand, logo, title, plan badge, status indicator */
+    private function get_widget_header_styles() {
+        return '
 .rpcare-header {
     display: flex;
     justify-content: space-between;
@@ -541,39 +572,23 @@ class RP_Care_Dashboard {
     background: var(--rp-primary);
     color: #fff;
 }
-
-.rpcare-brand {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-
-.rpcare-logo {
-    width: 36px;
-    height: 36px;
-    object-fit: contain;
-}
-
-.rpcare-brand-text {
-    display: flex;
-    flex-direction: column;
-}
+.rpcare-brand { display: flex; align-items: center; gap: 12px; }
+.rpcare-logo  { width: 36px; height: 36px; object-fit: contain; }
+.rpcare-brand-text { display: flex; flex-direction: column; }
 
 .rpcare-title {
-    font-family: "Fraunces", Georgia, serif;
+    font-family: "Sora", sans-serif;
     font-size: 15px;
     font-weight: 600;
     letter-spacing: -0.02em;
     color: #fff;
 }
-
 .rpcare-plan-label {
     font-size: 11px;
     color: var(--rp-accent);
     text-transform: uppercase;
     letter-spacing: 0.05em;
 }
-
 .rpcare-status-indicator {
     display: flex;
     align-items: center;
@@ -583,156 +598,71 @@ class RP_Care_Dashboard {
     border-radius: 20px;
     background: rgba(147, 241, 201, 0.15);
 }
-
-.status-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--rp-accent);
-}
-
-.status-ok .status-dot { background: var(--rp-accent); }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--rp-accent); }
+.status-ok .status-dot      { background: var(--rp-accent); }
 .status-warning .status-dot { background: var(--rp-yellow); }
 
+/* Plan overrides — all use the same dark header */
+.rpcare-widget[data-plan="semilla"] .rpcare-header,
+.rpcare-widget[data-plan="raiz"] .rpcare-header,
+.rpcare-widget[data-plan="ecosistema"] .rpcare-header { background: var(--rp-primary); }
+';
+    }
+
+    /** Metrics grid and info bar */
+    private function get_widget_metrics_styles() {
+        return '
 .rpcare-metrics {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
     gap: 1px;
     background: #e8ebe9;
 }
-
-.rpcare-metric {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 16px;
-    background: #fff;
-}
-
+.rpcare-metric { display: flex; align-items: center; gap: 12px; padding: 16px; background: #fff; }
 .metric-icon {
-    width: 36px;
-    height: 36px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    width: 36px; height: 36px;
+    display: flex; align-items: center; justify-content: center;
     background: rgba(147, 241, 201, 0.15);
     border-radius: 8px;
     color: var(--rp-teal);
 }
+.metric-icon svg  { width: 18px; height: 18px; }
+.metric-content   { display: flex; flex-direction: column; gap: 2px; }
+.metric-label     { font-size: 11px; color: var(--rp-text); text-transform: uppercase; letter-spacing: 0.03em; }
+.metric-value     { font-size: 14px; font-weight: 600; color: var(--rp-primary); }
+.metric-score     { color: var(--rp-teal); }
 
-.metric-icon svg {
-    width: 18px;
-    height: 18px;
-}
+.rpcare-info-bar  { display: flex; justify-content: space-around; padding: 12px 16px; background: var(--rp-bg); border-top: 1px solid #e8ebe9; }
+.info-item        { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.info-label       { font-size: 10px; color: var(--rp-text); text-transform: uppercase; }
+.info-value       { font-size: 13px; font-weight: 500; color: var(--rp-primary); }
+';
+    }
 
-.metric-content {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-}
-
-.metric-label {
-    font-size: 11px;
-    color: var(--rp-text);
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-}
-
-.metric-value {
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--rp-primary);
-}
-
-.metric-score {
-    color: var(--rp-teal);
-}
-
-.rpcare-info-bar {
-    display: flex;
-    justify-content: space-around;
-    padding: 12px 16px;
-    background: #f8faf9;
-    border-top: 1px solid #e8ebe9;
-}
-
-.info-item {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 2px;
-}
-
-.info-label {
-    font-size: 10px;
-    color: var(--rp-text);
-    text-transform: uppercase;
-}
-
-.info-value {
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--rp-primary);
-}
-
+    /** Notice banner, footer, link, version */
+    private function get_widget_chrome_styles() {
+        return '
 .rpcare-notice {
-    display: flex;
-    align-items: center;
-    gap: 10px;
+    display: flex; align-items: center; gap: 10px;
     padding: 12px 16px;
     background: rgba(247, 212, 80, 0.12);
     border-top: 1px solid rgba(247, 212, 80, 0.3);
-    font-size: 12px;
-    color: #8a6d00;
+    font-size: 12px; color: #8a6d00;
 }
-
-.rpcare-notice svg {
-    width: 16px;
-    height: 16px;
-    flex-shrink: 0;
-    color: var(--rp-yellow);
-}
+.rpcare-notice svg { width: 16px; height: 16px; flex-shrink: 0; color: var(--rp-yellow); }
 
 .rpcare-footer {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 14px 16px;
-    background: #fff;
-    border-top: 1px solid #e8ebe9;
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 14px 16px; background: #fff; border-top: 1px solid #e8ebe9;
 }
-
 .rpcare-link {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--rp-teal);
-    text-decoration: none;
-    transition: color 0.15s;
+    display: flex; align-items: center; gap: 6px;
+    font-size: 13px; font-weight: 500;
+    color: var(--rp-teal); text-decoration: none; transition: color 0.15s;
 }
-
-.rpcare-link:hover {
-    color: var(--rp-primary);
-}
-
-.rpcare-link svg {
-    width: 14px;
-    height: 14px;
-}
-
-.rpcare-version {
-    font-size: 11px;
-    color: var(--rp-text);
-}
-
-/* All plans use the same dark header now */
-.rpcare-widget[data-plan="semilla"] .rpcare-header,
-.rpcare-widget[data-plan="raiz"] .rpcare-header,
-.rpcare-widget[data-plan="ecosistema"] .rpcare-header { 
-    background: var(--rp-primary); 
-}
-        ';
+.rpcare-link:hover { color: var(--rp-primary); }
+.rpcare-link svg   { width: 14px; height: 14px; }
+.rpcare-version    { font-size: 11px; color: var(--rp-text); }
+';
     }
 }

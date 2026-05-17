@@ -1,0 +1,74 @@
+name: Deploy Replanta Care
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    name: Release & Notify Hub
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract version
+        id: meta
+        run: |
+          VERSION=$(grep "^define('RPCARE_VERSION'" replanta-care.php | sed "s/.*'\([0-9.]*\)'.*/\1/")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Releasing v$VERSION"
+
+      - name: Build plugin zip
+        run: |
+          VERSION=${{ steps.meta.outputs.version }}
+          mkdir -p /tmp/build/replanta-care
+
+          rsync -av \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='*.md' \
+            --exclude='composer.json' \
+            --exclude='composer.lock' \
+            --exclude='config-sample.php' \
+            --exclude='update-info.json' \
+            ./ /tmp/build/replanta-care/
+
+          cd /tmp/build
+          zip -r "$GITHUB_WORKSPACE/replanta-care-${VERSION}.zip" replanta-care/
+          echo "Built replanta-care-${VERSION}.zip"
+
+      - name: Create GitHub Release
+        id: release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.meta.outputs.version }}
+          name: Replanta Care v${{ steps.meta.outputs.version }}
+          files: replanta-care-${{ steps.meta.outputs.version }}.zip
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Notify Hub to cache zip and refresh care-info.json
+        env:
+          HUB_DEPLOY_TOKEN: ${{ secrets.HUB_DEPLOY_TOKEN }}
+        run: |
+          VERSION=${{ steps.meta.outputs.version }}
+
+          RESPONSE=$(curl -s -o /tmp/hub_response.json -w "%{http_code}" \
+            -X POST "https://sitios.replanta.dev/wp-json/replanta-hub/v1/deploy/care" \
+            -H "X-Deploy-Token: ${HUB_DEPLOY_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "{\"version\": \"${VERSION}\"}" \
+            --retry 3 --retry-delay 5)
+
+          echo "Hub response ($RESPONSE):"
+          cat /tmp/hub_response.json
+
+          if [ "$RESPONSE" != "200" ]; then
+            echo "WARNING: Hub notification returned $RESPONSE — check Hub logs"
+            exit 1
+          fi
+
+          echo "Care v${VERSION} deployed and available to all clients"

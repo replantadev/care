@@ -36,39 +36,120 @@ class RP_Care_Task_Backup {
         return $results;
     }
     
+    private static function is_backuply_active() {
+        return is_plugin_active('backuply/backuply.php');
+    }
+
+    private static function get_backuply_backup_info() {
+        $backup_list = get_option('backuply_backup_list', []);
+
+        if (empty($backup_list) || !is_array($backup_list)) {
+            return false;
+        }
+
+        $latest_time   = 0;
+        $latest_backup = null;
+
+        foreach ($backup_list as $backup) {
+            // Backuply stores timestamps in 'time' key (Unix) or 'date' key (string)
+            $ts = isset($backup['time']) ? (int) $backup['time'] : strtotime($backup['date'] ?? '');
+            if ($ts > $latest_time) {
+                $latest_time   = $ts;
+                $latest_backup = $backup;
+            }
+        }
+
+        if (!$latest_backup || !$latest_time) {
+            return false;
+        }
+
+        return [
+            'date'      => date('Y-m-d H:i:s', $latest_time),
+            'timestamp' => $latest_time,
+            'name'      => $latest_backup['name'] ?? 'Backuply backup',
+            'size'      => $latest_backup['size'] ?? 0,
+            'age_hours' => round((time() - $latest_time) / 3600, 1),
+        ];
+    }
+
     private static function handle_whm_backup($args) {
-        // For WHM/cPanel environments, we rely on the hub to manage backups
-        // This method just reports the status
-        
-        $last_backup = self::check_cpanel_backup_status();
-        
-        if ($last_backup) {
+        // Check Backuply first — most reliable if installed on the site
+        if (self::is_backuply_active()) {
+            $info = self::get_backuply_backup_info();
+            if ($info && $info['age_hours'] <= 48) {
+                return [
+                    'success'      => true,
+                    'method'       => 'backuply',
+                    'message'      => sprintf('Backuply: copia disponible (hace %.1fh)', $info['age_hours']),
+                    'last_backup'  => $info['date'],
+                    'backup_name'  => $info['name'],
+                    'managed_by_hub' => true,
+                ];
+            }
+            // Backuply present but no recent backup — request one
+            do_action('backuply_cron_backup');
             return [
-                'success' => true,
-                'method' => 'whm_cpanel',
-                'message' => 'Backup managed by WHM/cPanel',
-                'last_backup' => $last_backup,
-                'managed_by_hub' => true
-            ];
-        } else {
-            return [
-                'success' => false,
-                'method' => 'whm_cpanel',
-                'message' => 'Could not verify WHM/cPanel backup status',
-                'managed_by_hub' => true
+                'success'        => true,
+                'method'         => 'backuply',
+                'message'        => 'Backuply: copia programada (no había copia reciente)',
+                'backup_time'    => current_time('mysql'),
+                'managed_by_hub' => true,
             ];
         }
+
+        // Fall through to cPanel file scan
+        $last_backup = self::check_cpanel_backup_status();
+
+        if ($last_backup) {
+            return [
+                'success'        => true,
+                'method'         => 'whm_cpanel',
+                'message'        => 'Backup managed by WHM/cPanel',
+                'last_backup'    => $last_backup,
+                'managed_by_hub' => true,
+            ];
+        }
+
+        return [
+            'success'        => false,
+            'method'         => 'whm_cpanel',
+            'message'        => 'Could not verify WHM/cPanel backup status',
+            'managed_by_hub' => true,
+        ];
     }
-    
+
     private static function handle_external_backup($args) {
         // For external sites, try multiple backup methods in order of preference
-        
-        // 1. Try UpdraftPlus
+
+        // 1. Backuply (Replanta's preferred backup solution)
+        if (self::is_backuply_active()) {
+            $info = self::get_backuply_backup_info();
+            if ($info && $info['age_hours'] <= 24) {
+                return [
+                    'success'            => true,
+                    'method'             => 'backuply',
+                    'message'            => sprintf('Backuply: copia disponible (hace %.1fh)', $info['age_hours']),
+                    'last_backup'        => $info['date'],
+                    'backup_name'        => $info['name'],
+                    'skipped_new_backup' => true,
+                ];
+            }
+            // Backuply present but backup is stale or missing — trigger a new one
+            do_action('backuply_cron_backup');
+            return [
+                'success'     => true,
+                'method'      => 'backuply',
+                'message'     => 'Backuply: nueva copia iniciada',
+                'backup_time' => current_time('mysql'),
+            ];
+        }
+
+        // 2. Try UpdraftPlus
         if (self::is_updraftplus_active()) {
             return self::trigger_updraftplus_backup($args);
         }
-        
-        // 2. Try other backup plugins
+
+        // 3. Try other backup plugins
         $backup_plugins = [
             'backupbuddy' => 'BackupBuddy',
             'duplicator' => 'Duplicator',
@@ -632,8 +713,16 @@ class RP_Care_Task_Backup {
             'method' => 'unknown'
         ];
         
-        // Determine backup method
-        if (RP_Care_Scheduler::get_environment_type() === 'whm') {
+        // Determine backup method (priority order mirrors handle_* methods)
+        if (self::is_backuply_active()) {
+            $status['method'] = 'backuply';
+            $info = self::get_backuply_backup_info();
+            if ($info) {
+                $status['last_backup']       = $info['date'];
+                $status['last_backup_name']  = $info['name'];
+                $status['backup_age_hours']  = $info['age_hours'];
+            }
+        } elseif (RP_Care_Scheduler::get_environment_type() === 'whm') {
             $status['method'] = 'whm_cpanel';
         } elseif (self::is_updraftplus_active()) {
             $status['method'] = 'updraftplus';

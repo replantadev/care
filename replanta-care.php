@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Replanta Care
  * Plugin URI: https://replanta.dev
- * Description: Plugin de mantenimiento WordPress automÃ¡tico para clientes de Replanta con integraciÃ³n completa Hub
+ * Description: Plugin de mantenimiento WordPress automático para clientes de Replanta con integración Hub
  * Version: 1.7.2
  * Author: Replanta
  * Author URI: https://replanta.dev
@@ -26,6 +26,11 @@ if (!defined('RPCARE_GITHUB_REPO_URL')) {
     define('RPCARE_GITHUB_REPO_URL', 'https://github.com/replantadev/care/');
 }
 
+// Update metadata served by the Hub (no GitHub token required on client sites)
+if (!defined('RPCARE_UPDATE_URL')) {
+    define('RPCARE_UPDATE_URL', 'https://sitios.replanta.dev/wp-content/uploads/replanta-updates/care-info.json');
+}
+
 if (!defined('RPCARE_GITHUB_BRANCH')) {
     define('RPCARE_GITHUB_BRANCH', 'main');
 }
@@ -43,40 +48,17 @@ if (file_exists(RPCARE_PLUGIN_PATH . 'vendor/woocommerce/action-scheduler/action
     require_once RPCARE_PLUGIN_PATH . 'vendor/woocommerce/action-scheduler/action-scheduler.php';
 }
 
-// Auto-updates from GitHub (branch-based)
+// Auto-updates via Hub (Hub fetches from GitHub and serves the zip — no token needed on client sites)
 if (file_exists(RPCARE_PLUGIN_PATH . 'vendor/autoload.php')) {
     require_once RPCARE_PLUGIN_PATH . 'vendor/autoload.php';
-    
+
     try {
         if (class_exists('\\YahnisElsts\\PluginUpdateChecker\\v5\\PucFactory')) {
-            $updateChecker = \YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
-                RPCARE_GITHUB_REPO_URL,
+            \YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
+                RPCARE_UPDATE_URL,
                 __FILE__,
                 'replanta-care'
             );
-
-            $updateChecker->setBranch(RPCARE_GITHUB_BRANCH);
-
-            $github_token = get_option('rpcare_github_token');
-            if (empty($github_token) && defined('RPCARE_GITHUB_TOKEN')) {
-                $github_token = RPCARE_GITHUB_TOKEN;
-            }
-            if (empty($github_token)) {
-                $github_token = getenv('RPCARE_GITHUB_TOKEN') ?: '';
-            }
-
-            if (!empty($github_token)) {
-                $updateChecker->setAuthentication($github_token);
-            }
-
-            $updateChecker->addFilter('request_info_result', function($result) {
-                if (is_wp_error($result) && defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
-                    error_log('Replanta Care: Update checker error - ' . $result->get_error_message());
-                }
-                return $result;
-            }, 10, 2);
-        } elseif (defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
-            error_log('Replanta Care: Plugin Update Checker classes not found. Auto-updates disabled.');
         }
     } catch (\Throwable $e) {
         if (defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
@@ -326,7 +308,7 @@ class ReplantaCare {
             'title' => '<span class="ab-icon" style="background: url(' . RPCARE_PLUGIN_URL . 'assets/img/ico.png) center/16px no-repeat; width: 20px; height: 20px; margin-top: 6px;"></span><span class="ab-label">Mantenimiento Activo</span>',
             'href' => admin_url('options-general.php?page=replanta-care'),
             'meta' => [
-                'title' => 'Replanta Care - Mantenimiento AutomÃ¡tico'
+                'title' => 'Replanta Care - Mantenimiento Automático'
             ]
         ]);
         
@@ -348,7 +330,7 @@ class ReplantaCare {
         $wp_admin_bar->add_menu([
             'parent' => 'replanta-care',
             'id' => 'replanta-care-features',
-            'title' => 'CaracterÃ­sticas activas',
+            'title' => 'Características activas',
             'href' => false
         ]);
         
@@ -358,7 +340,7 @@ class ReplantaCare {
             $wp_admin_bar->add_menu([
                 'parent' => 'replanta-care',
                 'id' => 'replanta-care-feature-' . sanitize_title($feature),
-                'title' => "  â€¢ {$feature}",
+                'title' => "· {$feature}",
                 'href' => false
             ]);
         }
@@ -366,7 +348,7 @@ class ReplantaCare {
         $wp_admin_bar->add_menu([
             'parent' => 'replanta-care',
             'id' => 'replanta-care-dashboard',
-            'title' => 'ðŸŽ›ï¸ Acceder al Dashboard',
+            'title' => '⚙️ Abrir panel de mantenimiento',
             'href' => admin_url('options-general.php?page=replanta-care'),
             'meta' => [
                 'class' => 'rpcare-dashboard-link'

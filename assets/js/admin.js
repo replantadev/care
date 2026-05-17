@@ -48,7 +48,7 @@
                 return;
             }
             
-            button.addClass('testing').html('<span class="dashicons dashicons-update spin"></span> Probando...');
+            button.addClass('testing').html('Probando...');
             console.log('🔄 Iniciando petición AJAX...');
             
             $.ajax({
@@ -78,14 +78,14 @@
                 },
                 complete: function() {
                     console.log('🏁 Petición AJAX completada');
-                    button.removeClass('testing').html('<span class="dashicons dashicons-admin-plugins"></span> Probar Conexión');
+                    button.removeClass('testing').html('Probar conexión');
                 }
             });
         });
     }
 
     function initManualTasks() {
-        $('.rpcare-task-buttons .button').on('click', function(e) {
+        $(document).on('click', '.rpc-action-card', function(e) {
             e.preventDefault();
             
             const button = $(this);
@@ -136,22 +136,23 @@
     function showTaskResult(task, status, data) {
         const resultsContainer = $('#rpcare-task-results');
         const taskName = getTaskName(task);
-        const statusIcon = status === 'success' ? 'yes-alt' : 'dismiss';
-        
-        const resultHtml = '<div class="rpcare-task-result ' + status + '">' +
-            '<div class="task-header">' +
-                '<h4><span class="dashicons dashicons-' + statusIcon + '"></span> ' + taskName + '</h4>' +
-                '<span class="task-timestamp">' + new Date().toLocaleString() + '</span>' +
-            '</div>' +
-            '<div class="task-message">' + (data.message || '') + '</div>' +
-            (data.details ? '<div class="task-details">' + formatTaskDetails(data.details) + '</div>' : '') +
-        '</div>';
-        
+        const icon = status === 'success' ? '✓' : '✕';
+
+        const resultHtml =
+            '<div class="rpc-result-card ' + status + '">' +
+                '<div class="rpc-result-header">' +
+                    '<span class="rpc-result-title">' + icon + ' ' + taskName + '</span>' +
+                    '<time class="rpc-result-time">' + new Date().toLocaleTimeString() + '</time>' +
+                '</div>' +
+                '<div class="rpc-result-message">' + (data.message || '') + '</div>' +
+                (data.details ? '<details style="margin-top:8px;font-size:12px;"><summary style="cursor:pointer;color:var(--rp-muted)">Detalles</summary>' + formatTaskDetails(data.details) + '</details>' : '') +
+            '</div>';
+
         resultsContainer.prepend(resultHtml);
-        
-        resultsContainer.find('.rpcare-task-result:gt(4)').remove();
-        
-        resultsContainer.get(0).scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        resultsContainer.find('.rpc-result-card:gt(4)').remove();
+        if (resultsContainer.get(0)) {
+            resultsContainer.get(0).scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
     }
 
     function getTaskName(task) {
@@ -491,62 +492,55 @@
     }
 
     function showConnectionStatus(type, message) {
-        let statusDiv = $('#connection-status');
-        
-        if (statusDiv.length === 0) {
-            statusDiv = $('<div id="connection-status" class="connection-status"></div>');
-            $('#test-connection').after(statusDiv);
+        // Update the header pill
+        const pill = $('#rpc-hub-pill');
+        if (pill.length) {
+            pill.removeClass('connected disconnected').addClass(type === 'success' ? 'connected' : 'disconnected');
+            pill.find('.rpc-pill-text').text(type === 'success' ? 'Conectado' : 'Sin conexión');
         }
-        
-        const icon = type === 'success' ? 'yes-alt' : 'dismiss';
-        
-        statusDiv
-            .removeClass('success error')
-            .addClass(type)
-            .html('<span class="dashicons dashicons-' + icon + '"></span> ' + message)
-            .fadeIn();
-            
-        setTimeout(function() {
-            statusDiv.fadeOut();
-        }, 5000);
+
+        // Update inline result div below the test button
+        const resultDiv = $('#rpc-connection-result');
+        if (resultDiv.length) {
+            resultDiv
+                .removeClass('success error')
+                .addClass(type)
+                .html(message)
+                .show();
+            setTimeout(function() { resultDiv.fadeOut(); }, 5000);
+        }
     }
 
-    function showNotification(message, type = 'info', duration = 5000) {
-        const icons = {
-            'success': 'yes-alt',
-            'error': 'dismiss',
-            'warning': 'warning',
-            'info': 'info'
+    function showNotification(message, type, duration) {
+        type = type || 'info';
+        duration = duration || 5000;
+
+        const emojis = { success: '✓', error: '✕', warning: '⚠', info: 'ℹ' };
+        const toastId = 'rpc-toast-' + Date.now();
+
+        const toast = $(
+            '<div class="rpc-toast ' + type + '" id="' + toastId + '">' +
+                '<span class="rpc-toast-ico">' + (emojis[type] || emojis.info) + '</span>' +
+                '<div class="rpc-toast-body"><div class="rpc-toast-msg">' + message + '</div></div>' +
+                '<button class="rpc-toast-x" type="button" aria-label="Cerrar">&times;</button>' +
+            '</div>'
+        );
+
+        let container = $('#rpc-toasts');
+        if (container.length === 0) {
+            container = $('<div id="rpc-toasts"></div>').appendTo('body');
+        }
+
+        container.append(toast);
+        requestAnimationFrame(function() { toast.addClass('show'); });
+
+        const dismiss = function() {
+            toast.removeClass('show');
+            setTimeout(function() { toast.remove(); }, 350);
         };
-        
-        const notification = $('<div class="rpcare-notification ' + type + '">' +
-            '<span class="dashicons dashicons-' + icons[type] + '"></span>' +
-            '<span class="notification-message">' + message + '</span>' +
-            '<button class="notification-close" type="button">&times;</button>' +
-        '</div>');
-        
-        $('body').append(notification);
-        
-        notification.css({
-            position: 'fixed',
-            top: '20px',
-            right: '20px',
-            zIndex: 99999
-        });
-        
-        notification.slideDown();
-        
-        setTimeout(function() {
-            notification.slideUp(function() {
-                notification.remove();
-            });
-        }, duration);
-        
-        notification.find('.notification-close').on('click', function() {
-            notification.slideUp(function() {
-                notification.remove();
-            });
-        });
+
+        toast.find('.rpc-toast-x').on('click', dismiss);
+        setTimeout(dismiss, duration);
     }
 
     window.ReplantaCare = {

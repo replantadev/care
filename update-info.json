@@ -1,14 +1,14 @@
 {
     "name": "Replanta Care",
-    "version": "1.5.0",
-    "download_url": "https://github.com/replantadev/care/archive/refs/heads/main.zip",
+    "version": "1.7.2",
+    "download_url": "https://sitios.replanta.dev/wp-content/uploads/replanta-updates/replanta-care-1.7.2.zip",
     "author": "Replanta",
     "author_homepage": "https://replanta.dev",
-    "requires": "5.0",
+    "requires": "6.0",
     "tested": "6.7",
     "requires_php": "7.4",
     "sections": {
-        "description": "Plugin de mantenimiento automatico para clientes de Replanta.",
-        "changelog": "<h4>1.5.0</h4><ul><li>Sistema de auto-actualización GitHub unificado</li><li>Soporte de token por opción, constante o variable de entorno</li><li>Manejo robusto de errores del update checker</li></ul>"
+        "description": "Plugin de mantenimiento automático para clientes de Replanta.",
+        "changelog": "<h4>1.7.2</h4><ul><li>Fix: REST ping/auth con try/catch para evitar bloqueos</li></ul><h4>1.7.1</h4><ul><li>Fix: token con validez 1 año + regeneración AJAX</li></ul><h4>1.7.0</h4><ul><li>Feat: backup antes de actualizar + rollback automático</li></ul><h4>1.6.0</h4><ul><li>Migración WP Cron → Action Scheduler</li></ul>"
     }
 }

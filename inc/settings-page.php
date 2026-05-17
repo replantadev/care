@@ -27,6 +27,7 @@ class RP_Care_Settings_Page {
         add_action('wp_ajax_rpcare_run_task', [$this, 'run_task_manually']);
         add_action('wp_ajax_rpcare_get_status', [$this, 'get_status_ajax']);
         add_action('wp_ajax_rpcare_get_metric_details', [$this, 'get_metric_details_ajax']);
+        add_action('wp_ajax_rpcare_get_hub_reports', [$this, 'ajax_get_hub_reports']);
         
         // Hide other plugin notices on our settings page
         add_action('admin_head', [$this, 'hide_other_plugin_notices']);
@@ -422,189 +423,402 @@ class RP_Care_Settings_Page {
         if (!current_user_can('manage_options')) {
             return;
         }
-        
-        $options = get_option('rpcare_options', []);
-        $current_plan = RP_Care_Plan::get_current_plan();
-        $plan_features = RP_Care_Plan::get_plan_features($current_plan);
-        
+
+        $options       = get_option('rpcare_options', []);
+        $current_plan  = RP_Care_Plan::get_current();
+        $plan_config   = RP_Care_Plan::get_plan_config($current_plan);
+        $hub_connected = get_option('rpcare_hub_connected', false);
+        $health_score  = (int) get_option('rpcare_health_score', 85);
+
+        $last_backup  = get_option('rpcare_last_backup', '');
+        $wp_version   = get_bloginfo('version');
+        $php_version  = PHP_VERSION;
+        $ssl_ok       = is_ssl();
+        $tasks_active = (bool) wp_next_scheduled('rpcare_daily_tasks');
+        $pending_upd  = $this->get_pending_updates_count();
+
+        $conn_class   = $hub_connected ? 'connected' : 'disconnected';
+        $conn_label   = $hub_connected ? 'Tu sitio está protegido' : 'Sin conexión con el Hub';
+        $conn_icon    = $hub_connected ? '✓' : '✕';
+        $plan_display = ($hub_connected && $current_plan)
+            ? ($plan_config['name'] ?? ucfirst($current_plan))
+            : '';
+
+        // Hub URL / token
+        $hub_url   = esc_attr($options['hub_url'] ?? '');
+        $token     = esc_attr($options['site_token'] ?? '');
+        $gh_token  = esc_attr(get_option('rpcare_github_token', ''));
+        $has_token = !empty($options['site_token']);
+
+        // Notification options
+        $notif_email = esc_attr($options['notification_email'] ?? get_option('admin_email'));
+        $notif_types = (array) ($options['notification_types'] ?? []);
+        $notif_opts  = [
+            'updates'  => 'Actualizaciones',
+            'backups'  => 'Copias de seguridad',
+            'security' => 'Alertas de seguridad',
+            'errors'   => 'Errores del sistema',
+            'reports'  => 'Informes periódicos',
+        ];
+
+        // Tasks
+        $auto_updates = $options['auto_updates'] ?? 'minor_only';
+        $backup_on    = !isset($options['backup_enabled']) || $options['backup_enabled'];
+        $cache_on     = !isset($options['cache_clearing']) || $options['cache_clearing'];
+        $security_on  = !isset($options['security_monitoring']) || $options['security_monitoring'];
         ?>
-        <div class="wrap">
-            <div class="rpcare-header">
-                <div class="rpcare-logo">
-                    <img src="<?php echo RPCARE_PLUGIN_URL . 'assets/img/ico.png'; ?>" alt="Replanta" class="logo-icon">
-                    <h1>Replanta Care</h1>
-                    <span class="version">v<?php echo RPCARE_VERSION; ?></span>
+        <div class="rpc-wrap">
+
+            <!-- HEADER -->
+            <header class="rpc-header">
+                <div class="rpc-header-brand">
+                    <img src="<?php echo esc_url(RPCARE_PLUGIN_URL . 'assets/img/ico.png'); ?>" alt="Replanta Care" class="rpc-logo">
+                    <div>
+                        <h1 class="rpc-title">Replanta Care</h1>
+                        <span class="rpc-version">v<?php echo esc_html(RPCARE_VERSION); ?></span>
+                    </div>
+                </div>
+                <div class="rpc-header-status">
+                    <div class="rpc-connection <?php echo $conn_class; ?>" id="rpc-hub-pill">
+                        <span class="rpc-dot"></span>
+                        <span id="rpc-conn-label"><?php echo esc_html($conn_label); ?></span>
+                    </div>
+                    <?php if ($plan_display): ?>
+                    <div class="rpc-plan-badge" id="rpc-plan-badge"><?php echo esc_html($plan_display); ?></div>
+                    <?php endif; ?>
+                </div>
+            </header>
+
+            <!-- STATS BAR -->
+            <div class="rpc-stats-bar">
+                <div class="rpc-stat">
+                    <span class="rpc-stat-icon">⚙️</span>
+                    <span class="rpc-stat-label">WordPress</span>
+                    <span class="rpc-stat-value"><?php echo esc_html($wp_version); ?></span>
+                </div>
+                <div class="rpc-stat">
+                    <span class="rpc-stat-icon">🐘</span>
+                    <span class="rpc-stat-label">PHP</span>
+                    <span class="rpc-stat-value"><?php echo esc_html($php_version); ?></span>
+                </div>
+                <div class="rpc-stat">
+                    <span class="rpc-stat-icon">💾</span>
+                    <span class="rpc-stat-label">Último backup</span>
+                    <span class="rpc-stat-value <?php echo $last_backup ? 'good' : 'warn'; ?>">
+                        <?php echo $last_backup ? esc_html(wp_date('d M', strtotime($last_backup))) : 'Nunca'; ?>
+                    </span>
+                </div>
+                <div class="rpc-stat">
+                    <span class="rpc-stat-icon">🔒</span>
+                    <span class="rpc-stat-label">SSL</span>
+                    <span class="rpc-stat-value <?php echo $ssl_ok ? 'good' : 'bad'; ?>"><?php echo $ssl_ok ? 'Activo' : 'Inactivo'; ?></span>
+                </div>
+                <div class="rpc-stat">
+                    <span class="rpc-stat-icon">🔄</span>
+                    <span class="rpc-stat-label">Actualizaciones</span>
+                    <span class="rpc-stat-value <?php echo $pending_upd > 0 ? 'warn' : 'good'; ?>">
+                        <?php echo $pending_upd > 0 ? $pending_upd . ' pendientes' : 'Al día'; ?>
+                    </span>
+                </div>
+                <div class="rpc-stat">
+                    <span class="rpc-stat-icon">❤️</span>
+                    <span class="rpc-stat-label">Salud</span>
+                    <span class="rpc-stat-value rpc-health-num"><?php echo $health_score; ?>%</span>
+                </div>
+                <div class="rpc-stat">
+                    <span class="rpc-stat-icon">⚡</span>
+                    <span class="rpc-stat-label">Tareas</span>
+                    <span class="rpc-stat-value <?php echo $tasks_active ? 'good' : 'warn'; ?>"><?php echo $tasks_active ? 'Activas' : 'Inactivas'; ?></span>
                 </div>
             </div>
-            
-            <?php settings_errors('rpcare_messages'); ?>
-            
-            <?php if (isset($_GET['settings-updated'])): ?>
-                <div class="notice notice-success is-dismissible">
-                    <p><span class="dashicons dashicons-yes-alt"></span> Configuración guardada correctamente.</p>
-                </div>
-            <?php endif; ?>
-            
-            <div class="rpcare-admin-header">
-                <div class="rpcare-plan-card">
-                    <div class="plan-header">
-                        <div class="plan-icon">
-                            <span class="dashicons dashicons-admin-plugins"></span>
+
+            <!-- SETTINGS FORM -->
+            <form method="post" action="options.php" class="rpc-form" id="rpc-settings-form">
+                <?php settings_fields('rpcare_settings'); ?>
+
+                <div class="rpc-sections">
+
+                    <!-- CONEXIÓN HUB -->
+                    <section class="rpc-section">
+                        <h2 class="rpc-section-title"><span class="rpc-section-icon">🔗</span> Conexión con Replanta Hub</h2>
+
+                        <div class="rpc-field">
+                            <label class="rpc-label" for="rpc-hub-url">URL del Hub</label>
+                            <input type="url" id="rpc-hub-url" name="rpcare_options[hub_url]"
+                                   class="rpc-input" value="<?php echo $hub_url; ?>"
+                                   placeholder="https://sitios.replanta.dev" autocomplete="off">
                         </div>
-                        <div>
-                            <h2>Plan <?php echo esc_html(ucfirst($current_plan)); ?></h2>
-                            <p class="plan-subtitle">Mantenimiento profesional WordPress</p>
+
+                        <div class="rpc-field">
+                            <label class="rpc-label" for="rpc-site-token">Token del sitio</label>
+                            <div class="rpc-input-row">
+                                <input type="text" id="rpc-site-token" name="rpcare_options[site_token]"
+                                       class="rpc-input rpc-input-mono" value="<?php echo $token; ?>"
+                                       placeholder="Pega aquí el token de Replanta Hub" autocomplete="off">
+                                <button type="button" class="rpc-btn rpc-btn-secondary rpc-btn-sm"
+                                        onclick="rpcare_generate_token()" title="Generar token aleatorio">&#x21BA;</button>
+                                <?php if ($has_token): ?>
+                                <button type="button" class="rpc-btn rpc-btn-secondary rpc-btn-sm"
+                                        onclick="rpcare_copy_token()" title="Copiar token">📋</button>
+                                <?php endif; ?>
+                            </div>
+                            <span class="rpc-hint <?php echo $has_token ? 'ok' : 'warn'; ?>">
+                                <?php if ($has_token): ?>
+                                    ✓ Token configurado. El Hub puede autenticar peticiones a este sitio.
+                                <?php else: ?>
+                                    ⚠ Sin token: el Hub no puede conectar. Copia el token desde Hub → pégalo aquí.
+                                <?php endif; ?>
+                            </span>
                         </div>
-                    </div>
-                    
-                    <ul class="rpcare-plan-features">
-                        <?php foreach ($plan_features as $feature => $enabled): ?>
-                            <li class="<?php echo $enabled ? 'feature-enabled' : 'feature-disabled'; ?>" data-feature="<?php echo esc_attr($feature); ?>">
-                                <span class="feature-icon"><?php echo $enabled ? '✓' : '✗'; ?></span>
-                                <?php echo esc_html(self::get_feature_label($feature)); ?>
-                            </li>
-                        <?php endforeach; ?>
-                    </ul>
-                </div>
-                
-                <div class="rpcare-status-card">
-                    <h3><span class="dashicons dashicons-dashboard"></span> Estado del Sistema</h3>
-                    <div class="status-metrics">
-                        <?php $this->display_system_status(); ?>
-                    </div>
-                    
-                    <div class="health-score-container">
-                        <?php $health_score = get_option('rpcare_health_score', 85); ?>
-                        <div class="health-score-circle" style="--health-angle: <?php echo ($health_score * 3.6); ?>deg;">
-                            <span class="health-score"><?php echo $health_score; ?>%</span>
+
+                        <div class="rpc-field">
+                            <label class="rpc-label" for="rpc-gh-token">Token GitHub <small style="text-transform:none;font-size:10px;color:var(--rp-muted)">(para actualizaciones privadas)</small></label>
+                            <input type="password" id="rpc-gh-token" name="rpcare_options[github_token]"
+                                   class="rpc-input" value="<?php echo $gh_token; ?>" autocomplete="new-password">
                         </div>
-                        <div class="health-label">Salud del Sitio</div>
-                    </div>
+
+                        <button type="button" class="rpc-btn rpc-btn-secondary" id="test-connection" style="margin-top:4px;">
+                            <span id="rpc-test-icon">🔌</span> Probar conexión
+                        </button>
+                        <div id="rpc-connection-result"></div>
+                        <div id="connection-status" style="display:none;"></div>
+                    </section>
+
+                    <!-- PLAN / TAREAS -->
+                    <section class="rpc-section">
+                        <h2 class="rpc-section-title"><span class="rpc-section-icon">⚡</span> Tareas automáticas</h2>
+
+                        <?php if ($hub_connected && $current_plan): ?>
+                        <div class="rpc-hint ok" style="margin-bottom:16px;">
+                            ✓ Plan <strong><?php echo esc_html($plan_display); ?></strong> detectado desde el Hub.
+                            Las tareas se ajustan automáticamente.
+                        </div>
+                        <input type="hidden" name="rpcare_options[plan]" value="<?php echo esc_attr($current_plan); ?>">
+                        <?php else: ?>
+                        <div class="rpc-field">
+                            <label class="rpc-label">Plan seleccionado</label>
+                            <?php $this->render_plan_selection(); ?>
+                        </div>
+                        <?php endif; ?>
+
+                        <div class="rpc-field" style="margin-top:12px;">
+                            <label class="rpc-label">Actualizaciones automáticas</label>
+                            <select name="rpcare_options[auto_updates]" class="rpc-select">
+                                <option value="disabled" <?php selected($auto_updates, 'disabled'); ?>>Deshabilitadas</option>
+                                <option value="minor_only" <?php selected($auto_updates, 'minor_only'); ?>>Solo actualizaciones menores</option>
+                                <option value="all" <?php selected($auto_updates, 'all'); ?>>Todas las actualizaciones</option>
+                            </select>
+                        </div>
+
+                        <div class="rpc-toggle-row">
+                            <div class="rpc-toggle-info">
+                                <span class="rpc-toggle-name">💾 Copias de seguridad</span>
+                                <span class="rpc-toggle-desc">Backups automáticos con Backuply según tu plan</span>
+                            </div>
+                            <label class="rpc-switch">
+                                <input type="checkbox" name="rpcare_options[backup_enabled]" value="1" <?php checked($backup_on); ?>>
+                                <span class="rpc-switch-slider"></span>
+                            </label>
+                        </div>
+
+                        <div class="rpc-toggle-row">
+                            <div class="rpc-toggle-info">
+                                <span class="rpc-toggle-name">🗑️ Limpieza de caché</span>
+                                <span class="rpc-toggle-desc">Vaciar caché tras actualizaciones</span>
+                            </div>
+                            <label class="rpc-switch">
+                                <input type="checkbox" name="rpcare_options[cache_clearing]" value="1" <?php checked($cache_on); ?>>
+                                <span class="rpc-switch-slider"></span>
+                            </label>
+                        </div>
+
+                        <div class="rpc-toggle-row">
+                            <div class="rpc-toggle-info">
+                                <span class="rpc-toggle-name">🛡️ Escaneo de seguridad</span>
+                                <span class="rpc-toggle-desc">Análisis periódico de vulnerabilidades</span>
+                            </div>
+                            <label class="rpc-switch">
+                                <input type="checkbox" name="rpcare_options[security_monitoring]" value="1" <?php checked($security_on); ?>>
+                                <span class="rpc-switch-slider"></span>
+                            </label>
+                        </div>
+                    </section>
+
+                    <!-- NOTIFICACIONES -->
+                    <section class="rpc-section rpc-section-full">
+                        <h2 class="rpc-section-title"><span class="rpc-section-icon">🔔</span> Notificaciones</h2>
+
+                        <div style="display:grid;grid-template-columns:1fr 2fr;gap:24px;align-items:start;">
+                            <div class="rpc-field">
+                                <label class="rpc-label" for="rpc-notif-email">Email de notificaciones</label>
+                                <input type="email" id="rpc-notif-email" name="rpcare_options[notification_email]"
+                                       class="rpc-input" value="<?php echo $notif_email; ?>">
+                                <span class="rpc-hint">Recibirás los avisos del sistema en este email.</span>
+                            </div>
+                            <div class="rpc-field">
+                                <label class="rpc-label">Tipos de notificaciones</label>
+                                <div class="rpc-checkbox-grid">
+                                    <?php foreach ($notif_opts as $key => $label): ?>
+                                    <label class="rpc-checkbox-item">
+                                        <input type="checkbox" name="rpcare_options[notification_types][]"
+                                               value="<?php echo esc_attr($key); ?>"
+                                               <?php checked(in_array($key, $notif_types)); ?>>
+                                        <?php echo esc_html($label); ?>
+                                    </label>
+                                    <?php endforeach; ?>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                </div><!-- /.rpc-sections -->
+
+                <div class="rpc-form-footer">
+                    <button type="submit" name="submit" class="rpc-btn rpc-btn-primary">
+                        💾 Guardar configuración
+                    </button>
+                    <button type="submit" name="rpcare_check_updates" class="rpc-btn rpc-btn-ghost">
+                        🔄 Comprobar actualizaciones ahora
+                    </button>
+                    <?php if (isset($_GET['settings-updated'])): ?>
+                    <span class="rpc-hint ok" style="margin-left:auto;">✓ Configuración guardada</span>
+                    <?php endif; ?>
                 </div>
-            </div>
-            
-            <form method="post" action="options.php" class="rpcare-settings-form">
-                <?php
-                settings_fields('rpcare_settings');
-                do_settings_sections('rpcare_settings');
-                ?>
-                
-                <div class="rpcare-form-actions">
-                    <?php submit_button('Guardar Configuración', 'primary large', 'submit', false, [
-                        'style' => 'background: linear-gradient(135deg, var(--replanta-primary), var(--replanta-secondary)); border: none; padding: 12px 24px; border-radius: 8px;'
-                    ]); ?>
-                    <?php submit_button('Comprobar actualizaciones ahora', 'secondary', 'rpcare_check_updates', false); ?>
-                </div>
+
             </form>
-            
-            <div class="rpcare-manual-tasks">
-                <h3><span class="dashicons dashicons-admin-tools"></span> Ejecutar Tareas Manualmente</h3>
-                <p class="description">Ejecuta tareas de mantenimiento de forma inmediata sin esperar a la programación automática.</p>
-                
-                <div class="rpcare-task-buttons">
-                    <button type="button" class="button" data-task="updates">
-                        <span class="dashicons dashicons-update"></span>
-                        Comprobar Actualizaciones
+
+            <!-- ACCIONES RÁPIDAS -->
+            <section class="rpc-actions">
+                <h2 class="rpc-section-title"><span class="rpc-section-icon">⚡</span> Acciones inmediatas</h2>
+                <div class="rpc-action-grid">
+                    <button class="rpc-action-card" data-task="updates" type="button">
+                        <span class="rpc-action-icon">🔄</span>
+                        <span class="rpc-action-label">Actualizaciones</span>
                     </button>
-                    <button type="button" class="button" data-task="backup">
-                        <span class="dashicons dashicons-backup"></span>
-                        Crear Copia de Seguridad
+                    <button class="rpc-action-card" data-task="backup" type="button">
+                        <span class="rpc-action-icon">💾</span>
+                        <span class="rpc-action-label">Crear backup</span>
                     </button>
-                    <button type="button" class="button" data-task="cache">
-                        <span class="dashicons dashicons-performance"></span>
-                        Limpiar Caché
+                    <button class="rpc-action-card" data-task="cache" type="button">
+                        <span class="rpc-action-icon">🗑️</span>
+                        <span class="rpc-action-label">Limpiar caché</span>
                     </button>
-                    <button type="button" class="button" data-task="security">
-                        <span class="dashicons dashicons-shield"></span>
-                        Escaneo de Seguridad
+                    <button class="rpc-action-card" data-task="security" type="button">
+                        <span class="rpc-action-icon">🛡️</span>
+                        <span class="rpc-action-label">Seguridad</span>
                     </button>
-                    <button type="button" class="button" data-task="health">
-                        <span class="dashicons dashicons-heart"></span>
-                        Chequeo de Salud
+                    <button class="rpc-action-card" data-task="health" type="button">
+                        <span class="rpc-action-icon">❤️</span>
+                        <span class="rpc-action-label">Salud del sitio</span>
                     </button>
-                    <button type="button" class="button" data-task="report">
-                        <span class="dashicons dashicons-chart-line"></span>
-                        Generar Reporte
+                    <button class="rpc-action-card" data-task="report" type="button">
+                        <span class="rpc-action-icon">📊</span>
+                        <span class="rpc-action-label">Generar informe</span>
+                    </button>
+                    <button class="rpc-action-card" data-task="wpo" type="button">
+                        <span class="rpc-action-icon">⚡</span>
+                        <span class="rpc-action-label">Optimizar WPO</span>
+                    </button>
+                    <button class="rpc-action-card" data-task="seo" type="button">
+                        <span class="rpc-action-icon">🔍</span>
+                        <span class="rpc-action-label">Análisis SEO</span>
                     </button>
                 </div>
-                
-                <div id="rpcare-task-results"></div>
-            </div>
-            
-            <div class="rpcare-logs">
-                <h3><span class="dashicons dashicons-list-view"></span> Registro de Actividad</h3>
-                <div class="logs-controls">
-                    <button type="button" class="button task-history-toggle">Mostrar Historial Completo</button>
-                </div>
+                <div class="rpc-results" id="rpcare-task-results"></div>
+            </section>
+
+            <!-- REPORTES DEL HUB -->
+            <section class="rpc-reports">
+                <h2 class="rpc-section-title"><span class="rpc-section-icon">📋</span> Informes del Hub</h2>
+                <p class="rpc-hint" style="margin-bottom:14px;">Informes generados por Replanta Hub para este sitio.</p>
+                <button type="button" class="rpc-btn rpc-btn-secondary rpc-btn-sm" id="rpcare-load-reports">
+                    <span id="rpc-reports-icon">📥</span> Cargar informes
+                </button>
+                <div id="rpcare-reports-list" style="margin-top:14px;"></div>
+            </section>
+
+            <!-- ACTIVIDAD RECIENTE -->
+            <section class="rpc-logs">
+                <h2 class="rpc-section-title"><span class="rpc-section-icon">📋</span> Actividad reciente</h2>
                 <?php $this->display_recent_logs(); ?>
-                <div class="task-history-container" style="display: none;">
-                    <div class="task-history-content"></div>
-                </div>
-            </div>
-        </div>
-        
-        <style>
-        .rpcare-header {
-            background: linear-gradient(135deg, var(--replanta-primary), var(--replanta-secondary));
-            color: white;
-            padding: 20px 24px;
-            margin: 0 -20px 24px -20px;
-            border-radius: 0 0 12px 12px;
+            </section>
+
+        </div><!-- /.rpc-wrap -->
+
+        <!-- TOAST CONTAINER -->
+        <div id="rpc-toasts" aria-live="polite"></div>
+
+        <script>
+        function rpcare_generate_token() {
+            var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+            var token = '';
+            var arr = new Uint8Array(32);
+            window.crypto.getRandomValues(arr);
+            arr.forEach(function(v){ token += chars[v % chars.length]; });
+            document.getElementById('rpc-site-token').value = token;
         }
-        
-        .rpcare-logo {
-            display: flex;
-            align-items: center;
-            gap: 12px;
+        function rpcare_copy_token() {
+            var input = document.getElementById('rpc-site-token');
+            if (!input || !input.value) return;
+            navigator.clipboard.writeText(input.value).then(function(){
+                if (window.ReplantaCare) window.ReplantaCare.showNotification('Token copiado', 'Pegalo ahora en Replanta Hub.', 'success');
+            }).catch(function(){
+                input.select();
+                document.execCommand('copy');
+                if (window.ReplantaCare) window.ReplantaCare.showNotification('Token copiado', '', 'success');
+            });
         }
-        
-        .rpcare-logo .logo-icon {
-            width: 32px;
-            height: 32px;
-        }
-        
-        .rpcare-logo h1 {
-            margin: 0;
-            font-size: 24px;
-            color: white;
-        }
-        
-        .rpcare-logo .version {
-            background: rgba(255,255,255,0.2);
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-size: 12px;
-            font-weight: 500;
-        }
-        
-        .health-label {
-            font-size: 12px;
-            color: var(--replanta-text-secondary);
-            margin-top: 8px;
-        }
-        
-        .rpcare-form-actions {
-            background: var(--replanta-surface);
-            padding: 24px;
-            border-radius: var(--replanta-radius-large);
-            box-shadow: var(--replanta-shadow);
-            border: 1px solid var(--replanta-border);
-            margin-top: 24px;
-            text-align: center;
-        }
-        
-        .logs-controls {
-            margin-bottom: 16px;
-        }
-        
-        .task-history-container {
-            margin-top: 16px;
-            padding: 16px;
-            background: var(--replanta-bg);
-            border-radius: var(--replanta-radius);
-            border: 1px solid var(--replanta-border);
-        }
-        </style>
+
+        /* Reports loader */
+        (function($){
+            $('#rpcare-load-reports').on('click', function(){
+                var btn = $(this);
+                btn.prop('disabled', true);
+                $('#rpc-reports-icon').text('⏳');
+                $('#rpcare-reports-list').html('<p class="rpc-hint">Cargando informes...</p>');
+                $.post(rpcare_ajax.ajax_url, { action: 'rpcare_get_hub_reports', nonce: rpcare_ajax.nonce }, function(res){
+                    btn.prop('disabled', false);
+                    $('#rpc-reports-icon').text('📥');
+                    if (!res.success) {
+                        $('#rpcare-reports-list').html('<p class="rpc-hint error">⚠ ' + (res.data || 'Error al cargar informes.') + '</p>');
+                        return;
+                    }
+                    var reports = res.data;
+                    if (!Array.isArray(reports) || !reports.length) {
+                        $('#rpcare-reports-list').html('<div class="rpc-empty"><span class="rpc-empty-icon">📄</span>No hay informes disponibles todavía.</div>');
+                        return;
+                    }
+                    var html = '<table class="rpc-table"><thead><tr><th>Tipo</th><th>Generado</th><th></th></tr></thead><tbody>';
+                    $.each(reports, function(i, r){
+                        html += '<tr>';
+                        html += '<td>' + $('<span>').text(r.report_type_name || r.report_type).html() + '</td>';
+                        html += '<td>' + $('<span>').text(r.generated_at).html() + '</td>';
+                        html += '<td><button class="rpc-btn rpc-btn-secondary rpc-btn-sm rpcare-view-report" data-id="' + $('<span>').text(r.report_id).html() + '">Ver</button></td>';
+                        html += '</tr>';
+                    });
+                    html += '</tbody></table>';
+                    $('#rpcare-reports-list').html(html);
+                }).fail(function(){
+                    btn.prop('disabled', false);
+                    $('#rpc-reports-icon').text('📥');
+                    $('#rpcare-reports-list').html('<p class="rpc-hint error">⚠ Error de red.</p>');
+                });
+            });
+
+            $(document).on('click', '.rpcare-view-report', function(){
+                var reportId = $(this).data('id');
+                $.post(rpcare_ajax.ajax_url, { action: 'rpcare_get_hub_reports', nonce: rpcare_ajax.nonce, report_id: reportId }, function(res){
+                    if (!res.success || !res.data.html) {
+                        if (window.ReplantaCare) window.ReplantaCare.showNotification('Error', res.data || 'No se pudo cargar el informe.', 'error');
+                        return;
+                    }
+                    var w = window.open('', '_blank');
+                    w.document.write(res.data.html);
+                    w.document.close();
+                });
+            });
+        })(jQuery);
+        </script>
         <?php
     }
     
@@ -634,10 +848,65 @@ class RP_Care_Settings_Page {
     
     public function site_token_field() {
         $options = get_option('rpcare_options', []);
-        $value = isset($options['site_token']) ? $options['site_token'] : '';
+        $value   = $options['site_token'] ?? '';
+        $has_token = !empty($value);
         ?>
-        <input type="text" name="rpcare_options[site_token]" value="<?php echo esc_attr($value); ?>" class="regular-text" />
-        <p class="description">Token único proporcionado por Replanta para este sitio.</p>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <input type="text"
+                   id="rpcare_site_token_input"
+                   name="rpcare_options[site_token]"
+                   value="<?php echo esc_attr($value); ?>"
+                   class="regular-text"
+                   placeholder="Pega aquí el token copiado desde Replanta Hub"
+                   style="font-family:monospace;font-size:12px;" />
+            <button type="button"
+                    class="button"
+                    onclick="rpcare_generate_token()"
+                    title="Genera un token aleatorio para este sitio">
+                &#x21BA; Generar
+            </button>
+            <?php if ($has_token): ?>
+            <button type="button"
+                    class="button"
+                    onclick="rpcare_copy_token()"
+                    title="Copiar token al portapapeles">
+                &#x1F4CB; Copiar
+            </button>
+            <?php endif; ?>
+        </div>
+        <p class="description" style="margin-top:6px;">
+            <?php if ($has_token): ?>
+                <span style="color:#46b450;font-weight:600;">&#x2713; Token configurado.</span>
+                El token autentica las peticiones de Replanta Hub hacia este sitio.
+            <?php else: ?>
+                <span style="color:#d63638;font-weight:600;">&#x26A0; Sin token.</span>
+                Sin token el Hub no puede conectar a este sitio.
+            <?php endif; ?>
+            <br><strong>Flujo:</strong>
+            Añade el sitio en Replanta Hub → copia el token generado →
+            pégalo aquí y guarda. O pulsa <em>Generar</em> para crear uno nuevo y cópialo al Hub.
+        </p>
+        <script>
+        function rpcare_generate_token() {
+            const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+            let token = '';
+            const arr = new Uint8Array(32);
+            window.crypto.getRandomValues(arr);
+            arr.forEach(v => { token += chars[v % chars.length]; });
+            document.getElementById('rpcare_site_token_input').value = token;
+        }
+        function rpcare_copy_token() {
+            const input = document.getElementById('rpcare_site_token_input');
+            if (!input || !input.value) return;
+            navigator.clipboard.writeText(input.value).then(function() {
+                alert('Token copiado al portapapeles');
+            }).catch(function() {
+                input.select();
+                document.execCommand('copy');
+                alert('Token copiado al portapapeles');
+            });
+        }
+        </script>
         <?php
     }
 
@@ -948,30 +1217,115 @@ class RP_Care_Settings_Page {
             if ($code === 200) {
                 $body = wp_remote_retrieve_body($response);
                 $data = json_decode($body, true);
-                
-                if ($data && isset($data['success']) && $data['success']) {
-                    // Store successful connection
+
+                if (!is_array($data)) {
+                    // Non-JSON response — show first 200 chars for debug
+                    $preview = substr(wp_strip_all_tags($body), 0, 200);
+                    wp_send_json_error('Hub devolvió respuesta no JSON. Verifica que el Hub esté activo. Detalle: ' . $preview);
+                    return;
+                }
+
+                if (!empty($data['success'])) {
                     update_option('rpcare_hub_connected', true);
-                    
-                    // Auto-detect plan from Hub
-                    $plan = RP_Care_Plan::detect_plan_from_hub($hub_url, $site_token);
-                    if ($plan) {
-                        wp_send_json_success("Conexión exitosa con el Hub. Plan detectado: " . RP_Care_Plan::get_plan_name($plan));
+
+                    // Hub now returns plan in the success response — use it directly
+                    $hub_plan = $data['data']['plan'] ?? null;
+                    if ($hub_plan && RP_Care_Plan::is_valid_plan($hub_plan)) {
+                        RP_Care_Plan::set_current($hub_plan);
+                        $plan_name = RP_Care_Plan::get_plan_name($hub_plan);
                     } else {
-                        wp_send_json_success('Conexión exitosa con el Hub (plan no detectado)');
+                        // Fallback: ask Hub for plan via separate endpoint
+                        $hub_plan  = RP_Care_Plan::detect_plan_from_hub($hub_url, $site_token);
+                        $plan_name = $hub_plan ? RP_Care_Plan::get_plan_name($hub_plan) : '';
                     }
+
+                    $site_name = $data['data']['site'] ?? '';
+                    $msg = $plan_name
+                        ? "Conectado al Hub. Sitio: $site_name. Plan: $plan_name"
+                        : "Conectado al Hub. Sitio: $site_name (plan no detectado)";
+
+                    wp_send_json_success($msg);
                 } else {
-                    $error_msg = isset($data['data']) ? $data['data'] : 'Respuesta inválida del Hub';
+                    // Hub returned a structured error — surface it clearly
+                    $raw = $data['data'] ?? null;
+                    if (is_array($raw)) {
+                        $error_msg = $raw['message'] ?? json_encode($raw);
+                    } else {
+                        $error_msg = is_string($raw) && $raw !== '' ? $raw : 'Respuesta inesperada del Hub';
+                    }
                     wp_send_json_error("Error del Hub: $error_msg");
                 }
             } else {
-                wp_send_json_error("Error del servidor: código $code desde $endpoint");
+                wp_send_json_error("El Hub respondió con HTTP $code. Verifica la URL del Hub.");
             }
         } else {
-            wp_send_json_error('Error de conexión: ' . $response->get_error_message());
+            wp_send_json_error('No se pudo conectar al Hub: ' . $response->get_error_message());
         }
     }
     
+    /**
+     * AJAX: Obtiene reportes del Hub para este sitio usando el token configurado.
+     * Si se pasa `report_id` devuelve el HTML del reporte; si no, la lista.
+     */
+    public function ajax_get_hub_reports() {
+        check_ajax_referer('rpcare_ajax', 'nonce');
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('Permisos insuficientes');
+        }
+
+        $options   = get_option('rpcare_options', []);
+        $hub_url   = rtrim($options['hub_url'] ?? '', '/');
+        $token     = $options['site_token'] ?? '';
+
+        if (empty($hub_url) || empty($token)) {
+            wp_send_json_error('Configura la URL del Hub y el Token antes de cargar reportes.');
+        }
+
+        $endpoint = $hub_url . '/wp-admin/admin-ajax.php';
+
+        $report_id = sanitize_text_field($_POST['report_id'] ?? '');
+
+        if (!empty($report_id)) {
+            // Fetch a single report HTML
+            $response = wp_remote_post($endpoint, [
+                'body'    => [
+                    'action'       => 'rphub_view_report_modal',
+                    'client_token' => $token,
+                    'report_id'    => $report_id,
+                ],
+                'timeout' => 15,
+            ]);
+        } else {
+            // Fetch list of reports
+            $response = wp_remote_post($endpoint, [
+                'body'    => [
+                    'action'       => 'rphub_get_client_reports',
+                    'client_token' => $token,
+                ],
+                'timeout' => 15,
+            ]);
+        }
+
+        if (is_wp_error($response)) {
+            wp_send_json_error('No se pudo conectar al Hub: ' . $response->get_error_message());
+        }
+
+        $code = wp_remote_retrieve_response_code($response);
+        if ($code !== 200) {
+            wp_send_json_error("El Hub respondió con HTTP $code.");
+        }
+
+        $body = json_decode(wp_remote_retrieve_body($response), true);
+
+        if (!is_array($body) || empty($body['success'])) {
+            $msg = is_array($body) ? ($body['data'] ?? 'Respuesta inesperada del Hub.') : 'Respuesta no JSON del Hub.';
+            wp_send_json_error(is_string($msg) ? $msg : wp_json_encode($msg));
+        }
+
+        wp_send_json_success($body['data']);
+    }
+
     public function run_task_manually() {
         check_ajax_referer('rpcare_ajax', 'nonce');
         

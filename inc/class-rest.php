@@ -130,6 +130,10 @@ class RP_Care_REST {
                     'required' => false,
                     'type'     => 'object',
                 ],
+                'hub_url' => [
+                    'required' => false,
+                    'type'     => 'string',
+                ],
             ]
         ]);
         
@@ -419,6 +423,20 @@ class RP_Care_REST {
             $updated['vulnerability_data'] = [
                 'count' => count($vulnerability_data['vulnerabilities_found'] ?? []),
             ];
+        }
+
+        // Hub can update its own URL remotely (e.g. on migration)
+        $new_hub_url = $request->get_param('hub_url');
+        if ($new_hub_url) {
+            $clean = esc_url_raw(rtrim($new_hub_url, '/'));
+            if ($clean) {
+                $opts = get_option('rpcare_options', []);
+                $opts['hub_url'] = $clean;
+                update_option('rpcare_options', $opts);
+                delete_transient('rpcare_plan_cache');
+                delete_transient('rpcare_hub_backoff');
+                $updated['hub_url'] = $clean;
+            }
         }
 
         RP_Care_Utils::log('config_update', 'info', 'Configuration updated via API', $updated);

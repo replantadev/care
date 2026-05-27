@@ -223,8 +223,10 @@ class RP_Care_Plan {
         }
         
         // Get hub settings - use provided parameters or fall back to options
-        $hub_url = $hub_url ?: get_option('rpcare_hub_url', '');
-        $site_token = $site_token ?: get_option('rpcare_site_token', '');
+        // Settings UI stores creds under rpcare_options[hub_url|site_token]; legacy code used standalone options.
+        $options = get_option('rpcare_options', []);
+        $hub_url = $hub_url ?: ($options['hub_url'] ?? get_option('rpcare_hub_url', ''));
+        $site_token = $site_token ?: ($options['site_token'] ?? get_option('rpcare_site_token', ''));
         
         if (empty($hub_url) || empty($site_token)) {
             // No hub configured, can't detect plan
@@ -278,6 +280,10 @@ class RP_Care_Plan {
         delete_option('rpcare_hub_failures');
         
         $body = wp_remote_retrieve_body($response);
+        if (substr($body, 0, 3) === "\xEF\xBB\xBF") {
+            $body = substr($body, 3);
+        }
+        $body = trim($body);
         $data = json_decode($body, true);
         
         if (json_last_error() !== JSON_ERROR_NONE) {

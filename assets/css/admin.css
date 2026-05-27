@@ -32,10 +32,14 @@ body.settings_page_replanta-care #wpfooter {
 
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     color: var(--rp-text);
-    max-width: 1200px;
-    margin: 0;
-    padding: 0 20px 80px;
+    max-width: none;
+    margin: 0 -20px;
+    padding: 0 24px 80px;
 }
+
+/* Full-bleed: kill the default WP .wrap left padding so our dark surface reaches the edge */
+body.settings_page_replanta-care #wpbody-content { padding-bottom: 0; }
+body.settings_page_replanta-care .wrap { margin: 0; padding: 0; max-width: none; }
 
 /* Reset WP defaults */
 .rpc-wrap h1, .rpc-wrap h2, .rpc-wrap h3, .rpc-wrap h4,
@@ -853,9 +857,10 @@ body.settings_page_replanta-care #wpfooter {
 }
 
 .rpc-plan-feats li::before {
-    content: '✓';
+    content: '\f147';
+    font-family: dashicons;
     color: var(--rp-green);
-    font-weight: 700;
+    font-weight: 400;
     flex-shrink: 0;
 }
 
@@ -937,11 +942,25 @@ body.settings_page_replanta-care #wpfooter {
 .rpc-toast.info    { border-left-color: #41999F; }
 
 .rpc-toast-ico {
-    font-size: 18px;
+    font-size: 20px;
+    width: 20px;
+    height: 20px;
     flex-shrink: 0;
     margin-top: 1px;
     line-height: 1;
+    color: #93F1C9;
 }
+.rpc-toast.error   .rpc-toast-ico { color: #FF7B7B; }
+.rpc-toast.warning .rpc-toast-ico { color: #F7D450; }
+.rpc-toast.info    .rpc-toast-ico { color: #41999F; }
+
+/* dashicons inside stat / section / action / toggle icons get proper sizing */
+.rpc-stat-icon.dashicons       { font-size: 18px; width: 18px; height: 18px; line-height: 1; }
+.rpc-section-icon.dashicons    { font-size: 20px; width: 20px; height: 20px; line-height: 1; vertical-align: -3px; }
+.rpc-action-icon.dashicons     { font-size: 28px; width: 28px; height: 28px; line-height: 1; }
+.rpc-toggle-name .dashicons    { font-size: 16px; width: 16px; height: 16px; line-height: 1; vertical-align: -3px; margin-right: 4px; }
+.rpc-hint .dashicons           { font-size: 14px; width: 14px; height: 14px; line-height: 1; vertical-align: -2px; }
+.rpc-empty-icon.dashicons      { font-size: 32px; width: 32px; height: 32px; line-height: 1; }
 
 .rpc-toast-body { flex: 1; min-width: 0; }
 
@@ -956,9 +975,10 @@ body.settings_page_replanta-care #wpfooter {
 }
 
 .rpc-toast-msg {
-    font-size: 12px;
-    color: rgba(247,251,249,0.55);
+    font-size: 13px;
+    color: #F7FBF9;
     line-height: 1.5;
+    font-weight: 500;
 }
 
 .rpc-toast-x {
@@ -1015,14 +1035,20 @@ body.settings_page_replanta-care #wpfooter {
 }
 
 /* ================================================================
-   WP OVERRIDES (hide WP default notices on our page)
+   WP OVERRIDES (hide ALL WP/3rd-party notices on our page)
    ================================================================ */
-body.settings_page_replanta-care .notice,
-body.settings_page_replanta-care .updated,
+body.settings_page_replanta-care #wpbody-content > .notice,
+body.settings_page_replanta-care #wpbody-content > .updated,
+body.settings_page_replanta-care #wpbody-content > .error,
+body.settings_page_replanta-care .notice:not(.rpc-keep),
+body.settings_page_replanta-care .updated:not(.rpc-keep),
 body.settings_page_replanta-care .error.settings-error,
-body.settings_page_replanta-care .update-nag { display: none !important; }
+body.settings_page_replanta-care .update-nag,
+body.settings_page_replanta-care #message,
+body.settings_page_replanta-care .e-notice,
+body.settings_page_replanta-care .yoast-notification,
+body.settings_page_replanta-care div[class*="-notice"]:not([class*="rpc"]) { display: none !important; }
 
-body.settings_page_replanta-care .settings_page_replanta-care_page_replanta-care,
 body.settings_page_replanta-care .rpcare-notice { display: block !important; }
 
 /* ================================================================

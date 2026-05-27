@@ -176,9 +176,9 @@ class RP_Care_Update_Control {
             
             // Add controlled update notice
             if ($this->is_licensed_plugin($plugin_file)) {
-                $actions['rpcare_licensed'] = '<span style="color: #00a32a;">✓ Plugin con licencia - Actualizaciones permitidas</span>';
+                $actions['rpcare_licensed'] = '<span style="color: #00a32a;"><span class="dashicons dashicons-yes-alt" style="font-size:14px;vertical-align:middle;"></span> Plugin con licencia — Actualizaciones permitidas</span>';
             } else {
-                $actions['rpcare_controlled'] = '<span style="color: #d63638;">🔒 Actualizaciones gestionadas por Replanta</span>';
+                $actions['rpcare_controlled'] = '<span style="color: #d63638;"><span class="dashicons dashicons-lock" style="font-size:14px;vertical-align:middle;"></span> Actualizaciones gestionadas por Replanta</span>';
             }
         }
         
@@ -208,7 +208,7 @@ class RP_Care_Update_Control {
             $plan_name = RP_Care_Plan::get_plan_name($plan);
             
             echo '<div class="notice notice-info">
-                <p><strong>🛡️ Replanta Care - Control de Actualizaciones</strong></p>
+                <p><span class="dashicons dashicons-shield-alt" style="color:#00a32a;vertical-align:middle;"></span> <strong>Replanta Care — Control de Actualizaciones</strong></p>
                 <p>Las actualizaciones de plugins están gestionadas automáticamente por Replanta según tu plan <strong>' . esc_html($plan_name) . '</strong>. Los plugins con licencia pueden actualizarse libremente.</p>
                 <p><em>Esto garantiza la estabilidad y seguridad de tu sitio web.</em></p>
             </div>';
@@ -220,17 +220,13 @@ class RP_Care_Update_Control {
      */
     public function hide_update_notices() {
         $screen = get_current_screen();
-        
+
         if ($screen->id === 'plugins') {
+            // Hide update rows for plugins that are NOT allowed under the current plan.
+            // Replanta-managed plugins (replanta-*) keep their update notices visible
+            // so admins can apply Care/Hub updates manually from plugins.php.
             echo '<style>
-                .update-message:not(.rpcare-allowed) {
-                    display: none !important;
-                }
-                tr.plugin-update-tr:not(.rpcare-allowed) {
-                    display: none !important;
-                }
-                .plugins-php .notice.notice-warning,
-                .plugins-php .error {
+                tr.plugin-update-tr:not([id^="replanta-"]) {
                     display: none !important;
                 }
             </style>';

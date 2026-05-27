@@ -3,7 +3,7 @@
  * Plugin Name: Replanta Care
  * Plugin URI: https://replanta.dev
  * Description: Plugin de mantenimiento WordPress automático para clientes de Replanta con integración Hub
- * Version: 1.7.3
+ * Version: 1.7.6
  * Author: Replanta
  * Author URI: https://replanta.dev
  * License: GPL v2 or later
@@ -17,7 +17,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('RPCARE_VERSION', '1.7.3');
+define('RPCARE_VERSION', '1.7.6');
 define('RPCARE_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('RPCARE_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('RPCARE_PLUGIN_FILE', __FILE__);
@@ -35,12 +35,13 @@ if (!defined('RPCARE_GITHUB_BRANCH')) {
     define('RPCARE_GITHUB_BRANCH', 'main');
 }
 
-// Load secure configuration if available
+// Load secure configuration if available (config.php preferred, config-sample.php as fallback)
 $config_file = RPCARE_PLUGIN_PATH . 'config.php';
+$sample_file = RPCARE_PLUGIN_PATH . 'config-sample.php';
 if (file_exists($config_file)) {
     require_once $config_file;
-} else {
-    require_once RPCARE_PLUGIN_PATH . 'config-sample.php';
+} elseif (file_exists($sample_file)) {
+    require_once $sample_file;
 }
 
 // Load Action Scheduler (bundled; defers to WooCommerce copy if newer)
@@ -302,10 +303,12 @@ class ReplantaCare {
         // Show hub connection status
         $status_text = $hub_connected ? 'Conectado al Hub' : 'Detectando...';
         
-        // Main menu item
+        // Main menu item — logo + green/grey pilot dot reflecting Hub status
+        $dot_color = $hub_connected ? '#34D399' : '#9CA3AF';
+        $dot_shadow = $hub_connected ? '0 0 0 3px rgba(52,211,153,.25)' : '0 0 0 3px rgba(156,163,175,.18)';
         $wp_admin_bar->add_menu([
             'id' => 'replanta-care',
-            'title' => '<span class="ab-icon" style="background: url(' . RPCARE_PLUGIN_URL . 'assets/img/ico.png) center/16px no-repeat; width: 20px; height: 20px; margin-top: 6px;"></span><span class="ab-label">Mantenimiento Activo</span>',
+            'title' => '<span class="ab-icon" style="background: url(' . RPCARE_PLUGIN_URL . 'assets/img/ico.png) center/16px no-repeat; width: 20px; height: 20px; margin-top: 6px;"></span><span class="ab-label">Mantenimiento Activo</span><span class="rpc-ab-dot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' . $dot_color . ';box-shadow:' . $dot_shadow . ';margin-left:8px;vertical-align:middle;"></span>',
             'href' => admin_url('options-general.php?page=replanta-care'),
             'meta' => [
                 'title' => 'Replanta Care - Mantenimiento Automático'
@@ -348,7 +351,7 @@ class ReplantaCare {
         $wp_admin_bar->add_menu([
             'parent' => 'replanta-care',
             'id' => 'replanta-care-dashboard',
-            'title' => '⚙️ Abrir panel de mantenimiento',
+            'title' => '<span class="ab-icon" style="background: url(' . RPCARE_PLUGIN_URL . 'assets/img/ico.png) center/16px no-repeat;width:16px;height:16px;display:inline-block;vertical-align:-3px;margin-right:6px;"></span>Abrir panel de mantenimiento',
             'href' => admin_url('options-general.php?page=replanta-care'),
             'meta' => [
                 'class' => 'rpcare-dashboard-link'

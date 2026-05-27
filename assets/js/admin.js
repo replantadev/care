@@ -136,12 +136,12 @@
     function showTaskResult(task, status, data) {
         const resultsContainer = $('#rpcare-task-results');
         const taskName = getTaskName(task);
-        const icon = status === 'success' ? '✓' : '✕';
+        const iconClass = status === 'success' ? 'dashicons dashicons-yes-alt' : 'dashicons dashicons-dismiss';
 
         const resultHtml =
             '<div class="rpc-result-card ' + status + '">' +
                 '<div class="rpc-result-header">' +
-                    '<span class="rpc-result-title">' + icon + ' ' + taskName + '</span>' +
+                    '<span class="rpc-result-title"><span class="' + iconClass + '"></span> ' + taskName + '</span>' +
                     '<time class="rpc-result-time">' + new Date().toLocaleTimeString() + '</time>' +
                 '</div>' +
                 '<div class="rpc-result-message">' + (data.message || '') + '</div>' +
@@ -515,12 +515,18 @@
         type = type || 'info';
         duration = duration || 5000;
 
-        const emojis = { success: '✓', error: '✕', warning: '⚠', info: 'ℹ' };
+        const icons = {
+            success: 'yes-alt',
+            error: 'dismiss',
+            warning: 'warning',
+            info: 'info-outline'
+        };
+        const iconClass = 'dashicons dashicons-' + (icons[type] || icons.info);
         const toastId = 'rpc-toast-' + Date.now();
 
         const toast = $(
             '<div class="rpc-toast ' + type + '" id="' + toastId + '">' +
-                '<span class="rpc-toast-ico">' + (emojis[type] || emojis.info) + '</span>' +
+                '<span class="rpc-toast-ico ' + iconClass + '"></span>' +
                 '<div class="rpc-toast-body"><div class="rpc-toast-msg">' + message + '</div></div>' +
                 '<button class="rpc-toast-x" type="button" aria-label="Cerrar">&times;</button>' +
             '</div>'

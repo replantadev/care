@@ -439,13 +439,12 @@ class RP_Care_Settings_Page {
 
         $conn_class   = $hub_connected ? 'connected' : 'disconnected';
         $conn_label   = $hub_connected ? 'Tu sitio está protegido' : 'Sin conexión con el Hub';
-        $conn_icon    = $hub_connected ? '✓' : '✕';
         $plan_display = ($hub_connected && $current_plan)
             ? ($plan_config['name'] ?? ucfirst($current_plan))
             : '';
 
-        // Hub URL / token
-        $hub_url   = esc_attr($options['hub_url'] ?? '');
+        // Hub URL / token — hub_url is opaque to the end user: default to canonical Hub if unset
+        $hub_url   = esc_attr($options['hub_url'] ?? 'https://sitios.replanta.dev');
         $token     = esc_attr($options['site_token'] ?? '');
         $gh_token  = esc_attr(get_option('rpcare_github_token', ''));
         $has_token = !empty($options['site_token']);
@@ -492,41 +491,41 @@ class RP_Care_Settings_Page {
             <!-- STATS BAR -->
             <div class="rpc-stats-bar">
                 <div class="rpc-stat">
-                    <span class="rpc-stat-icon">⚙️</span>
+                    <span class="rpc-stat-icon dashicons dashicons-wordpress-alt"></span>
                     <span class="rpc-stat-label">WordPress</span>
                     <span class="rpc-stat-value"><?php echo esc_html($wp_version); ?></span>
                 </div>
                 <div class="rpc-stat">
-                    <span class="rpc-stat-icon">🐘</span>
+                    <span class="rpc-stat-icon dashicons dashicons-editor-code"></span>
                     <span class="rpc-stat-label">PHP</span>
                     <span class="rpc-stat-value"><?php echo esc_html($php_version); ?></span>
                 </div>
                 <div class="rpc-stat">
-                    <span class="rpc-stat-icon">💾</span>
+                    <span class="rpc-stat-icon dashicons dashicons-backup"></span>
                     <span class="rpc-stat-label">Último backup</span>
                     <span class="rpc-stat-value <?php echo $last_backup ? 'good' : 'warn'; ?>">
                         <?php echo $last_backup ? esc_html(wp_date('d M', strtotime($last_backup))) : 'Nunca'; ?>
                     </span>
                 </div>
                 <div class="rpc-stat">
-                    <span class="rpc-stat-icon">🔒</span>
+                    <span class="rpc-stat-icon dashicons dashicons-lock"></span>
                     <span class="rpc-stat-label">SSL</span>
                     <span class="rpc-stat-value <?php echo $ssl_ok ? 'good' : 'bad'; ?>"><?php echo $ssl_ok ? 'Activo' : 'Inactivo'; ?></span>
                 </div>
                 <div class="rpc-stat">
-                    <span class="rpc-stat-icon">🔄</span>
+                    <span class="rpc-stat-icon dashicons dashicons-update"></span>
                     <span class="rpc-stat-label">Actualizaciones</span>
                     <span class="rpc-stat-value <?php echo $pending_upd > 0 ? 'warn' : 'good'; ?>">
                         <?php echo $pending_upd > 0 ? $pending_upd . ' pendientes' : 'Al día'; ?>
                     </span>
                 </div>
                 <div class="rpc-stat">
-                    <span class="rpc-stat-icon">❤️</span>
+                    <span class="rpc-stat-icon dashicons dashicons-heart"></span>
                     <span class="rpc-stat-label">Salud</span>
                     <span class="rpc-stat-value rpc-health-num"><?php echo $health_score; ?>%</span>
                 </div>
                 <div class="rpc-stat">
-                    <span class="rpc-stat-icon">⚡</span>
+                    <span class="rpc-stat-icon dashicons dashicons-performance"></span>
                     <span class="rpc-stat-label">Tareas</span>
                     <span class="rpc-stat-value <?php echo $tasks_active ? 'good' : 'warn'; ?>"><?php echo $tasks_active ? 'Activas' : 'Inactivas'; ?></span>
                 </div>
@@ -540,14 +539,10 @@ class RP_Care_Settings_Page {
 
                     <!-- CONEXIÓN HUB -->
                     <section class="rpc-section">
-                        <h2 class="rpc-section-title"><span class="rpc-section-icon">🔗</span> Conexión con Replanta Hub</h2>
+                        <h2 class="rpc-section-title"><span class="rpc-section-icon dashicons dashicons-admin-links"></span> Conexión con Replanta Hub</h2>
 
-                        <div class="rpc-field">
-                            <label class="rpc-label" for="rpc-hub-url">URL del Hub</label>
-                            <input type="url" id="rpc-hub-url" name="rpcare_options[hub_url]"
-                                   class="rpc-input" value="<?php echo $hub_url; ?>"
-                                   placeholder="https://sitios.replanta.dev" autocomplete="off">
-                        </div>
+                        <!-- Hub URL is set automatically (and can be pushed remotely from Hub). We keep it as a hidden input so submitting the form preserves the saved value. -->
+                        <input type="hidden" id="rpc-hub-url" name="rpcare_options[hub_url]" value="<?php echo $hub_url; ?>">
 
                         <div class="rpc-field">
                             <label class="rpc-label" for="rpc-site-token">Token del sitio</label>
@@ -559,14 +554,14 @@ class RP_Care_Settings_Page {
                                         onclick="rpcare_generate_token()" title="Generar token aleatorio">&#x21BA;</button>
                                 <?php if ($has_token): ?>
                                 <button type="button" class="rpc-btn rpc-btn-secondary rpc-btn-sm"
-                                        onclick="rpcare_copy_token()" title="Copiar token">📋</button>
+                                        onclick="rpcare_copy_token()" title="Copiar token"><span class="dashicons dashicons-clipboard"></span></button>
                                 <?php endif; ?>
                             </div>
                             <span class="rpc-hint <?php echo $has_token ? 'ok' : 'warn'; ?>">
                                 <?php if ($has_token): ?>
-                                    ✓ Token configurado. El Hub puede autenticar peticiones a este sitio.
+                                    <span class="dashicons dashicons-yes-alt"></span> Token configurado. El Hub puede autenticar peticiones a este sitio.
                                 <?php else: ?>
-                                    ⚠ Sin token: el Hub no puede conectar. Copia el token desde Hub → pégalo aquí.
+                                    <span class="dashicons dashicons-warning"></span> Sin token: el Hub no puede conectar. Copia el token desde Hub y pégalo aquí.
                                 <?php endif; ?>
                             </span>
                         </div>
@@ -578,7 +573,7 @@ class RP_Care_Settings_Page {
                         </div>
 
                         <button type="button" class="rpc-btn rpc-btn-secondary" id="test-connection" style="margin-top:4px;">
-                            <span id="rpc-test-icon">🔌</span> Probar conexión
+                            <span id="rpc-test-icon" class="dashicons dashicons-rest-api"></span> Probar conexión
                         </button>
                         <div id="rpc-connection-result"></div>
                         <div id="connection-status" style="display:none;"></div>
@@ -586,11 +581,11 @@ class RP_Care_Settings_Page {
 
                     <!-- PLAN / TAREAS -->
                     <section class="rpc-section">
-                        <h2 class="rpc-section-title"><span class="rpc-section-icon">⚡</span> Tareas automáticas</h2>
+                        <h2 class="rpc-section-title"><span class="rpc-section-icon dashicons dashicons-performance"></span> Tareas automáticas</h2>
 
                         <?php if ($hub_connected && $current_plan): ?>
                         <div class="rpc-hint ok" style="margin-bottom:16px;">
-                            ✓ Plan <strong><?php echo esc_html($plan_display); ?></strong> detectado desde el Hub.
+                            <span class="dashicons dashicons-yes-alt"></span> Plan <strong><?php echo esc_html($plan_display); ?></strong> detectado desde el Hub.
                             Las tareas se ajustan automáticamente.
                         </div>
                         <input type="hidden" name="rpcare_options[plan]" value="<?php echo esc_attr($current_plan); ?>">
@@ -612,7 +607,7 @@ class RP_Care_Settings_Page {
 
                         <div class="rpc-toggle-row">
                             <div class="rpc-toggle-info">
-                                <span class="rpc-toggle-name">💾 Copias de seguridad</span>
+                                <span class="rpc-toggle-name"><span class="dashicons dashicons-backup"></span> Copias de seguridad</span>
                                 <span class="rpc-toggle-desc">Backups automáticos con Backuply según tu plan</span>
                             </div>
                             <label class="rpc-switch">
@@ -623,7 +618,7 @@ class RP_Care_Settings_Page {
 
                         <div class="rpc-toggle-row">
                             <div class="rpc-toggle-info">
-                                <span class="rpc-toggle-name">🗑️ Limpieza de caché</span>
+                                <span class="rpc-toggle-name"><span class="dashicons dashicons-trash"></span> Limpieza de caché</span>
                                 <span class="rpc-toggle-desc">Vaciar caché tras actualizaciones</span>
                             </div>
                             <label class="rpc-switch">
@@ -634,7 +629,7 @@ class RP_Care_Settings_Page {
 
                         <div class="rpc-toggle-row">
                             <div class="rpc-toggle-info">
-                                <span class="rpc-toggle-name">🛡️ Escaneo de seguridad</span>
+                                <span class="rpc-toggle-name"><span class="dashicons dashicons-shield-alt"></span> Escaneo de seguridad</span>
                                 <span class="rpc-toggle-desc">Análisis periódico de vulnerabilidades</span>
                             </div>
                             <label class="rpc-switch">
@@ -646,7 +641,7 @@ class RP_Care_Settings_Page {
 
                     <!-- NOTIFICACIONES -->
                     <section class="rpc-section rpc-section-full">
-                        <h2 class="rpc-section-title"><span class="rpc-section-icon">🔔</span> Notificaciones</h2>
+                        <h2 class="rpc-section-title"><span class="rpc-section-icon dashicons dashicons-bell"></span> Notificaciones</h2>
 
                         <div style="display:grid;grid-template-columns:1fr 2fr;gap:24px;align-items:start;">
                             <div class="rpc-field">
@@ -675,13 +670,13 @@ class RP_Care_Settings_Page {
 
                 <div class="rpc-form-footer">
                     <button type="submit" name="submit" class="rpc-btn rpc-btn-primary">
-                        💾 Guardar configuración
+                        <span class="dashicons dashicons-saved"></span> Guardar configuración
                     </button>
                     <button type="submit" name="rpcare_check_updates" class="rpc-btn rpc-btn-ghost">
-                        🔄 Comprobar actualizaciones ahora
+                        <span class="dashicons dashicons-update"></span> Comprobar actualizaciones ahora
                     </button>
                     <?php if (isset($_GET['settings-updated'])): ?>
-                    <span class="rpc-hint ok" style="margin-left:auto;">✓ Configuración guardada</span>
+                    <span class="rpc-hint ok" style="margin-left:auto;"><span class="dashicons dashicons-yes-alt"></span> Configuración guardada</span>
                     <?php endif; ?>
                 </div>
 
@@ -689,38 +684,38 @@ class RP_Care_Settings_Page {
 
             <!-- ACCIONES RÁPIDAS -->
             <section class="rpc-actions">
-                <h2 class="rpc-section-title"><span class="rpc-section-icon">⚡</span> Acciones inmediatas</h2>
+                <h2 class="rpc-section-title"><span class="rpc-section-icon dashicons dashicons-controls-play"></span> Acciones inmediatas</h2>
                 <div class="rpc-action-grid">
                     <button class="rpc-action-card" data-task="updates" type="button">
-                        <span class="rpc-action-icon">🔄</span>
+                        <span class="rpc-action-icon dashicons dashicons-update"></span>
                         <span class="rpc-action-label">Actualizaciones</span>
                     </button>
                     <button class="rpc-action-card" data-task="backup" type="button">
-                        <span class="rpc-action-icon">💾</span>
+                        <span class="rpc-action-icon dashicons dashicons-backup"></span>
                         <span class="rpc-action-label">Crear backup</span>
                     </button>
                     <button class="rpc-action-card" data-task="cache" type="button">
-                        <span class="rpc-action-icon">🗑️</span>
+                        <span class="rpc-action-icon dashicons dashicons-trash"></span>
                         <span class="rpc-action-label">Limpiar caché</span>
                     </button>
                     <button class="rpc-action-card" data-task="security" type="button">
-                        <span class="rpc-action-icon">🛡️</span>
+                        <span class="rpc-action-icon dashicons dashicons-shield-alt"></span>
                         <span class="rpc-action-label">Seguridad</span>
                     </button>
                     <button class="rpc-action-card" data-task="health" type="button">
-                        <span class="rpc-action-icon">❤️</span>
+                        <span class="rpc-action-icon dashicons dashicons-heart"></span>
                         <span class="rpc-action-label">Salud del sitio</span>
                     </button>
                     <button class="rpc-action-card" data-task="report" type="button">
-                        <span class="rpc-action-icon">📊</span>
+                        <span class="rpc-action-icon dashicons dashicons-chart-bar"></span>
                         <span class="rpc-action-label">Generar informe</span>
                     </button>
                     <button class="rpc-action-card" data-task="wpo" type="button">
-                        <span class="rpc-action-icon">⚡</span>
+                        <span class="rpc-action-icon dashicons dashicons-performance"></span>
                         <span class="rpc-action-label">Optimizar WPO</span>
                     </button>
                     <button class="rpc-action-card" data-task="seo" type="button">
-                        <span class="rpc-action-icon">🔍</span>
+                        <span class="rpc-action-icon dashicons dashicons-search"></span>
                         <span class="rpc-action-label">Análisis SEO</span>
                     </button>
                 </div>
@@ -729,17 +724,17 @@ class RP_Care_Settings_Page {
 
             <!-- REPORTES DEL HUB -->
             <section class="rpc-reports">
-                <h2 class="rpc-section-title"><span class="rpc-section-icon">📋</span> Informes del Hub</h2>
+                <h2 class="rpc-section-title"><span class="rpc-section-icon dashicons dashicons-media-document"></span> Informes del Hub</h2>
                 <p class="rpc-hint" style="margin-bottom:14px;">Informes generados por Replanta Hub para este sitio.</p>
                 <button type="button" class="rpc-btn rpc-btn-secondary rpc-btn-sm" id="rpcare-load-reports">
-                    <span id="rpc-reports-icon">📥</span> Cargar informes
+                    <span id="rpc-reports-icon" class="dashicons dashicons-download"></span> Cargar informes
                 </button>
                 <div id="rpcare-reports-list" style="margin-top:14px;"></div>
             </section>
 
             <!-- ACTIVIDAD RECIENTE -->
             <section class="rpc-logs">
-                <h2 class="rpc-section-title"><span class="rpc-section-icon">📋</span> Actividad reciente</h2>
+                <h2 class="rpc-section-title"><span class="rpc-section-icon dashicons dashicons-list-view"></span> Actividad reciente</h2>
                 <?php $this->display_recent_logs(); ?>
             </section>
 
@@ -774,18 +769,18 @@ class RP_Care_Settings_Page {
             $('#rpcare-load-reports').on('click', function(){
                 var btn = $(this);
                 btn.prop('disabled', true);
-                $('#rpc-reports-icon').text('⏳');
+                $('#rpc-reports-icon').removeClass('dashicons-download').addClass('dashicons-update rpc-spin');
                 $('#rpcare-reports-list').html('<p class="rpc-hint">Cargando informes...</p>');
                 $.post(rpcare_ajax.ajax_url, { action: 'rpcare_get_hub_reports', nonce: rpcare_ajax.nonce }, function(res){
                     btn.prop('disabled', false);
-                    $('#rpc-reports-icon').text('📥');
+                    $('#rpc-reports-icon').removeClass('dashicons-update rpc-spin').addClass('dashicons-download');
                     if (!res.success) {
-                        $('#rpcare-reports-list').html('<p class="rpc-hint error">⚠ ' + (res.data || 'Error al cargar informes.') + '</p>');
+                        $('#rpcare-reports-list').html('<p class="rpc-hint error"><span class="dashicons dashicons-warning"></span> ' + (res.data || 'Error al cargar informes.') + '</p>');
                         return;
                     }
                     var reports = res.data;
                     if (!Array.isArray(reports) || !reports.length) {
-                        $('#rpcare-reports-list').html('<div class="rpc-empty"><span class="rpc-empty-icon">📄</span>No hay informes disponibles todavía.</div>');
+                        $('#rpcare-reports-list').html('<div class="rpc-empty"><span class="rpc-empty-icon dashicons dashicons-media-document"></span>No hay informes disponibles todavía.</div>');
                         return;
                     }
                     var html = '<table class="rpc-table"><thead><tr><th>Tipo</th><th>Generado</th><th></th></tr></thead><tbody>';
@@ -800,8 +795,8 @@ class RP_Care_Settings_Page {
                     $('#rpcare-reports-list').html(html);
                 }).fail(function(){
                     btn.prop('disabled', false);
-                    $('#rpc-reports-icon').text('📥');
-                    $('#rpcare-reports-list').html('<p class="rpc-hint error">⚠ Error de red.</p>');
+                    $('#rpc-reports-icon').removeClass('dashicons-update rpc-spin').addClass('dashicons-download');
+                    $('#rpcare-reports-list').html('<p class="rpc-hint error"><span class="dashicons dashicons-warning"></span> Error de red.</p>');
                 });
             });
 
@@ -870,16 +865,16 @@ class RP_Care_Settings_Page {
                     class="button"
                     onclick="rpcare_copy_token()"
                     title="Copiar token al portapapeles">
-                &#x1F4CB; Copiar
+                <span class="dashicons dashicons-clipboard" style="vertical-align:middle;"></span> Copiar
             </button>
             <?php endif; ?>
         </div>
         <p class="description" style="margin-top:6px;">
             <?php if ($has_token): ?>
-                <span style="color:#46b450;font-weight:600;">&#x2713; Token configurado.</span>
+                <span style="color:#46b450;font-weight:600;"><span class="dashicons dashicons-yes" style="vertical-align:middle;"></span> Token configurado.</span>
                 El token autentica las peticiones de Replanta Hub hacia este sitio.
             <?php else: ?>
-                <span style="color:#d63638;font-weight:600;">&#x26A0; Sin token.</span>
+                <span style="color:#d63638;font-weight:600;"><span class="dashicons dashicons-warning" style="vertical-align:middle;"></span> Sin token.</span>
                 Sin token el Hub no puede conectar a este sitio.
             <?php endif; ?>
             <br><strong>Flujo:</strong>
@@ -948,7 +943,7 @@ class RP_Care_Settings_Page {
         ?>
         <div class="rpcare-plans-wrapper">
             <p class="rpcare-plans-intro">
-                <strong>⚠️ No estás conectado al Hub Replanta.</strong><br>
+                <strong><span class="dashicons dashicons-warning"></span> No estás conectado al Hub Replanta.</strong><br>
                 Selecciona tu plan para configurar las características correspondientes, o conecta con el Hub para detección automática.
             </p>
             
@@ -962,11 +957,11 @@ class RP_Care_Settings_Page {
                         <span class="plan-price">49€ <small>/mes</small></span>
                     </div>
                     <ul class="plan-features">
-                        <li><span class="check-icon">✔</span> Actualizaciones mensuales</li>
-                        <li><span class="check-icon">✔</span> Copias de seguridad semanales</li>
-                        <li><span class="check-icon">✔</span> Optimización básica WPO</li>
-                        <li><span class="check-icon">✔</span> Revisión trimestral de rendimiento</li>
-                        <li><span class="check-icon">✔</span> Soporte por email</li>
+                        <li><span class="check-icon dashicons dashicons-yes"></span> Actualizaciones mensuales</li>
+                        <li><span class="check-icon dashicons dashicons-yes"></span> Copias de seguridad semanales</li>
+                        <li><span class="check-icon dashicons dashicons-yes"></span> Optimización básica WPO</li>
+                        <li><span class="check-icon dashicons dashicons-yes"></span> Revisión trimestral de rendimiento</li>
+                        <li><span class="check-icon dashicons dashicons-yes"></span> Soporte por email</li>
                     </ul>
                     <div class="plan-cta">
                         <label class="plan-selector">
@@ -986,12 +981,12 @@ class RP_Care_Settings_Page {
                         <span class="plan-price">89€ <small>/mes</small></span>
                     </div>
                     <ul class="plan-features">
-                        <li><span class="check-icon">✔</span> Todo lo del plan Semilla</li>
-                        <li><span class="check-icon">✔</span> Actualizaciones semanales</li>
-                        <li><span class="check-icon">✔</span> Soporte prioritario</li>
-                        <li><span class="check-icon">✔</span> Monitorización 24/7</li>
-                        <li><span class="check-icon">✔</span> Revisión SEO + WPO mensual</li>
-                        <li><span class="check-icon">✔</span> Informes de estado mensuales</li>
+                        <li><span class="check-icon dashicons dashicons-yes"></span> Todo lo del plan Semilla</li>
+                        <li><span class="check-icon dashicons dashicons-yes"></span> Actualizaciones semanales</li>
+                        <li><span class="check-icon dashicons dashicons-yes"></span> Soporte prioritario</li>
+                        <li><span class="check-icon dashicons dashicons-yes"></span> Monitorización 24/7</li>
+                        <li><span class="check-icon dashicons dashicons-yes"></span> Revisión SEO + WPO mensual</li>
+                        <li><span class="check-icon dashicons dashicons-yes"></span> Informes de estado mensuales</li>
                     </ul>
                     <div class="plan-cta">
                         <label class="plan-selector">
@@ -1010,11 +1005,11 @@ class RP_Care_Settings_Page {
                         <span class="plan-price">149€ <small>/mes</small></span>
                     </div>
                     <ul class="plan-features">
-                        <li><span class="check-icon">✔</span> Todo lo del plan Raíz</li>
-                        <li><span class="check-icon">✔</span> Consultoría técnica trimestral</li>
-                        <li><span class="check-icon">✔</span> <strong>Hosting ecológico incluido</strong></li>
-                        <li><span class="check-icon">✔</span> Auditoría SEO/WPO trimestral</li>
-                        <li><span class="check-icon">✔</span> CDN y optimización avanzada</li>
+                        <li><span class="check-icon dashicons dashicons-yes"></span> Todo lo del plan Raíz</li>
+                        <li><span class="check-icon dashicons dashicons-yes"></span> Consultoría técnica trimestral</li>
+                        <li><span class="check-icon dashicons dashicons-yes"></span> <strong>Hosting ecológico incluido</strong></li>
+                        <li><span class="check-icon dashicons dashicons-yes"></span> Auditoría SEO/WPO trimestral</li>
+                        <li><span class="check-icon dashicons dashicons-yes"></span> CDN y optimización avanzada</li>
                     </ul>
                     <div class="plan-cta">
                         <label class="plan-selector">
@@ -1124,10 +1119,15 @@ class RP_Care_Settings_Page {
         if (isset($input['hub_url'])) {
             $sanitized['hub_url'] = esc_url_raw($input['hub_url']);
         }
-        
+
         if (isset($input['site_token'])) {
             $sanitized['site_token'] = sanitize_text_field($input['site_token']);
         }
+
+        // Invalidate plan cache whenever Hub creds are touched so next request re-detects from Hub
+        delete_transient('rpcare_plan_cache');
+        delete_transient('rpcare_hub_backoff');
+        delete_option('rpcare_hub_failures');
 
         if (isset($input['github_token'])) {
             update_option('rpcare_github_token', sanitize_text_field($input['github_token']));
@@ -1216,6 +1216,10 @@ class RP_Care_Settings_Page {
             $code = wp_remote_retrieve_response_code($response);
             if ($code === 200) {
                 $body = wp_remote_retrieve_body($response);
+                if (substr($body, 0, 3) === "\xEF\xBB\xBF") {
+                    $body = substr($body, 3);
+                }
+                $body = trim($body);
                 $data = json_decode($body, true);
 
                 if (!is_array($data)) {
@@ -1316,7 +1320,11 @@ class RP_Care_Settings_Page {
             wp_send_json_error("El Hub respondió con HTTP $code.");
         }
 
-        $body = json_decode(wp_remote_retrieve_body($response), true);
+        $body = wp_remote_retrieve_body($response);
+        if (substr($body, 0, 3) === "\xEF\xBB\xBF") {
+            $body = substr($body, 3);
+        }
+        $body = json_decode(trim($body), true);
 
         if (!is_array($body) || empty($body['success'])) {
             $msg = is_array($body) ? ($body['data'] ?? 'Respuesta inesperada del Hub.') : 'Respuesta no JSON del Hub.';

@@ -26,7 +26,7 @@ class RP_Care_REST {
                 'task' => [
                     'required' => true,
                     'type' => 'string',
-                    'enum' => ['updates', 'backup', 'wpo', 'seo_review', 'seo_audit', 'health', 'monitor', '404_cleanup', 'report']
+                    'enum' => ['updates', 'backup', 'wpo', 'seo_review', 'seo_audit', 'health', 'monitor', '404_cleanup', 'report', 'self_update']
                 ],
                 'force' => [
                     'required' => false,
@@ -208,11 +208,24 @@ class RP_Care_REST {
                 'health' => 'rpcare_task_health',
                 'monitor' => 'rpcare_task_monitor',
                 '404_cleanup' => 'rpcare_task_404_cleanup',
-                'report' => 'rpcare_task_report'
+                'report' => 'rpcare_task_report',
+                'self_update' => '__rpcare_self_update'
             ];
-            
+
             if (!isset($task_hooks[$task])) {
                 return new WP_Error('invalid_task', 'Invalid task name', ['status' => 400]);
+            }
+
+            // Self-update is handled inline (forces WP to install the latest Care zip from Hub)
+            if ($task === 'self_update') {
+                $result = $this->do_self_update();
+                $execution_time = round((microtime(true) - $start_time) * 1000, 2);
+                return array_merge($result, [
+                    'task' => $task,
+                    'executed_at' => current_time('mysql'),
+                    'execution_time_ms' => $execution_time,
+                    'forced' => $force,
+                ]);
             }
             
             $hook = $task_hooks[$task];
@@ -259,6 +272,67 @@ class RP_Care_REST {
             
             return new WP_Error('task_execution_failed', $e->getMessage(), ['status' => 500]);
         }
+    }
+
+    /**
+     * Force WP to check + install the latest Care zip served by the Hub.
+     * Used by the Hub "Actualizar Care" button so admins don't have to wait
+     * for PUC's periodic check.
+     */
+    private function do_self_update() {
+        if (!function_exists('get_plugin_data')) {
+            require_once ABSPATH . 'wp-admin/includes/plugin.php';
+        }
+
+        $before = defined('RPCARE_VERSION') ? RPCARE_VERSION : '';
+
+        // Bust PUC + WP plugin transient so the next check hits the Hub
+        delete_site_transient('update_plugins');
+        delete_site_transient('puc_request_info_replanta-care');
+        wp_clean_plugins_cache(true);
+
+        // Trigger PUC to refetch metadata immediately
+        if (class_exists('\\YahnisElsts\\PluginUpdateChecker\\v5\\PucFactory')) {
+            do_action('puc_request_info_replanta-care');
+        }
+        wp_update_plugins();
+
+        $transient = get_site_transient('update_plugins');
+        $plugin_file = 'replanta-care/replanta-care.php';
+        $available   = isset($transient->response[$plugin_file]) ? $transient->response[$plugin_file]->new_version : null;
+
+        if (!$available || version_compare($available, $before, '<=')) {
+            return [
+                'success' => true,
+                'message' => 'Care ya está en la última versión disponible',
+                'version_before' => $before,
+                'version_available' => $available,
+                'upgraded' => false,
+            ];
+        }
+
+        require_once ABSPATH . 'wp-admin/includes/file.php';
+        require_once ABSPATH . 'wp-admin/includes/misc.php';
+        require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
+
+        $skin     = new \Automatic_Upgrader_Skin();
+        $upgrader = new \Plugin_Upgrader($skin);
+        $result   = $upgrader->upgrade($plugin_file);
+
+        if (is_wp_error($result)) {
+            return ['success' => false, 'message' => $result->get_error_message(), 'version_before' => $before];
+        }
+        if ($result === false) {
+            return ['success' => false, 'message' => 'Upgrader devolvió false', 'version_before' => $before];
+        }
+
+        return [
+            'success' => true,
+            'message' => 'Care actualizado correctamente',
+            'version_before' => $before,
+            'version_after' => $available,
+            'upgraded' => true,
+        ];
     }
     
     public function get_metrics($request) {

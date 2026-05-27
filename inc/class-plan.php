@@ -198,6 +198,8 @@ class RP_Care_Plan {
     public static function set_current($plan) {
         if (self::is_valid_plan($plan)) {
             update_option('rpcare_plan', $plan);
+            update_option('rpcare_detected_plan', $plan);
+            set_transient('rpcare_plan_cache', $plan, 6 * HOUR_IN_SECONDS);
             return true;
         }
         return false;

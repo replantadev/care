@@ -448,7 +448,7 @@ class RP_Care_Settings_Page {
             : '';
 
         // Hub URL / token — hub_url is opaque to the end user: default to canonical Hub if unset
-        $hub_url   = esc_attr($options['hub_url'] ?? 'https://sitios.replanta.dev');
+        $hub_url   = esc_attr($options['hub_url'] ?? 'https://replanta.net');
         $token     = esc_attr($options['site_token'] ?? '');
         $gh_token  = esc_attr(get_option('rpcare_github_token', ''));
         $has_token = !empty($options['site_token']);
@@ -549,13 +549,11 @@ class RP_Care_Settings_Page {
                         <input type="hidden" id="rpc-hub-url" name="rpcare_options[hub_url]" value="<?php echo $hub_url; ?>">
 
                         <div class="rpc-field">
-                            <label class="rpc-label" for="rpc-site-token">Token del sitio</label>
+                            <label class="rpc-label" for="rpc-site-token">Token del sitio <small style="text-transform:none;font-weight:400;color:var(--rp-muted)">(proporcionado por Replanta Hub al añadir el sitio)</small></label>
                             <div class="rpc-input-row">
                                 <input type="text" id="rpc-site-token" name="rpcare_options[site_token]"
                                        class="rpc-input rpc-input-mono" value="<?php echo $token; ?>"
-                                       placeholder="Pega aquí el token de Replanta Hub" autocomplete="off">
-                                <button type="button" class="rpc-btn rpc-btn-secondary rpc-btn-sm"
-                                        onclick="rpcare_generate_token()" title="Generar token aleatorio">&#x21BA;</button>
+                                       placeholder="Pega aquí el token que generó Replanta Hub" autocomplete="off">
                                 <?php if ($has_token): ?>
                                 <button type="button" class="rpc-btn rpc-btn-secondary rpc-btn-sm"
                                         onclick="rpcare_copy_token()" title="Copiar token"><span class="dashicons dashicons-clipboard"></span></button>
@@ -563,9 +561,9 @@ class RP_Care_Settings_Page {
                             </div>
                             <span class="rpc-hint <?php echo $has_token ? 'ok' : 'warn'; ?>">
                                 <?php if ($has_token): ?>
-                                    <span class="dashicons dashicons-yes-alt"></span> Token configurado. El Hub puede autenticar peticiones a este sitio.
+                                    <span class="dashicons dashicons-yes-alt"></span> Token configurado. Hub autenticado.
                                 <?php else: ?>
-                                    <span class="dashicons dashicons-warning"></span> Sin token: el Hub no puede conectar. Copia el token desde Hub y pégalo aquí.
+                                    <span class="dashicons dashicons-warning"></span> Sin token: copia el token desde Hub (panel de sitios) y pégalo aquí.
                                 <?php endif; ?>
                             </span>
                         </div>

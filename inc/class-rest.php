@@ -26,7 +26,7 @@ class RP_Care_REST {
                 'task' => [
                     'required' => true,
                     'type' => 'string',
-                    'enum' => ['updates', 'backup', 'wpo', 'seo_review', 'seo_audit', 'health', 'monitor', '404_cleanup', 'report', 'self_update']
+                    'enum' => ['updates', 'backup', 'wpo', 'seo_review', 'seo_audit', 'health', 'monitor', '404_cleanup', 'report', 'self_update', 'cwv', 'anomaly', 'cloudflare_configure', 'orphan_media_scan', 'staging_clone']
                 ],
                 'force' => [
                     'required' => false,
@@ -166,6 +166,31 @@ class RP_Care_REST {
             'callback' => [$this, 'backuply_create'],
             'permission_callback' => [$this, 'check_permissions'],
         ]);
+
+        // Hub-triggered self-update
+        register_rest_route($this->namespace, '/upgrade', [
+            'methods'             => 'POST',
+            'callback'            => [$this, 'self_upgrade'],
+            'permission_callback' => [$this, 'check_permissions'],
+        ]);
+
+        // Hub-triggered WP fix execution
+        register_rest_route($this->namespace, '/execute-fix', [
+            'methods'             => 'POST',
+            'callback'            => [$this, 'execute_fix'],
+            'permission_callback' => [$this, 'check_permissions'],
+            'args' => [
+                'fix_id' => [
+                    'required' => true,
+                    'type'     => 'string',
+                    'enum'     => [
+                        'wp_debug_off', 'wp_memory_limit', 'wp_cron_disable',
+                        'heartbeat_optimize', 'db_clean_revisions',
+                        'db_clean_transients', 'db_clean_spam', 'ls_enable_object_cache',
+                    ],
+                ],
+            ],
+        ]);
     }
     
     public function check_permissions($request) {
@@ -209,6 +234,11 @@ class RP_Care_REST {
                 'monitor' => 'rpcare_task_monitor',
                 '404_cleanup' => 'rpcare_task_404_cleanup',
                 'report' => 'rpcare_task_report',
+                'cwv' => 'rpcare_task_cwv',
+                'anomaly' => 'rpcare_task_anomaly',
+                'cloudflare_configure' => 'rpcare_task_cloudflare_configure',
+                'orphan_media_scan' => 'rpcare_task_orphan_media',
+                'staging_clone' => 'rpcare_task_staging_clone',
                 'self_update' => '__rpcare_self_update'
             ];
 
@@ -737,5 +767,127 @@ class RP_Care_REST {
             'message'    => 'Backup iniciado con Backuply',
             'started_at' => current_time('mysql'),
         ]);
+    }
+
+    /**
+     * Hub-triggered self-update.
+     * Hub calls POST /replanta/v1/upgrade to push Care to the latest release.
+     */
+    public function self_upgrade($request) {
+        require_once ABSPATH . 'wp-admin/includes/file.php';
+        require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
+        require_once ABSPATH . 'wp-admin/includes/class-wp-ajax-upgrader-skin.php';
+
+        $plugin_file = plugin_basename(RPCARE_PLUGIN_FILE);
+
+        // Force a fresh update check
+        delete_site_transient('update_plugins');
+        wp_update_plugins();
+
+        $updates = get_site_transient('update_plugins');
+        if (empty($updates->response[$plugin_file])) {
+            return rest_ensure_response([
+                'up_to_date' => true,
+                'message'    => 'Ya estás en la última versión.',
+                'version'    => RPCARE_VERSION,
+            ]);
+        }
+
+        $upgrader = new Plugin_Upgrader(new WP_Ajax_Upgrader_Skin());
+        $result   = $upgrader->upgrade($plugin_file);
+
+        if (is_wp_error($result)) {
+            return new WP_Error('upgrade_failed', $result->get_error_message(), ['status' => 500]);
+        }
+
+        return rest_ensure_response([
+            'success' => true,
+            'message' => 'Plugin actualizado correctamente.',
+            'from'    => RPCARE_VERSION,
+            'to'      => $updates->response[$plugin_file]->new_version ?? 'nueva versión',
+        ]);
+    }
+
+    /**
+     * POST /execute-fix — apply a single WP-level fix dispatched by Hub.
+     */
+    public function execute_fix($request) {
+        $fix_id = $request->get_param('fix_id');
+
+        switch ($fix_id) {
+            case 'wp_debug_off':
+                return rest_ensure_response($this->fix_wpconfig_define('WP_DEBUG', 'false', false));
+
+            case 'wp_memory_limit':
+                return rest_ensure_response($this->fix_wpconfig_define('WP_MEMORY_LIMIT', "'256M'", false));
+
+            case 'wp_cron_disable':
+                return rest_ensure_response($this->fix_wpconfig_define('DISABLE_WP_CRON', 'true', false));
+
+            case 'heartbeat_optimize':
+                update_option('rpcare_heartbeat_interval', 60);
+                add_filter('heartbeat_settings', function($settings) {
+                    $settings['interval'] = 60;
+                    return $settings;
+                });
+                return rest_ensure_response(['success' => true, 'fix_id' => $fix_id, 'message' => 'Heartbeat optimizado a 60s']);
+
+            case 'db_clean_revisions':
+                global $wpdb;
+                $deleted = $wpdb->query("DELETE FROM {$wpdb->posts} WHERE post_type = 'revision'");
+                return rest_ensure_response(['success' => true, 'fix_id' => $fix_id, 'deleted_rows' => (int) $deleted]);
+
+            case 'db_clean_transients':
+                global $wpdb;
+                $deleted = $wpdb->query(
+                    "DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_%' OR option_name LIKE '_site_transient_%'"
+                );
+                return rest_ensure_response(['success' => true, 'fix_id' => $fix_id, 'deleted_rows' => (int) $deleted]);
+
+            case 'db_clean_spam':
+                global $wpdb;
+                $deleted = $wpdb->query("DELETE FROM {$wpdb->comments} WHERE comment_approved = 'spam'");
+                return rest_ensure_response(['success' => true, 'fix_id' => $fix_id, 'deleted_rows' => (int) $deleted]);
+
+            case 'ls_enable_object_cache':
+                update_option('litespeed_conf_object', 1);
+                update_option('litespeed-object-cache', 1);
+                return rest_ensure_response(['success' => true, 'fix_id' => $fix_id, 'message' => 'LiteSpeed Object Cache habilitado']);
+
+            default:
+                return new WP_Error('invalid_fix', "Fix desconocido: {$fix_id}", ['status' => 400]);
+        }
+    }
+
+    private function fix_wpconfig_define(string $constant, string $new_value, bool $add_if_missing): array {
+        $config_path = ABSPATH . 'wp-config.php';
+        if (!is_readable($config_path) || !is_writable($config_path)) {
+            return ['success' => false, 'fix_id' => strtolower($constant), 'error' => 'wp-config.php no es accesible'];
+        }
+
+        $content  = file_get_contents($config_path);
+        $original = $content;
+
+        $pattern     = "/define\s*\(\s*['\"]" . preg_quote($constant, '/') . "['\"]\s*,\s*[^)]+\)\s*;/";
+        $replacement = "define('{$constant}', {$new_value});";
+
+        if (preg_match($pattern, $content)) {
+            $replaced = preg_replace($pattern, $replacement, $content);
+            if ($replaced === null) {
+                return ['success' => false, 'fix_id' => strtolower($constant), 'error' => 'Error interno al modificar wp-config.php'];
+            }
+            $content = $replaced;
+        } elseif ($add_if_missing) {
+            $content = str_replace('/* That\'s all, stop editing!', $replacement . "\n/* That's all, stop editing!", $content);
+        } else {
+            return ['success' => true, 'fix_id' => strtolower($constant), 'message' => 'Constante no encontrada; no es necesario cambiarla'];
+        }
+
+        if ($content === $original) {
+            return ['success' => true, 'fix_id' => strtolower($constant), 'message' => 'Sin cambios'];
+        }
+
+        file_put_contents($config_path, $content);
+        return ['success' => true, 'fix_id' => strtolower($constant), 'message' => 'wp-config.php actualizado'];
     }
 }

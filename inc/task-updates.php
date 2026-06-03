@@ -34,8 +34,12 @@ class RP_Care_Task_Updates {
             'translations' => [],
         ];
 
-        // Force refresh update transients
-        wp_clean_update_cache();
+        // Use WordPress's existing update transients (populated by WP's built-in cron).
+        // Clearing + forcing a re-check here would make synchronous HTTP calls to
+        // api.wordpress.org that risk a PHP timeout on shared hosting.
+        if (!function_exists('get_plugin_updates')) {
+            require_once ABSPATH . 'wp-admin/includes/update.php';
+        }
 
         // -----------------------------------------------------------------
         // 1. Full backup BEFORE any updates. Even if the plan doesn't
@@ -43,7 +47,9 @@ class RP_Care_Task_Updates {
         //    available method. If it fails we log a warning and continue
         //    — per-item filesystem snapshots still protect individual items.
         // -----------------------------------------------------------------
-        $backup_result     = RP_Care_Task_Backup::run(['reason' => 'pre_update_run']);
+        $backup_result = class_exists('RP_Care_Task_Backup')
+            ? RP_Care_Task_Backup::run(['reason' => 'pre_update_run'])
+            : ['success' => false, 'message' => 'Módulo de backup no disponible'];
         $results['backup'] = $backup_result;
 
         if ($backup_result['success']) {
@@ -116,7 +122,8 @@ class RP_Care_Task_Updates {
                 require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
             }
 
-            $upgrader = new Core_Upgrader(new WP_Upgrader_Skin());
+            $skin     = class_exists('WP_Ajax_Upgrader_Skin') ? new WP_Ajax_Upgrader_Skin() : new WP_Upgrader_Skin();
+            $upgrader = new Core_Upgrader($skin);
             $result   = $upgrader->upgrade($update);
 
             if (is_wp_error($result)) {
@@ -192,7 +199,8 @@ class RP_Care_Task_Updates {
                     require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
                 }
 
-                $upgrader = new Plugin_Upgrader(new WP_Upgrader_Skin());
+                $skin     = class_exists('WP_Ajax_Upgrader_Skin') ? new WP_Ajax_Upgrader_Skin() : new WP_Upgrader_Skin();
+                $upgrader = new Plugin_Upgrader($skin);
                 $result   = $upgrader->upgrade($plugin_file);
 
                 if (is_wp_error($result)) {
@@ -303,7 +311,8 @@ class RP_Care_Task_Updates {
                     require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
                 }
 
-                $upgrader = new Theme_Upgrader(new WP_Upgrader_Skin());
+                $skin     = class_exists('WP_Ajax_Upgrader_Skin') ? new WP_Ajax_Upgrader_Skin() : new WP_Upgrader_Skin();
+                $upgrader = new Theme_Upgrader($skin);
                 $result   = $upgrader->upgrade($theme_slug);
 
                 if (is_wp_error($result)) {
@@ -396,7 +405,8 @@ class RP_Care_Task_Updates {
                 require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
             }
             
-            $upgrader = new Language_Pack_Upgrader(new WP_Upgrader_Skin());
+            $skin     = class_exists('WP_Ajax_Upgrader_Skin') ? new WP_Ajax_Upgrader_Skin() : new WP_Upgrader_Skin();
+            $upgrader = new Language_Pack_Upgrader($skin);
             $result = $upgrader->bulk_upgrade($translation_updates);
             
             if (is_array($result)) {
@@ -631,8 +641,10 @@ class RP_Care_Task_Updates {
     }
 
     public static function get_available_updates() {
-        wp_clean_update_cache();
-        
+        if (!function_exists('get_plugin_updates')) {
+            require_once ABSPATH . 'wp-admin/includes/update.php';
+        }
+
         $updates = [
             'core' => [],
             'plugins' => [],

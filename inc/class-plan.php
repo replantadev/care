@@ -496,7 +496,10 @@ class RP_Care_Plan {
             'quarterly_audit'      => [self::PLAN_ECOSISTEMA],
             'audit'                => [self::PLAN_ECOSISTEMA], // alias
             'cdn_optimization'     => [self::PLAN_ECOSISTEMA],
-            'cdn_config'           => [self::PLAN_ECOSISTEMA], // alias
+            'cdn_config'           => [self::PLAN_RAIZ, self::PLAN_ECOSISTEMA],
+            'anomaly_detection'    => [self::PLAN_RAIZ, self::PLAN_ECOSISTEMA],
+            'staging'              => [self::PLAN_RAIZ, self::PLAN_ECOSISTEMA],
+            'cwv_reports'          => [self::PLAN_SEMILLA, self::PLAN_RAIZ, self::PLAN_ECOSISTEMA],
             'technical_consulting' => [self::PLAN_ECOSISTEMA],
         ];
 

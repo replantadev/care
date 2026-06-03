@@ -208,10 +208,12 @@ class RP_Care_Dashboard {
                 <span><?php echo intval($status['pending_updates']); ?> actualizaciones pendientes serán aplicadas automáticamente</span>
             </div>
             <?php endif; ?>
+
+            <?php $this->render_external_metrics(); ?>
             
             <!-- Footer -->
             <div class="rpcare-footer">
-                <a href="<?php echo admin_url('admin.php?page=replanta-care'); ?>" class="rpcare-link">
+                <a href="<?php echo esc_url(admin_url('options-general.php?page=replanta-care')); ?>" class="rpcare-link">
                     Ver configuración completa
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <line x1="5" y1="12" x2="19" y2="12"/>
@@ -225,6 +227,56 @@ class RP_Care_Dashboard {
         <?php
     }
     
+    /**
+     * Render GA4 / Search Console / Cloudflare summary block.
+     * Data comes from the Hub via RP_Care_Metrics (cached locally 30 min).
+     */
+    private function render_external_metrics() {
+        if (!class_exists('RP_Care_Metrics')) return;
+        $all = RP_Care_Metrics::all(30);
+        if (is_wp_error($all)) return;
+
+        $ga = (!empty($all['ga4']) && empty($all['ga4']['error'])) ? $all['ga4'] : null;
+        $sc = (!empty($all['sc'])  && empty($all['sc']['error']))  ? $all['sc']  : null;
+        $cf = (!empty($all['cloudflare']) && empty($all['cloudflare']['error'])) ? $all['cloudflare'] : null;
+
+        if (!$ga && !$sc && !$cf) return;
+        ?>
+        <div class="rpcare-external">
+            <h4 style="margin:14px 0 8px;font-size:13px;color:#374151;">Métricas externas <span style="color:#9ca3af;font-weight:400;">(últimos 30 días)</span></h4>
+            <div class="rpcare-metrics" style="grid-template-columns:repeat(3,1fr);">
+                <?php if ($ga): ?>
+                    <div class="rpcare-metric">
+                        <div class="metric-content">
+                            <span class="metric-label">GA4 — Sesiones</span>
+                            <span class="metric-value"><?php echo number_format_i18n((int)($ga['sessions'] ?? 0)); ?></span>
+                            <span class="metric-label" style="font-size:11px;color:#6b7280;"><?php echo number_format_i18n((int)($ga['users'] ?? 0)); ?> usuarios · <?php echo number_format_i18n((int)($ga['pageviews'] ?? 0)); ?> vistas</span>
+                        </div>
+                    </div>
+                <?php endif; ?>
+                <?php if ($sc): ?>
+                    <div class="rpcare-metric">
+                        <div class="metric-content">
+                            <span class="metric-label">Search Console</span>
+                            <span class="metric-value"><?php echo number_format_i18n((int)($sc['clicks'] ?? 0)); ?></span>
+                            <span class="metric-label" style="font-size:11px;color:#6b7280;">clics · <?php echo number_format_i18n((int)($sc['impressions'] ?? 0)); ?> imp · pos <?php echo esc_html($sc['position'] ?? '—'); ?></span>
+                        </div>
+                    </div>
+                <?php endif; ?>
+                <?php if ($cf): ?>
+                    <div class="rpcare-metric">
+                        <div class="metric-content">
+                            <span class="metric-label">Cloudflare</span>
+                            <span class="metric-value"><?php echo esc_html($cf['cache_ratio'] !== null ? $cf['cache_ratio'].'%' : '—'); ?></span>
+                            <span class="metric-label" style="font-size:11px;color:#6b7280;">cache · <?php echo number_format_i18n((int)($cf['requests'] ?? 0)); ?> req · <?php echo number_format_i18n((int)($cf['threats'] ?? 0)); ?> bloqueos</span>
+                        </div>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </div>
+        <?php
+    }
+
     /**
      * Get current status data
      */

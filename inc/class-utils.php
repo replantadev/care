@@ -594,7 +594,9 @@ class RP_Care_Utils {
         $plugin_updates = get_plugin_updates();
         $theme_updates = get_theme_updates();
         
-        return count($core_updates) + count($plugin_updates) + count($theme_updates);
+        return (is_array($core_updates) ? count($core_updates) : 0)
+             + (is_array($plugin_updates) ? count($plugin_updates) : 0)
+             + (is_array($theme_updates) ? count($theme_updates) : 0);
     }
     
     private static function has_sitemap() {

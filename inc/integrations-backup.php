@@ -87,7 +87,12 @@ class RP_Care_Task_Backup {
                 ];
             }
             // Backuply present but no recent backup — request one
-            do_action('backuply_cron_backup');
+            try {
+                do_action('backuply_cron_backup');
+            } catch (\Throwable $e) {
+                RP_Care_Utils::log('backup', 'error', 'backuply_cron_backup threw: ' . $e->getMessage());
+                return ['success' => false, 'method' => 'backuply', 'message' => 'Backuply error: ' . $e->getMessage()];
+            }
             return [
                 'success'        => true,
                 'method'         => 'backuply',
@@ -135,7 +140,12 @@ class RP_Care_Task_Backup {
                 ];
             }
             // Backuply present but backup is stale or missing — trigger a new one
-            do_action('backuply_cron_backup');
+            try {
+                do_action('backuply_cron_backup');
+            } catch (\Throwable $e) {
+                RP_Care_Utils::log('backup', 'error', 'backuply_cron_backup threw: ' . $e->getMessage());
+                return ['success' => false, 'method' => 'backuply', 'message' => 'Backuply error: ' . $e->getMessage()];
+            }
             return [
                 'success'     => true,
                 'method'      => 'backuply',

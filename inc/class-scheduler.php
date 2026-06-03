@@ -22,6 +22,11 @@ class RP_Care_Scheduler {
     }
     
     public function add_custom_intervals($schedules) {
+        $schedules['fifteen_minutes'] = [
+            'interval' => 15 * MINUTE_IN_SECONDS,
+            'display' => __('Cada 15 minutos', 'replanta-care')
+        ];
+
         $schedules['weekly'] = [
             'interval' => 7 * DAY_IN_SECONDS,
             'display' => __('Semanal', 'replanta-care')
@@ -65,6 +70,17 @@ class RP_Care_Scheduler {
         // Schedule monitoring (Raíz and Ecosistema only)
         if (RP_Care_Plan::has_monitoring($this->plan)) {
             $this->maybe_schedule('rpcare_task_monitor', 'daily');
+        }
+
+        // Anomaly detection — Raíz+: poll every 15 min to approximate 24/7 monitoring
+        if (RP_Care_Plan::can_access_feature('anomaly_detection')) {
+            $this->maybe_schedule('rpcare_task_anomaly', 'fifteen_minutes');
+        }
+
+        // CWV measurement — all paid plans
+        if (RP_Care_Plan::can_access_feature('cwv_reports')) {
+            $freq = RP_Care_Plan::can_access_feature('seo_reviews') ? 'monthly' : 'quarterly';
+            $this->maybe_schedule('rpcare_task_cwv', $freq);
         }
         
         // Schedule health checks (all plans)
@@ -158,9 +174,20 @@ class RP_Care_Scheduler {
         
         // Reports
         add_filter('rpcare_task_report', ['RP_Care_Task_Report', 'generate_monthly']);
-        
+
+        // CWV measurement
+        add_filter('rpcare_task_cwv', ['RP_Care_Task_CWV', 'run']);
+
+        // Anomaly detection
+        add_filter('rpcare_task_anomaly', ['RP_Care_Task_Anomaly', 'run']);
+
         // Daily maintenance / cleanup
         add_filter('rpcare_task_maintenance', ['RP_Care_Utils', 'cleanup_all']);
+
+        // On-demand only (no recurring schedule)
+        add_filter('rpcare_task_cloudflare_configure', ['RP_Care_Task_Cloudflare', 'configure']);
+        add_filter('rpcare_task_orphan_media', ['RP_Care_Task_OrphanMedia', 'scan']);
+        add_filter('rpcare_task_staging_clone', ['RP_Care_Task_Staging', 'create_clone']);
     }
     
     public function clear_all() {
@@ -175,7 +202,9 @@ class RP_Care_Scheduler {
             'rpcare_task_health',
             'rpcare_task_404_cleanup',
             'rpcare_task_maintenance',
-            'rpcare_task_report'
+            'rpcare_task_report',
+            'rpcare_task_cwv',
+            'rpcare_task_anomaly'
         ];
         
         foreach ($hooks as $hook) {
@@ -200,7 +229,9 @@ class RP_Care_Scheduler {
             'rpcare_task_health' => 'Chequeo de salud',
             'rpcare_task_404_cleanup' => 'Limpieza 404',
             'rpcare_task_maintenance' => 'Mantenimiento diario',
-            'rpcare_task_report' => 'Informe mensual'
+            'rpcare_task_report' => 'Informe mensual',
+            'rpcare_task_cwv' => 'Core Web Vitals',
+            'rpcare_task_anomaly' => 'Detección de anomalías'
         ];
         
         $next_runs = [];
@@ -245,7 +276,12 @@ class RP_Care_Scheduler {
             'health' => 'rpcare_task_health',
             '404_cleanup' => 'rpcare_task_404_cleanup',
             'maintenance' => 'rpcare_task_maintenance',
-            'report' => 'rpcare_task_report'
+            'report' => 'rpcare_task_report',
+            'cwv' => 'rpcare_task_cwv',
+            'anomaly' => 'rpcare_task_anomaly',
+            'cloudflare_configure' => 'rpcare_task_cloudflare_configure',
+            'orphan_media_scan' => 'rpcare_task_orphan_media',
+            'staging_clone' => 'rpcare_task_staging_clone'
         ];
         
         if (!isset($valid_tasks[$task_name])) {

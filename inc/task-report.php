@@ -64,6 +64,7 @@ class RP_Care_Task_Report {
             'seo_status' => self::get_seo_status(),
             'error_404_summary' => self::get_404_summary(),
             'backup_status' => self::get_backup_summary(),
+            'external_metrics' => self::get_external_metrics(),
             'recommendations' => self::generate_recommendations()
         ];
         
@@ -183,7 +184,16 @@ class RP_Care_Task_Report {
             'days_since_backup' => $last_backup ? round((time() - strtotime($last_backup)) / DAY_IN_SECONDS, 1) : null
         ];
     }
-    
+
+    private static function get_external_metrics() {
+        if (!class_exists('RP_Care_Metrics')) return null;
+        $all = RP_Care_Metrics::all(30);
+        if (is_wp_error($all)) {
+            return ['error' => $all->get_error_message()];
+        }
+        return $all;
+    }
+
     private static function generate_recommendations() {
         $recommendations = [];
         
@@ -328,19 +338,19 @@ class RP_Care_Task_Report {
                 <div>
                     <div class="metric">
                         <div class="metric-value <?php echo $data['security_status']['ssl_enabled'] ? 'status-good' : 'status-error'; ?>">
-                            <?php echo $data['security_status']['ssl_enabled'] ? '✓' : '✗'; ?>
+                            <?php echo $data['security_status']['ssl_enabled'] ? '' : ''; ?>
                         </div>
                         <div class="metric-label">SSL</div>
                     </div>
                     <div class="metric">
                         <div class="metric-value <?php echo $data['security_status']['wp_version_current'] ? 'status-good' : 'status-warning'; ?>">
-                            <?php echo $data['security_status']['wp_version_current'] ? '✓' : '!'; ?>
+                            <?php echo $data['security_status']['wp_version_current'] ? '' : '!'; ?>
                         </div>
                         <div class="metric-label">WP Actualizado</div>
                     </div>
                     <div class="metric">
                         <div class="metric-value <?php echo $data['security_status']['admin_user_secure'] ? 'status-good' : 'status-warning'; ?>">
-                            <?php echo $data['security_status']['admin_user_secure'] ? '✓' : '!'; ?>
+                            <?php echo $data['security_status']['admin_user_secure'] ? '' : '!'; ?>
                         </div>
                         <div class="metric-label">Usuario Admin</div>
                     </div>
@@ -354,7 +364,7 @@ class RP_Care_Task_Report {
                     </div>
                     <div class="metric">
                         <div class="metric-value <?php echo $data['performance_metrics']['caching_enabled'] ? 'status-good' : 'status-warning'; ?>">
-                            <?php echo $data['performance_metrics']['caching_enabled'] ? '✓' : '✗'; ?>
+                            <?php echo $data['performance_metrics']['caching_enabled'] ? '' : ''; ?>
                         </div>
                         <div class="metric-label">Caché</div>
                     </div>
@@ -377,7 +387,40 @@ class RP_Care_Task_Report {
                     </div>
                 </div>
                 <?php endif; ?>
-                
+
+                <?php
+                $ext = $data['external_metrics'] ?? null;
+                $ga  = (is_array($ext) && !empty($ext['ga4']) && empty($ext['ga4']['error'])) ? $ext['ga4'] : null;
+                $sc  = (is_array($ext) && !empty($ext['sc'])  && empty($ext['sc']['error']))  ? $ext['sc']  : null;
+                $cf  = (is_array($ext) && !empty($ext['cloudflare']) && empty($ext['cloudflare']['error'])) ? $ext['cloudflare'] : null;
+                if ($ga || $sc || $cf):
+                ?>
+                <h2>Tráfico, SEO y CDN</h2>
+                <div class="metrics-grid">
+                    <?php if ($ga): ?>
+                    <div class="metric-card">
+                        <div class="metric-value status-good"><?php echo number_format_i18n((int)($ga['sessions'] ?? 0)); ?></div>
+                        <div class="metric-label">GA4 — Sesiones (30d)</div>
+                        <div style="font-size:11px;color:#666;"><?php echo number_format_i18n((int)($ga['users'] ?? 0)); ?> usuarios · <?php echo number_format_i18n((int)($ga['pageviews'] ?? 0)); ?> vistas</div>
+                    </div>
+                    <?php endif; ?>
+                    <?php if ($sc): ?>
+                    <div class="metric-card">
+                        <div class="metric-value status-good"><?php echo number_format_i18n((int)($sc['clicks'] ?? 0)); ?></div>
+                        <div class="metric-label">Search Console — Clics</div>
+                        <div style="font-size:11px;color:#666;"><?php echo number_format_i18n((int)($sc['impressions'] ?? 0)); ?> imp · CTR <?php echo esc_html($sc['ctr'] ?? '—'); ?>% · pos <?php echo esc_html($sc['position'] ?? '—'); ?></div>
+                    </div>
+                    <?php endif; ?>
+                    <?php if ($cf): ?>
+                    <div class="metric-card">
+                        <div class="metric-value status-good"><?php echo esc_html($cf['cache_ratio'] !== null ? $cf['cache_ratio'].'%' : '—'); ?></div>
+                        <div class="metric-label">Cloudflare — Cache hit</div>
+                        <div style="font-size:11px;color:#666;"><?php echo number_format_i18n((int)($cf['requests'] ?? 0)); ?> req · <?php echo number_format_i18n((int)($cf['threats'] ?? 0)); ?> bloqueos</div>
+                    </div>
+                    <?php endif; ?>
+                </div>
+                <?php endif; ?>
+
                 <?php if (!empty($data['recommendations'])): ?>
                 <h2>Recomendaciones</h2>
                 <div class="recommendations">

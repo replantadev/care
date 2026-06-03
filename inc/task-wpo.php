@@ -28,6 +28,8 @@ class RP_Care_Task_WPO {
         $results['cache_purged'] = self::purge_cache();
         $results['transients_cleaned'] = self::clean_transients();
         $results['database_optimized'] = self::optimize_database();
+        $results['lscache_preset'] = self::apply_lscache_presets();
+        $results['orphan_media'] = self::scan_orphan_media();
         
         // Advanced WPO (Raíz and Ecosistema)
         if (in_array($wpo_level, ['advanced', 'premium'])) {
@@ -498,5 +500,64 @@ class RP_Care_Task_WPO {
         } catch (Exception $e) {
             return ['error' => $e->getMessage()];
         }
+    }
+
+    private static function apply_lscache_presets() {
+        if (!defined('LSCWP_V')) {
+            return ['active' => false, 'reason' => 'LiteSpeed Cache not installed'];
+        }
+
+        // Recommended presets for a generic WP/Woo site
+        $presets = [
+            'cache'                          => 1,
+            'cache-mobile'                   => 0,
+            'cache-browser'                  => 1,
+            'cache-login'                    => 0,
+            'cache-favicon'                  => 1,
+            'cache-resources'                => 1,
+            'cache-priv'                     => 1,
+            'cache-rest'                     => 1,
+            'cache-ttl_pub'                  => 604800,
+            'cache-ttl_priv'                 => 1800,
+            'cache-ttl_frontpage'            => 604800,
+            'optm-css_min'                   => 1,
+            'optm-js_min'                    => 1,
+            'optm-html_min'                  => 1,
+            'optm-qs_rm'                     => 1,
+            'optm-ggfonts_async'             => 1,
+            'media-lazy'                     => 1,
+            'media-iframe_lazy'              => 1,
+            'media-lazy_placeholder'         => 1,
+            'object'                         => 0,
+        ];
+
+        $applied = 0;
+        if (class_exists('\\LiteSpeed\\Conf') && method_exists('\\LiteSpeed\\Conf', 'cls')) {
+            try {
+                $conf = \LiteSpeed\Conf::cls();
+                foreach ($presets as $key => $value) {
+                    if (method_exists($conf, 'update')) {
+                        $conf->update($key, $value);
+                        $applied++;
+                    }
+                }
+            } catch (\Throwable $e) {
+                return ['active' => true, 'error' => $e->getMessage()];
+            }
+        }
+
+        do_action('litespeed_purge_all');
+        return ['active' => true, 'presets_applied' => $applied];
+    }
+
+    private static function scan_orphan_media() {
+        if (!class_exists('RP_Care_Task_OrphanMedia')) {
+            return ['skipped' => 'module_missing'];
+        }
+        $result = RP_Care_Task_OrphanMedia::scan();
+        return [
+            'orphans' => $result['orphans'] ?? 0,
+            'checked' => $result['checked'] ?? 0,
+        ];
     }
 }

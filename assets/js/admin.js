@@ -15,17 +15,65 @@
         initSettingsForm();
         initDashboard();
         initRealTimeUpdates();
+        initCheckUpdates();
+        initLogRefresh();
         loadDashboardData();
     });
 
+    function initLogRefresh() {
+        $(document).on('click', '.rpc-refresh-logs', function() {
+            const btn = $(this);
+            btn.prop('disabled', true);
+            $.post(rpcare_ajax.ajax_url, {action: 'rpcare_get_logs', nonce: rpcare_ajax.nonce}, function(r) {
+                btn.prop('disabled', false);
+                if (r.success) {
+                    $('#rpc-log-container').html(r.data.html);
+                    $('#rpc-log-count').text(r.data.count + ' entradas');
+                }
+            }).fail(function() { btn.prop('disabled', false); });
+        });
+    }
+
+    function initCheckUpdates() {
+        $(document).on('click', '#rpc-check-updates-btn', function(e) {
+            e.preventDefault();
+            const btn = $(this);
+            const originalHtml = btn.html();
+            btn.prop('disabled', true).html('<span class="dashicons dashicons-update spin"></span> Comprobando...');
+
+            $.ajax({
+                url: rpcare_ajax.ajax_url,
+                type: 'POST',
+                data: {
+                    action: 'rpcare_check_updates',
+                    nonce: rpcare_ajax.nonce
+                },
+                success: function(response) {
+                    if (response.success) {
+                        const type = response.data.total > 0 ? 'info' : 'success';
+                        showNotification(response.data.message, type);
+                    } else {
+                        showNotification('Error al comprobar actualizaciones', 'error');
+                    }
+                },
+                error: function() {
+                    showNotification('Error de red comprobando actualizaciones', 'error');
+                },
+                complete: function() {
+                    btn.prop('disabled', false).html(originalHtml);
+                }
+            });
+        });
+    }
+
     function initConnectionTest() {
-        console.log('🔧 Inicializando test de conexión...');
+        console.log(' Inicializando test de conexión...');
         console.log('Botón #test-connection existe:', $('#test-connection').length > 0);
         console.log('Variables rpcare_ajax:', typeof rpcare_ajax !== 'undefined' ? rpcare_ajax : 'NO DEFINIDO');
         
         $('#test-connection').on('click', function(e) {
             e.preventDefault();
-            console.log('🔵 Click en botón test-connection');
+            console.log(' Click en botón test-connection');
             
             const button = $(this);
             const hubUrl = $('input[name="rpcare_options[hub_url]"]').val();
@@ -36,20 +84,20 @@
             
             if (!hubUrl || !siteToken) {
                 const message = 'Por favor, introduce URL del Hub y Token del Sitio';
-                console.log('❌ Error:', message);
+                console.log(' Error:', message);
                 showNotification(message, 'error');
                 return;
             }
             
             // Check if rpcare_ajax is defined
             if (typeof rpcare_ajax === 'undefined') {
-                console.error('❌ rpcare_ajax no está definido');
+                console.error(' rpcare_ajax no está definido');
                 showNotification('Error: Variables AJAX no cargadas', 'error');
                 return;
             }
             
             button.addClass('testing').html('Probando...');
-            console.log('🔄 Iniciando petición AJAX...');
+            console.log(' Iniciando petición AJAX...');
             
             $.ajax({
                 url: rpcare_ajax.ajax_url,
@@ -61,7 +109,7 @@
                     site_token: siteToken
                 },
                 success: function(response) {
-                    console.log('✅ Respuesta AJAX exitosa:', response);
+                    console.log(' Respuesta AJAX exitosa:', response);
                     if (response.success) {
                         showConnectionStatus('success', response.data);
                         showNotification('Conexión exitosa con el Hub', 'success');
@@ -71,13 +119,13 @@
                     }
                 },
                 error: function(xhr, status, error) {
-                    console.error('❌ Error AJAX:', {xhr, status, error});
+                    console.error(' Error AJAX:', {xhr, status, error});
                     const errorMsg = 'Error de red: ' + error;
                     showConnectionStatus('error', errorMsg);
                     showNotification(errorMsg, 'error');
                 },
                 complete: function() {
-                    console.log('🏁 Petición AJAX completada');
+                    console.log(' Petición AJAX completada');
                     button.removeClass('testing').html('Probar conexión');
                 }
             });
@@ -114,8 +162,8 @@
                         showNotification(taskName + ' completada exitosamente', 'success');
                         updateTaskCounter(task, true);
                     } else {
-                        showTaskResult(task, 'error', response.data);
-                        showNotification('Error en ' + taskName + ': ' + response.data.message, 'error');
+                        showTaskResult(task, 'error', response.data || {});
+                        showNotification('Error en ' + taskName + ': ' + (response.data && response.data.message ? response.data.message : 'Error al ejecutar la tarea'), 'error');
                         updateTaskCounter(task, false);
                     }
                 },
@@ -172,15 +220,59 @@
     }
 
     function formatTaskDetails(details) {
-        if (typeof details === 'string') {
-            return details;
+        if (typeof details === 'string') return '<p style="margin:4px 0;">' + details + '</p>';
+        if (typeof details !== 'object' || details === null) return '';
+
+        const labels = {
+            wp_version: 'WordPress', plugin_vulnerabilities: 'Plugins', file_permissions: 'Permisos',
+            suspicious_files: 'Archivos sospechosos', user_security: 'Cuentas de usuario',
+            htaccess_security: '.htaccess', overall_score: 'Puntuación',
+            cache_purged: 'Caché limpiada', database_optimized: 'Base de datos',
+            transients_cleaned: 'Transients', autoload_optimized: 'Autoload',
+            lscache_preset: 'LiteSpeed Caché', orphan_media: 'Media huérfana',
+            images_checked: 'Imágenes grandes', webp_conversion: 'WebP',
+            metas_processed: 'Metas analizadas', missing_metas_found: 'Sin meta',
+            metas_added: 'Metas añadidas', sitemap_checked: 'Sitemap', robots_checked: 'robots.txt',
+            ssl_status: 'SSL', memory_usage: 'Memoria', disk_space: 'Disco',
+            cron_status: 'WP Cron', email_functionality: 'Email',
+            // updates result
+            actualizados: 'Actualizados', backup_previo: 'Backup previo',
+            lista: 'Elementos', errores: 'Errores/rollback',
+            // skip complex nested objects
+            backup: null, core: null, plugins: null, themes: null, translations: null,
+            recommendations: null, security_score: null, advanced_optimizations: null,
+        };
+
+        const lines = [];
+        for (const [key, val] of Object.entries(details)) {
+            if (key in labels && labels[key] === null) continue;
+            const label = labels[key] || key.replace(/_/g, ' ');
+            if (val === null || val === undefined) continue;
+
+            let disp;
+            if (typeof val === 'boolean') {
+                disp = val
+                    ? '<span style="color:var(--rp-green,#4caf8e)">OK</span>'
+                    : '<span style="color:var(--rp-error,#e05c5c)">No</span>';
+            } else if (typeof val === 'object' && !Array.isArray(val) && val.status) {
+                const clr = val.status === 'good' ? 'var(--rp-green,#4caf8e)'
+                    : val.status === 'warning' ? 'var(--rp-sun,#f5a623)' : 'var(--rp-error,#e05c5c)';
+                disp = '<span style="color:' + clr + '">' + (val.message || val.status) + '</span>';
+            } else if (typeof val === 'number') {
+                disp = val;
+            } else if (typeof val === 'string') {
+                disp = val;
+            } else {
+                continue;
+            }
+
+            lines.push(
+                '<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--rp-border,rgba(255,255,255,.08));font-size:12px;">' +
+                '<span style="color:var(--rp-muted,#8fa99a)">' + label + '</span>' +
+                '<span style="font-weight:500">' + disp + '</span></div>'
+            );
         }
-        
-        if (typeof details === 'object') {
-            return '<pre>' + JSON.stringify(details, null, 2) + '</pre>';
-        }
-        
-        return details;
+        return lines.length ? '<div style="margin-top:6px">' + lines.join('') + '</div>' : '';
     }
 
     function initSettingsForm() {

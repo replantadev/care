@@ -30,25 +30,32 @@ class RP_Care_Task_SEO {
     
     public static function run_monthly_review($args = []) {
         $results = self::run_basic_review($args);
-        
+
         // Additional monthly tasks
         $results['og_tags_processed'] = self::process_og_tags();
         $results['images_alt_checked'] = self::check_image_alt_tags();
         $results['internal_links_checked'] = self::check_internal_linking();
-        
+
+        if (class_exists('RP_Care_Task_CWV')) {
+            $results['cwv'] = RP_Care_Task_CWV::run();
+        }
+
         RP_Care_Utils::log('seo_monthly_review', 'success', 'Monthly SEO review completed', $results);
-        
+
         return $results;
     }
-    
+
     public static function run_quarterly_audit($args = []) {
         $results = self::run_monthly_review($args);
-        
+
         // Comprehensive quarterly audit
         $results['schema_audit'] = self::audit_schema_markup();
         $results['pagespeed_audit'] = self::audit_pagespeed();
         $results['technical_seo_audit'] = self::audit_technical_seo();
         $results['content_audit'] = self::audit_content_optimization();
+        if (class_exists('RP_Care_Task_CWV')) {
+            $results['cwv'] = RP_Care_Task_CWV::run();
+        }
         
         RP_Care_Utils::log('seo_quarterly_audit', 'success', 'Quarterly SEO audit completed', $results);
         

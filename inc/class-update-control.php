@@ -178,7 +178,7 @@ class RP_Care_Update_Control {
             if ($this->is_licensed_plugin($plugin_file)) {
                 $actions['rpcare_licensed'] = '<span style="color: #00a32a;"><span class="dashicons dashicons-yes-alt" style="font-size:14px;vertical-align:middle;"></span> Plugin con licencia — Actualizaciones permitidas</span>';
             } else {
-                $actions['rpcare_controlled'] = '<span style="color: #d63638;"><span class="dashicons dashicons-lock" style="font-size:14px;vertical-align:middle;"></span> Actualizaciones gestionadas por Replanta</span>';
+                $actions['rpcare_controlled'] = '<span style="display:inline-flex;align-items:center;gap:3px;background:#eaf4ee;color:#1a5e36;border:1px solid #c3e6cd;border-radius:3px;padding:1px 7px;font-size:11px;font-weight:500;line-height:1.6;"><span class="dashicons dashicons-shield" style="font-size:11px;width:11px;height:11px;"></span>Gestionado por Replanta</span>';
             }
         }
         
@@ -240,7 +240,7 @@ class RP_Care_Update_Control {
         check_ajax_referer('rpcare_ajax', 'nonce');
         
         if (!current_user_can('update_plugins')) {
-            wp_die('Insufficient permissions');
+            wp_send_json_error(['message' => 'Permisos insuficientes']); return;
         }
         
         $plugin_file = sanitize_text_field($_POST['plugin_file'] ?? '');

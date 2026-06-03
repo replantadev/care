@@ -1,9 +1,9 @@
-﻿<?php
+<?php
 /**
  * Plugin Name: Replanta Care
  * Plugin URI: https://replanta.dev
  * Description: Plugin de mantenimiento WordPress automático para clientes de Replanta con integración Hub
- * Version: 1.7.7
+ * Version: 1.8.2
  * Author: Replanta
  * Author URI: https://replanta.dev
  * License: GPL v2 or later
@@ -17,7 +17,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('RPCARE_VERSION', '1.7.7');
+define('RPCARE_VERSION', '1.8.2');
 define('RPCARE_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('RPCARE_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('RPCARE_PLUGIN_FILE', __FILE__);
@@ -28,7 +28,7 @@ if (!defined('RPCARE_GITHUB_REPO_URL')) {
 
 // Update metadata served by the Hub (no GitHub token required on client sites)
 if (!defined('RPCARE_UPDATE_URL')) {
-    define('RPCARE_UPDATE_URL', 'https://sitios.replanta.dev/wp-content/uploads/replanta-updates/care-info.json');
+    define('RPCARE_UPDATE_URL', 'https://sitios.replanta.dev/wp-json/rphub/v1/care-release-info');
 }
 
 if (!defined('RPCARE_GITHUB_BRANCH')) {
@@ -122,7 +122,8 @@ class ReplantaCare {
             'inc/class-utils.php',
             'inc/class-update-control.php',
             'inc/class-dashboard.php',
-            
+            'inc/class-metrics.php',
+
             // Task classes
             'inc/task-updates.php',
             'inc/task-wpo.php',
@@ -131,6 +132,11 @@ class ReplantaCare {
             'inc/task-health.php',
             'inc/task-report.php',
             'inc/task-security.php',
+            'inc/task-cwv.php',
+            'inc/task-cloudflare.php',
+            'inc/task-anomaly.php',
+            'inc/task-staging.php',
+            'inc/task-orphan-media.php',
             
             // Integration classes
             'inc/integrations-cache.php',
@@ -149,8 +155,8 @@ class ReplantaCare {
             }
         }
         
-        // Enqueue admin assets
-        add_action('admin_enqueue_scripts', array($this, 'enqueue_admin_assets'));
+        // Enqueue admin assets (dashboard widget only — settings page has its own enqueue)
+        // Note: do NOT re-add here; init() already registered this action above.
     }
     
     public function init_components() {
@@ -189,37 +195,9 @@ class ReplantaCare {
     }
     
     public function enqueue_admin_assets($hook) {
-        // Load admin assets on settings page
-        if ($hook === 'settings_page_replanta-care') {
-            wp_enqueue_style(
-                'replanta-care-admin',
-                RPCARE_PLUGIN_URL . 'assets/css/admin.css',
-                [],
-                RPCARE_VERSION
-            );
-            
-            wp_enqueue_script(
-                'replanta-care-admin',
-                RPCARE_PLUGIN_URL . 'assets/js/admin.js',
-                ['jquery'],
-                RPCARE_VERSION,
-                true
-            );
-            
-            wp_localize_script('replanta-care-admin', 'rpcare_ajax', [
-                'ajax_url' => admin_url('admin-ajax.php'),
-                'nonce' => wp_create_nonce('rpcare_ajax'),
-                'strings' => [
-                    'testing_connection' => 'Probando conexiÃ³n...',
-                    'connection_success' => 'ConexiÃ³n exitosa',
-                    'connection_failed' => 'Error de conexiÃ³n',
-                    'running_task' => 'Ejecutando tarea...',
-                    'task_completed' => 'Tarea completada',
-                    'task_failed' => 'Error en la tarea'
-                ]
-            ]);
-        }
-        
+        // Settings page assets are handled by RP_Care_Settings_Page::enqueue_admin_scripts().
+        // This function only loads assets for OTHER admin pages.
+
         // Load dashboard assets on main dashboard page
         if ($hook === 'index.php') {
             wp_enqueue_style(
@@ -594,5 +572,19 @@ class ReplantaCare {
 
 // Initialize the plugin
 ReplantaCare::getInstance();
+
+register_uninstall_hook(__FILE__, 'rpcare_uninstall');
+function rpcare_uninstall() {
+    global $wpdb;
+    $wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}rpcare_logs");
+    $wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}rpcare_404s");
+    $options = $wpdb->get_col("SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE 'rpcare_%'");
+    foreach ($options as $opt) {
+        delete_option($opt);
+    }
+    delete_transient('rpcare_plan');
+    wp_clear_scheduled_hook('rpcare_daily_check');
+    wp_clear_scheduled_hook('rpcare_hourly_monitor');
+}
 
 

@@ -195,10 +195,10 @@ jQuery(document).ready(function($) {
         
         updateStatusCards: function(status) {
             var statusMap = {
-                'online': { icon: '🟢', class: 'rpcare-status-online' },
-                'warning': { icon: '🟡', class: 'rpcare-status-warning' },
-                'error': { icon: '🔴', class: 'rpcare-status-error' },
-                'pending': { icon: '⚪', class: 'rpcare-status-pending' }
+                'online': { icon: '', class: 'rpcare-status-online' },
+                'warning': { icon: '', class: 'rpcare-status-warning' },
+                'error': { icon: '', class: 'rpcare-status-error' },
+                'pending': { icon: '', class: 'rpcare-status-pending' }
             };
             
             $.each(status, function(key, value) {

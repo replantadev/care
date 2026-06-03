@@ -57,7 +57,7 @@ jobs:
           VERSION=${{ steps.meta.outputs.version }}
 
           RESPONSE=$(curl -s -o /tmp/hub_response.json -w "%{http_code}" \
-            -X POST "https://sitios.replanta.dev/wp-json/replanta-hub/v1/deploy/care" \
+            -X POST "https://replanta.net/wp-json/replanta-hub/v1/deploy/care" \
             -H "X-Deploy-Token: ${HUB_DEPLOY_TOKEN}" \
             -H "Content-Type: application/json" \
             -d "{\"version\": \"${VERSION}\"}" \

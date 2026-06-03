@@ -28,6 +28,8 @@ class RP_Care_Settings_Page {
         add_action('wp_ajax_rpcare_get_status', [$this, 'get_status_ajax']);
         add_action('wp_ajax_rpcare_get_metric_details', [$this, 'get_metric_details_ajax']);
         add_action('wp_ajax_rpcare_get_hub_reports', [$this, 'ajax_get_hub_reports']);
+        add_action('wp_ajax_rpcare_check_updates', [$this, 'ajax_check_updates']);
+        add_action('wp_ajax_rpcare_get_logs', [$this, 'ajax_get_logs']);
         
         // Hide other plugin notices on our settings page
         add_action('admin_head', [$this, 'hide_other_plugin_notices']);
@@ -45,6 +47,8 @@ class RP_Care_Settings_Page {
     
     public function register_settings() {
         register_setting('rpcare_settings', 'rpcare_options', [$this, 'sanitize_options']);
+        register_setting('rpcare_settings', 'rpcare_cloudflare_token', ['type' => 'string', 'sanitize_callback' => 'sanitize_text_field']);
+        register_setting('rpcare_settings', 'rpcare_psi_api_key', ['type' => 'string', 'sanitize_callback' => 'sanitize_text_field']);
         
         // General Settings Section
         add_settings_section(
@@ -637,6 +641,37 @@ class RP_Care_Settings_Page {
                                 <span class="rpc-switch-slider"></span>
                             </label>
                         </div>
+
+                        <?php
+                        $feat_map = [
+                            'updates'      => ['Actualizaciones',    'dashicons-update'],
+                            'backups'      => ['Copias de seguridad','dashicons-backup'],
+                            'wpo_basic'    => ['Optimización WPO',   'dashicons-performance'],
+                            'wpo_advanced' => ['WPO Avanzado',       'dashicons-performance'],
+                            'monitoring'   => ['Monitorización 24/7','dashicons-visibility'],
+                            'seo_reviews'  => ['Revisiones SEO',     'dashicons-search'],
+                            'staging'      => ['Entorno staging',    'dashicons-admin-multisite'],
+                            'cdn_config'   => ['CDN / Cloudflare',   'dashicons-networking'],
+                            'audit'        => ['Auditoría SEO/WPO',  'dashicons-clipboard'],
+                        ];
+                        ?>
+                        <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--rp-border);">
+                            <label class="rpc-label" style="margin-bottom:10px;display:block;">Funciones incluidas en tu plan</label>
+                            <div style="display:flex;flex-wrap:wrap;gap:8px;">
+                            <?php foreach ($feat_map as $feat => [$label, $icon]):
+                                $active = class_exists('RP_Care_Plan') && RP_Care_Plan::can_access_feature($feat, $current_plan ?? '');
+                            ?>
+                                <span style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:20px;font-size:12px;
+                                    background:<?php echo $active ? 'rgba(76,175,78,0.15)' : 'rgba(255,255,255,0.04)'; ?>;
+                                    color:<?php echo $active ? 'var(--rp-green,#4caf8e)' : 'var(--rp-muted,#8fa99a)'; ?>;
+                                    border:1px solid <?php echo $active ? 'rgba(76,175,78,0.3)' : 'rgba(255,255,255,0.08)'; ?>;">
+                                    <span class="dashicons <?php echo $active ? esc_attr($icon) : 'dashicons-lock'; ?>" style="font-size:13px;width:13px;height:13px;margin-top:2px;"></span>
+                                    <?php echo esc_html($label); ?>
+                                </span>
+                            <?php endforeach; ?>
+                            </div>
+                        </div>
+
                     </section>
 
                     <!-- NOTIFICACIONES -->
@@ -672,7 +707,7 @@ class RP_Care_Settings_Page {
                     <button type="submit" name="submit" class="rpc-btn rpc-btn-primary">
                         <span class="dashicons dashicons-saved"></span> Guardar configuración
                     </button>
-                    <button type="submit" name="rpcare_check_updates" class="rpc-btn rpc-btn-ghost">
+                    <button type="button" id="rpc-check-updates-btn" class="rpc-btn rpc-btn-ghost">
                         <span class="dashicons dashicons-update"></span> Comprobar actualizaciones ahora
                     </button>
                     <?php if (isset($_GET['settings-updated'])): ?>
@@ -722,10 +757,10 @@ class RP_Care_Settings_Page {
                 <div class="rpc-results" id="rpcare-task-results"></div>
             </section>
 
-            <!-- REPORTES DEL HUB -->
+            <!-- REPORTES DE REPLANTA -->
             <section class="rpc-reports">
-                <h2 class="rpc-section-title"><span class="rpc-section-icon dashicons dashicons-media-document"></span> Informes del Hub</h2>
-                <p class="rpc-hint" style="margin-bottom:14px;">Informes generados por Replanta Hub para este sitio.</p>
+                <h2 class="rpc-section-title"><span class="rpc-section-icon dashicons dashicons-media-document"></span> Informes de Replanta</h2>
+                <p class="rpc-hint" style="margin-bottom:14px;">Informes generados por Replanta para este sitio.</p>
                 <button type="button" class="rpc-btn rpc-btn-secondary rpc-btn-sm" id="rpcare-load-reports">
                     <span id="rpc-reports-icon" class="dashicons dashicons-download"></span> Cargar informes
                 </button>
@@ -1159,12 +1194,6 @@ class RP_Care_Settings_Page {
             delete_site_transient('update_plugins');
             wp_clean_plugins_cache(true);
             wp_update_plugins();
-            add_settings_error(
-                'rpcare_messages',
-                'rpcare_update_check',
-                'Comprobación de actualizaciones ejecutada. Revisa Plugins > Plugins instalados.',
-                'info'
-            );
         }
         
         // Add success message/toast
@@ -1177,14 +1206,116 @@ class RP_Care_Settings_Page {
         
         return $sanitized;
     }
-    
+
+    public function ajax_check_updates() {
+        check_ajax_referer('rpcare_ajax', 'nonce');
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => 'Sin permisos'], 403);
+        }
+
+        require_once ABSPATH . 'wp-admin/includes/plugin.php';
+        require_once ABSPATH . 'wp-admin/includes/update.php';
+        require_once ABSPATH . 'wp-admin/includes/theme.php';
+        require_once ABSPATH . 'wp-admin/includes/misc.php';
+
+        delete_site_transient('update_plugins');
+        delete_site_transient('update_themes');
+        delete_site_transient('update_core');
+        wp_clean_plugins_cache(true);
+        wp_clean_themes_cache(true);
+
+        wp_update_plugins();
+        wp_update_themes();
+        wp_version_check();
+
+        $plugin_updates = get_site_transient('update_plugins');
+        $theme_updates  = get_site_transient('update_themes');
+        $core_updates   = get_core_updates();
+
+        $plugins_count = isset($plugin_updates->response) ? count($plugin_updates->response) : 0;
+        $themes_count  = isset($theme_updates->response)  ? count($theme_updates->response)  : 0;
+        $core_pending  = !empty($core_updates) && isset($core_updates[0]->response) && $core_updates[0]->response === 'upgrade';
+
+        $total = $plugins_count + $themes_count + ($core_pending ? 1 : 0);
+
+        $parts = [];
+        if ($core_pending) $parts[] = 'WordPress';
+        if ($plugins_count) $parts[] = $plugins_count . ' ' . _n('plugin', 'plugins', $plugins_count, 'replanta-care');
+        if ($themes_count)  $parts[] = $themes_count . ' ' . _n('tema', 'temas', $themes_count, 'replanta-care');
+
+        $message = $total === 0
+            ? 'Todo al día. Sin actualizaciones pendientes.'
+            : 'Pendientes: ' . implode(', ', $parts) . '.';
+
+        wp_send_json_success([
+            'message'        => $message,
+            'total'          => $total,
+            'plugins_count'  => $plugins_count,
+            'themes_count'   => $themes_count,
+            'core_pending'   => $core_pending,
+            'checked_at'     => current_time('mysql'),
+        ]);
+    }
+
+    public function ajax_get_logs() {
+        check_ajax_referer('rpcare_ajax', 'nonce');
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('Sin permisos', 403);
+        }
+
+        $task_labels = [
+            'updates'          => 'Actualizaciones',
+            'backup'           => 'Copia de seguridad',
+            'cache'            => 'Caché',
+            'security'         => 'Seguridad',
+            'health_check'     => 'Chequeo de salud',
+            'seo_basic_review' => 'SEO',
+            'wpo'              => 'Optimización',
+            'report_generation'=> 'Reporte',
+            'maintenance'      => 'Mantenimiento',
+        ];
+
+        global $wpdb;
+        $table = $wpdb->prefix . 'rpcare_logs';
+        $logs  = $wpdb->get_results(
+            "SELECT * FROM $table ORDER BY created_at DESC LIMIT 20",
+            ARRAY_A
+        );
+
+        ob_start();
+        if (empty($logs)) {
+            echo '<p style="color:var(--rp-muted);font-size:13px;">No hay registros disponibles.</p>';
+        } else {
+            echo '<table class="rpc-table">';
+            echo '<thead><tr><th>Fecha</th><th>Tarea</th><th>Estado</th><th>Mensaje</th></tr></thead>';
+            echo '<tbody>';
+            foreach ($logs as $log) {
+                $label  = $task_labels[$log['task_type']] ?? ucfirst(str_replace('_', ' ', $log['task_type']));
+                $status = $log['status'];
+                $pill   = in_array($status, ['success', 'error', 'warning', 'info'], true) ? $status : 'info';
+                $date   = wp_date('d M Y H:i', strtotime($log['created_at']));
+                echo '<tr>';
+                echo '<td style="white-space:nowrap;color:var(--rp-muted)">' . esc_html($date) . '</td>';
+                echo '<td style="color:var(--rp-text)">' . esc_html($label) . '</td>';
+                echo '<td><span class="rpc-pill ' . esc_attr($pill) . '">' . esc_html($status) . '</span></td>';
+                echo '<td>' . esc_html($log['message']) . '</td>';
+                echo '</tr>';
+            }
+            echo '</tbody></table>';
+        }
+        $html = ob_get_clean();
+
+        wp_send_json_success(['html' => $html, 'count' => count($logs)]);
+    }
+
     public function test_hub_connection() {
         check_ajax_referer('rpcare_ajax', 'nonce');
-        
+
         if (!current_user_can('manage_options')) {
-            wp_die('Unauthorized');
+            wp_send_json_error(['message' => 'Permisos insuficientes']);
+            return;
         }
-        
+
         $hub_url = $_POST['hub_url'] ?? '';
         $site_token = $_POST['site_token'] ?? '';
         
@@ -1224,8 +1355,8 @@ class RP_Care_Settings_Page {
 
                 if (!is_array($data)) {
                     // Non-JSON response — show first 200 chars for debug
-                    $preview = substr(wp_strip_all_tags($body), 0, 200);
-                    wp_send_json_error('Hub devolvió respuesta no JSON. Verifica que el Hub esté activo. Detalle: ' . $preview);
+                    $preview = esc_html(substr(wp_strip_all_tags($body), 0, 200));
+                    wp_send_json_error(['message' => 'Hub devolvió respuesta no JSON. Verifica que el Hub esté activo. Detalle: ' . $preview]);
                     return;
                 }
 
@@ -1275,7 +1406,7 @@ class RP_Care_Settings_Page {
         check_ajax_referer('rpcare_ajax', 'nonce');
 
         if (!current_user_can('manage_options')) {
-            wp_send_json_error('Permisos insuficientes');
+            wp_send_json_error('Permisos insuficientes'); return;
         }
 
         $options   = get_option('rpcare_options', []);
@@ -1283,16 +1414,20 @@ class RP_Care_Settings_Page {
         $token     = $options['site_token'] ?? '';
 
         if (empty($hub_url) || empty($token)) {
-            wp_send_json_error('Configura la URL del Hub y el Token antes de cargar reportes.');
+            wp_send_json_error('Configura la URL de Replanta y el Token antes de cargar informes.'); return;
         }
 
         $endpoint = $hub_url . '/wp-admin/admin-ajax.php';
 
         $report_id = sanitize_text_field($_POST['report_id'] ?? '');
 
+        $auth_headers = [
+            'Authorization' => 'Bearer ' . $token,
+        ];
+
         if (!empty($report_id)) {
-            // Fetch a single report HTML
             $response = wp_remote_post($endpoint, [
+                'headers' => $auth_headers,
                 'body'    => [
                     'action'       => 'rphub_view_report_modal',
                     'client_token' => $token,
@@ -1301,8 +1436,8 @@ class RP_Care_Settings_Page {
                 'timeout' => 15,
             ]);
         } else {
-            // Fetch list of reports
             $response = wp_remote_post($endpoint, [
+                'headers' => $auth_headers,
                 'body'    => [
                     'action'       => 'rphub_get_client_reports',
                     'client_token' => $token,
@@ -1312,12 +1447,15 @@ class RP_Care_Settings_Page {
         }
 
         if (is_wp_error($response)) {
-            wp_send_json_error('No se pudo conectar al Hub: ' . $response->get_error_message());
+            wp_send_json_error('No se pudo conectar a Replanta: ' . $response->get_error_message()); return;
         }
 
         $code = wp_remote_retrieve_response_code($response);
         if ($code !== 200) {
-            wp_send_json_error("El Hub respondió con HTTP $code.");
+            $raw = wp_remote_retrieve_body($response);
+            $preview = esc_html(substr(wp_strip_all_tags($raw), 0, 120));
+            wp_send_json_error("Replanta respondió con HTTP $code" . ($preview ? ": $preview" : '.'));
+            return;
         }
 
         $body = wp_remote_retrieve_body($response);
@@ -1334,23 +1472,78 @@ class RP_Care_Settings_Page {
         wp_send_json_success($body['data']);
     }
 
+    private static function format_updates_result(array $raw): array {
+        $updated = [];
+        $errors  = [];
+
+        if (!empty($raw['core']['updated']) && empty($raw['core']['rolled_back'])) {
+            $updated[] = 'WordPress → ' . ($raw['core']['version'] ?? 'nueva versión');
+        } elseif (!empty($raw['core']['error'])) {
+            $errors[] = 'WP Core: ' . $raw['core']['error'];
+        }
+
+        foreach ($raw['plugins'] ?? [] as $slug => $p) {
+            $name = $p['name'] ?? $slug;
+            if (!empty($p['updated']) && empty($p['rolled_back'])) {
+                $updated[] = $name . ' → ' . ($p['new_version'] ?? '');
+            } elseif (!empty($p['rolled_back'])) {
+                $errors[] = $name . ' (rollback a ' . ($p['old_version'] ?? '?') . ')';
+            }
+        }
+
+        foreach ($raw['themes'] ?? [] as $slug => $t) {
+            $name = $t['name'] ?? $slug;
+            if (!empty($t['updated']) && empty($t['rolled_back'])) {
+                $updated[] = $name . ' → ' . ($t['new_version'] ?? '');
+            } elseif (!empty($t['rolled_back'])) {
+                $errors[] = $name . ' (rollback a ' . ($t['old_version'] ?? '?') . ')';
+            }
+        }
+
+        $n_updated = count($updated);
+        $n_errors  = count($errors);
+        $backup_ok = !empty($raw['backup']['success']);
+
+        $msg = $n_updated > 0 ? "{$n_updated} elemento(s) actualizado(s)" : 'Sin actualizaciones pendientes';
+        if ($n_errors > 0) {
+            $msg .= ", {$n_errors} con error/rollback";
+        }
+
+        $details = [
+            'actualizados'  => $n_updated,
+            'backup_previo' => $backup_ok,
+        ];
+        if ($n_updated > 0) {
+            $details['lista'] = implode(' | ', $updated);
+        }
+        if ($n_errors > 0) {
+            $details['errores'] = implode(' | ', $errors);
+        }
+
+        update_option('rpcare_last_update_result', $details);
+
+        return ['success' => true, 'message' => $msg, 'details' => $details];
+    }
+
     public function run_task_manually() {
         check_ajax_referer('rpcare_ajax', 'nonce');
-        
+
         if (!current_user_can('manage_options')) {
-            wp_die('Unauthorized');
+            wp_send_json_error(['message' => 'Permisos insuficientes']); return;
         }
         
         $task = sanitize_text_field($_POST['task'] ?? '');
-        
+
         if (empty($task)) {
-            wp_send_json_error('Tarea no especificada');
+            wp_send_json_error(['message' => 'Tarea no especificada']);
         }
-        
+
+        try {
+
         // Run the task based on type
         switch ($task) {
             case 'updates':
-                $result = RP_Care_Task_Updates::run(['manual' => true]);
+                $result = self::format_updates_result(RP_Care_Task_Updates::run(['manual' => true]));
                 break;
             case 'backup':
                 $result = class_exists('RP_Care_Task_Backup') ? call_user_func(array('RP_Care_Task_Backup', 'run'), ['manual' => true]) : ['success' => false, 'message' => 'Backup task not available'];
@@ -1380,13 +1573,27 @@ class RP_Care_Settings_Page {
                 $result = $this->sync_with_hub();
                 break;
             default:
-                wp_send_json_error('Tarea no válida');
+                wp_send_json_error(['message' => 'Tarea no válida']);
         }
-        
+
+        // Normalize: tasks that return plain arrays (no 'success' key) are treated as successful
+        if (!isset($result['success'])) {
+            $result = [
+                'success' => true,
+                'message' => 'Tarea completada',
+                'details' => $result,
+            ];
+        }
+
         if ($result['success']) {
             wp_send_json_success($result);
         } else {
             wp_send_json_error($result);
+        }
+
+        } catch (\Throwable $e) {
+            error_log('Replanta Care run_task_manually error: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
+            wp_send_json_error(['message' => $e->getMessage()]);
         }
     }
     
@@ -1409,32 +1616,60 @@ class RP_Care_Settings_Page {
     
     private function display_recent_logs() {
         global $wpdb;
-        
+
         $table = $wpdb->prefix . 'rpcare_logs';
-        $logs = $wpdb->get_results(
-            "SELECT * FROM $table ORDER BY created_at DESC LIMIT 10",
+        $logs  = $wpdb->get_results(
+            "SELECT * FROM $table ORDER BY created_at DESC LIMIT 20",
             ARRAY_A
         );
-        
+
+        $task_labels = [
+            'updates'          => 'Actualizaciones',
+            'backup'           => 'Copia de seguridad',
+            'cache'            => 'Caché',
+            'security'         => 'Seguridad',
+            'health_check'     => 'Chequeo de salud',
+            'seo_basic_review' => 'SEO',
+            'wpo'              => 'Optimización',
+            'report_generation'=> 'Reporte',
+            'maintenance'      => 'Mantenimiento',
+        ];
+
+        echo '<div class="rpc-log-toolbar" style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">';
+        echo '<button type="button" class="button rpc-refresh-logs" style="font-size:12px;height:28px;line-height:28px;padding:0 10px;">'
+           . '<span class="dashicons dashicons-update" style="font-size:14px;width:14px;height:14px;margin-top:7px;margin-right:4px;"></span> Actualizar</button>';
+        echo '<span id="rpc-log-count" style="font-size:12px;color:var(--rp-muted);">' . count($logs) . ' entradas</span>';
+        echo '</div>';
+
+        echo '<div id="rpc-log-container">';
+        $this->render_log_table($logs, $task_labels);
+        echo '</div>';
+    }
+
+    private function render_log_table($logs, $task_labels) {
         if (empty($logs)) {
-            echo '<p>No hay registros disponibles.</p>';
+            echo '<p style="color:var(--rp-muted);font-size:13px;">No hay registros disponibles.</p>';
             return;
         }
-        
-        echo '<table class="wp-list-table widefat fixed striped">';
-        echo '<thead><tr><th>Fecha</th><th>Tipo</th><th>Estado</th><th>Mensaje</th></tr></thead>';
+
+        echo '<table class="rpc-table">';
+        echo '<thead><tr><th>Fecha</th><th>Tarea</th><th>Estado</th><th>Mensaje</th></tr></thead>';
         echo '<tbody>';
-        
+
         foreach ($logs as $log) {
-            $status_class = $log['status'] === 'success' ? 'success' : 'error';
+            $label  = $task_labels[$log['task_type']] ?? ucfirst(str_replace('_', ' ', $log['task_type']));
+            $status = $log['status'];
+            $pill   = in_array($status, ['success', 'error', 'warning', 'info'], true) ? $status : 'info';
+            $date   = wp_date('d M Y H:i', strtotime($log['created_at']));
+
             echo '<tr>';
-            echo '<td>' . esc_html($log['created_at']) . '</td>';
-            echo '<td>' . esc_html($log['task_type']) . '</td>';
-            echo '<td class="status-' . $status_class . '">' . esc_html($log['status']) . '</td>';
+            echo '<td style="white-space:nowrap;color:var(--rp-muted)">' . esc_html($date) . '</td>';
+            echo '<td style="color:var(--rp-text)">' . esc_html($label) . '</td>';
+            echo '<td><span class="rpc-pill ' . esc_attr($pill) . '">' . esc_html($status) . '</span></td>';
             echo '<td>' . esc_html($log['message']) . '</td>';
             echo '</tr>';
         }
-        
+
         echo '</tbody></table>';
     }
     
@@ -1463,7 +1698,7 @@ class RP_Care_Settings_Page {
         
         $status = [
             'connection' => $this->check_connection_status(),
-            'tasks' => RP_Care_Tasks::get_all_task_statuses(),
+            'tasks' => class_exists('RP_Care_Tasks') ? RP_Care_Tasks::get_all_task_statuses() : [],
             'health' => $this->get_health_metrics(),
             'last_update' => current_time('mysql')
         ];
@@ -1581,18 +1816,17 @@ class RP_Care_Settings_Page {
     }
     
     private function get_updates_details() {
-        $updates = [
-            'core' => get_core_updates(),
-            'plugins' => get_plugin_updates(),
-            'themes' => get_theme_updates()
-        ];
-        
+        $core_updates   = get_core_updates();
+        $plugin_updates = get_plugin_updates();
+        $theme_updates  = get_theme_updates();
+
         return [
-            'core_updates' => count($updates['core']),
-            'plugin_updates' => count($updates['plugins']),
-            'theme_updates' => count($updates['themes']),
+            'core_updates'         => count((array) $core_updates),
+            'plugin_updates'       => count((array) $plugin_updates),
+            'theme_updates'        => count((array) $theme_updates),
             'auto_updates_enabled' => get_option('rpcare_auto_updates', false),
-            'last_update' => get_option('rpcare_last_update', '')
+            'last_update'          => get_option('rpcare_last_update', ''),
+            'last_result'          => get_option('rpcare_last_update_result', null),
         ];
     }
     
@@ -1696,13 +1930,16 @@ class RP_Care_Settings_Page {
     
     private function get_database_size() {
         global $wpdb;
-        
-        $result = $wpdb->get_var("
-            SELECT ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) as 'DB Size in MB' 
-            FROM information_schema.tables 
-            WHERE table_schema = '{$wpdb->dbname}'
-        ");
-        
+
+        $result = $wpdb->get_var(
+            $wpdb->prepare(
+                "SELECT ROUND(SUM(data_length + index_length) / 1024 / 1024, 2)
+                 FROM information_schema.tables
+                 WHERE table_schema = %s",
+                DB_NAME
+            )
+        );
+
         return $result ? floatval($result) : 0;
     }
     
@@ -1769,11 +2006,11 @@ class RP_Care_Settings_Page {
     }
     
     private function get_pending_updates_count() {
-        $core_updates = get_core_updates();
+        $core_updates   = get_core_updates();
         $plugin_updates = get_plugin_updates();
-        $theme_updates = get_theme_updates();
-        
-        return count($core_updates) + count($plugin_updates) + count($theme_updates);
+        $theme_updates  = get_theme_updates();
+
+        return count((array) $core_updates) + count((array) $plugin_updates) + count((array) $theme_updates);
     }
     
     private function check_two_factor_auth() {

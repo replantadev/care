@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   deploy:
     name: Release & Notify Hub
@@ -56,6 +59,13 @@ jobs:
         run: |
           VERSION=${{ steps.meta.outputs.version }}
 
+          if [ -z "$HUB_DEPLOY_TOKEN" ]; then
+            echo "ERROR: HUB_DEPLOY_TOKEN secret not configured in GitHub Actions"
+            echo "Go to: github.com/replantadev/care/settings/secrets/actions"
+            echo "Add secret: HUB_DEPLOY_TOKEN = jJVfAFpbqF4oPKpdApzpln9GN2QaWoW4"
+            exit 1
+          fi
+
           RESPONSE=$(curl -s -o /tmp/hub_response.json -w "%{http_code}" \
             -X POST "https://replanta.net/wp-json/replanta-hub/v1/deploy/care" \
             -H "X-Deploy-Token: ${HUB_DEPLOY_TOKEN}" \
@@ -63,11 +73,11 @@ jobs:
             -d "{\"version\": \"${VERSION}\"}" \
             --retry 3 --retry-delay 5)
 
-          echo "Hub response ($RESPONSE):"
+          echo "Hub response HTTP $RESPONSE:"
           cat /tmp/hub_response.json
 
           if [ "$RESPONSE" != "200" ]; then
-            echo "WARNING: Hub notification returned $RESPONSE — check Hub logs"
+            echo "FAILED: Hub notification returned HTTP $RESPONSE"
             exit 1
           fi
 

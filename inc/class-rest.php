@@ -191,6 +191,26 @@ class RP_Care_REST {
                 ],
             ],
         ]);
+
+        // SA summary — reads replanta-site-audit transient directly (no HTTP)
+        register_rest_route($this->namespace, '/sa/summary', [
+            'methods'             => 'GET',
+            'callback'            => [$this, 'get_sa_summary'],
+            'permission_callback' => [$this, 'check_permissions'],
+        ]);
+
+        // SA fix — executes a replanta-site-audit atomic fix
+        register_rest_route($this->namespace, '/sa/fix', [
+            'methods'             => 'POST',
+            'callback'            => [$this, 'run_sa_fix'],
+            'permission_callback' => [$this, 'check_permissions'],
+            'args' => [
+                'fix_id' => [
+                    'required' => true,
+                    'type'     => 'string',
+                ],
+            ],
+        ]);
     }
     
     public function check_permissions($request) {
@@ -367,7 +387,7 @@ class RP_Care_REST {
     
     public function get_metrics($request) {
         $metrics = RP_Care_Utils::get_site_metrics();
-        
+
         // Add specific Replanta Care metrics
         $rpcare_metrics = [
             'plan' => RP_Care_Plan::get_current(),
@@ -377,7 +397,8 @@ class RP_Care_REST {
             'performance_score' => RP_Care_Utils::get_performance_score(),
             'total_404s' => $this->get_404_count(),
             'pending_updates' => $this->get_pending_updates_count(),
-            'security_score' => $this->calculate_security_score()
+            'security_score' => $this->calculate_security_score(),
+            'ssl_type' => $this->detect_ssl_type(),
         ];
         
         return array_merge($metrics, $rpcare_metrics);
@@ -889,5 +910,121 @@ class RP_Care_REST {
 
         file_put_contents($config_path, $content);
         return ['success' => true, 'fix_id' => strtolower($constant), 'message' => 'wp-config.php actualizado'];
+    }
+
+    /**
+     * Detect SSL certificate type for this site's domain.
+     * Returns: 'cf', 'le', 'autossl', 'paid', 'https', 'none'
+     */
+    private function detect_ssl_type(): string {
+        if (!is_ssl()) return 'none';
+
+        $cached = get_transient('rpcare_ssl_type');
+        if ($cached !== false) return $cached;
+
+        $host = parse_url(get_site_url(), PHP_URL_HOST) ?: '';
+        if (!$host) return 'https';
+
+        $ctx = @stream_context_create(['ssl' => ['capture_peer_cert' => true, 'verify_peer' => false]]);
+        $stream = @stream_socket_client("ssl://{$host}:443", $errno, $errstr, 5, STREAM_CLIENT_CONNECT, $ctx);
+
+        if (!$stream) {
+            set_transient('rpcare_ssl_type', 'https', HOUR_IN_SECONDS * 6);
+            return 'https';
+        }
+
+        $params  = stream_context_get_params($stream);
+        fclose($stream);
+
+        $cert    = $params['options']['ssl']['peer_certificate'] ?? null;
+        if (!$cert) {
+            set_transient('rpcare_ssl_type', 'https', HOUR_IN_SECONDS * 6);
+            return 'https';
+        }
+
+        $parsed = openssl_x509_parse($cert);
+        $issuer = $parsed['issuer']['O'] ?? $parsed['issuer']['CN'] ?? '';
+
+        if (stripos($issuer, 'Cloudflare') !== false)                                          $type = 'cf';
+        elseif (stripos($issuer, "Let's Encrypt") !== false || stripos($issuer, 'ISRG') !== false) $type = 'le';
+        elseif (stripos($issuer, 'cPanel') !== false || stripos($issuer, 'AutoSSL') !== false) $type = 'autossl';
+        elseif (stripos($issuer, 'Sectigo') !== false || stripos($issuer, 'DigiCert') !== false
+            || stripos($issuer, 'GeoTrust') !== false || stripos($issuer, 'Comodo') !== false) $type = 'paid';
+        else                                                                                   $type = 'https';
+
+        set_transient('rpcare_ssl_type', $type, HOUR_IN_SECONDS * 6);
+        return $type;
+    }
+
+    /**
+     * GET /sa/summary
+     * Reads replanta-site-audit cached result directly (no HTTP, same WP instance).     * Returns scores and issue counts for Hub to store in site_meta.
+     */
+    public function get_sa_summary($request) {
+        $sa_available = defined('RSA_VERSION') || class_exists('RSA_Audit_Engine');
+
+        if (!$sa_available) {
+            return rest_ensure_response([
+                'sa_available' => false,
+                'message'      => 'replanta-site-audit no está activo en este sitio',
+            ]);
+        }
+
+        $result = get_transient('rsa_audit_result');
+
+        if ($result === false) {
+            // No cached result — trigger a fresh audit in background and return empty
+            return rest_ensure_response([
+                'sa_available'       => true,
+                'global_score'       => 0,
+                'cf_score'           => 0,
+                'seo_score'          => 0,
+                'perf_score'         => 0,
+                'cwv_score'          => 0,
+                'issue_count_critical' => 0,
+                'issue_count_warning'  => 0,
+                'last_audit_at'      => null,
+                'message'            => 'Sin auditoría cacheada. Ejecuta una auditoría primero.',
+            ]);
+        }
+
+        $modules = $result['modules'] ?? [];
+        $checks  = $result['checks']  ?? [];
+
+        $critical = count(array_filter($checks, fn($c) => ($c['status'] ?? '') === 'critical'));
+        $warning  = count(array_filter($checks, fn($c) => ($c['status'] ?? '') === 'warning'));
+
+        return rest_ensure_response([
+            'sa_available'         => true,
+            'global_score'         => (int) ($result['global_score'] ?? 0),
+            'cf_score'             => (int) ($modules['cloudflare']['score']      ?? 0),
+            'seo_score'            => (int) ($modules['seo']['score']             ?? 0),
+            'perf_score'           => (int) ($modules['performance']['score']     ?? 0),
+            'cwv_score'            => (int) ($modules['core_web_vitals']['score'] ?? 0),
+            'issue_count_critical' => $critical,
+            'issue_count_warning'  => $warning,
+            'last_audit_at'        => $result['timestamp'] ?? null,
+        ]);
+    }
+
+    /**
+     * POST /sa/fix  { fix_id: "..." }
+     * Delegates to RSA_Audit_Engine::execute_fix() (same WP instance, no HTTP).
+     */
+    public function run_sa_fix($request) {
+        if (!class_exists('RSA_Audit_Engine')) {
+            return new WP_Error('sa_unavailable', 'replanta-site-audit no está activo', ['status' => 503]);
+        }
+
+        $fix_id = sanitize_key($request->get_param('fix_id'));
+
+        if (!array_key_exists($fix_id, RSA_Auto_Fixer::get_catalogue())) {
+            return new WP_Error('invalid_fix_id', "Fix desconocido: {$fix_id}", ['status' => 400]);
+        }
+
+        $result = RSA_Audit_Engine::execute_fix($fix_id);
+        $status = ($result['success'] ?? false) ? 200 : 422;
+
+        return rest_ensure_response(array_merge($result, ['fix_id' => $fix_id]));
     }
 }

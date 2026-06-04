@@ -887,12 +887,6 @@ class RP_Care_Settings_Page {
                    class="regular-text"
                    placeholder="Pega aquí el token copiado desde Replanta Hub"
                    style="font-family:monospace;font-size:12px;" />
-            <button type="button"
-                    class="button"
-                    onclick="rpcare_generate_token()"
-                    title="Genera un token aleatorio para este sitio">
-                &#x21BA; Generar
-            </button>
             <?php if ($has_token): ?>
             <button type="button"
                     class="button"
@@ -910,9 +904,7 @@ class RP_Care_Settings_Page {
                 <span style="color:#d63638;font-weight:600;"><span class="dashicons dashicons-warning" style="vertical-align:middle;"></span> Sin token.</span>
                 Sin token el Hub no puede conectar a este sitio.
             <?php endif; ?>
-            <br><strong>Flujo:</strong>
-            Añade el sitio en Replanta Hub → copia el token generado →
-            pégalo aquí y guarda. O pulsa <em>Generar</em> para crear uno nuevo y cópialo al Hub.
+            <br><strong>Flujo:</strong> Abre el sitio en Replanta Hub → copia el token → pégalo aquí y guarda.
         </p>
         <script>
         function rpcare_generate_token() {

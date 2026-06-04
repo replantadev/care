@@ -211,6 +211,13 @@ class RP_Care_REST {
                 ],
             ],
         ]);
+
+        // SA issues — returns full list of fixable/critical checks from SA transient
+        register_rest_route($this->namespace, '/sa/issues', [
+            'methods'             => 'GET',
+            'callback'            => [$this, 'get_sa_issues'],
+            'permission_callback' => [$this, 'check_permissions'],
+        ]);
     }
     
     public function check_permissions($request) {
@@ -1026,5 +1033,49 @@ class RP_Care_REST {
         $status = ($result['success'] ?? false) ? 200 : 422;
 
         return rest_ensure_response(array_merge($result, ['fix_id' => $fix_id]));
+    }
+
+    /**
+     * GET /sa/issues
+     * Returns the full list of warning/critical checks from the SA transient,
+     * including fix_id for fixable items. Used by Hub to render the fix modal.
+     */
+    public function get_sa_issues($request) {
+        if (!defined('RSA_VERSION') && !class_exists('RSA_Audit_Engine')) {
+            return rest_ensure_response(['sa_available' => false, 'issues' => []]);
+        }
+
+        $result = get_transient('rsa_audit_result');
+        if ($result === false) {
+            return rest_ensure_response(['sa_available' => true, 'issues' => [], 'message' => 'Sin auditoría cacheada']);
+        }
+
+        $checks = $result['checks'] ?? [];
+        $issues = [];
+        foreach ($checks as $c) {
+            if (!in_array($c['status'] ?? '', ['critical', 'warning'], true)) continue;
+            $issues[] = [
+                'id'          => $c['id']          ?? '',
+                'label'       => $c['label']        ?? $c['id'] ?? '',
+                'description' => $c['description']  ?? '',
+                'status'      => $c['status'],
+                'module'      => $c['module']       ?? '',
+                'fixable'     => !empty($c['fixable']),
+                'fix_id'      => $c['fix_id']       ?? null,
+            ];
+        }
+
+        // Sort: critical first, then by label
+        usort($issues, fn($a, $b) =>
+            ($b['status'] === 'critical' ? 1 : 0) - ($a['status'] === 'critical' ? 1 : 0)
+            ?: strcmp($a['label'], $b['label'])
+        );
+
+        return rest_ensure_response([
+            'sa_available' => true,
+            'issues'       => $issues,
+            'global_score' => (int) ($result['global_score'] ?? 0),
+            'last_audit_at'=> $result['timestamp'] ?? null,
+        ]);
     }
 }

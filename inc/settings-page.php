@@ -545,8 +545,11 @@ class RP_Care_Settings_Page {
                     <section class="rpc-section">
                         <h2 class="rpc-section-title"><span class="rpc-section-icon dashicons dashicons-admin-links"></span> Conexión con Replanta Hub</h2>
 
-                        <!-- Hub URL is set automatically (and can be pushed remotely from Hub). We keep it as a hidden input so submitting the form preserves the saved value. -->
-                        <input type="hidden" id="rpc-hub-url" name="rpcare_options[hub_url]" value="<?php echo $hub_url; ?>">
+                        <div class="rpc-field">
+                            <label class="rpc-label" for="rpc-hub-url">URL del Hub <small style="text-transform:none;font-weight:400;color:var(--rp-muted)">(por defecto: https://replanta.net)</small></label>
+                            <input type="url" id="rpc-hub-url" name="rpcare_options[hub_url]" value="<?php echo $hub_url; ?>"
+                                   class="rpc-input" placeholder="https://replanta.net">
+                        </div>
 
                         <div class="rpc-field">
                             <label class="rpc-label" for="rpc-site-token">Token del sitio <small style="text-transform:none;font-weight:400;color:var(--rp-muted)">(proporcionado por Replanta Hub al añadir el sitio)</small></label>

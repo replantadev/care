@@ -235,35 +235,49 @@
             metas_added: 'Metas añadidas', sitemap_checked: 'Sitemap', robots_checked: 'robots.txt',
             ssl_status: 'SSL', memory_usage: 'Memoria', disk_space: 'Disco',
             cron_status: 'WP Cron', email_functionality: 'Email',
-            // updates result
             actualizados: 'Actualizados', backup_previo: 'Backup previo',
             lista: 'Elementos', errores: 'Errores/rollback',
+            tables_optimized: 'Tablas optimizadas', spam_comments_deleted: 'Comentarios spam borrados',
+            trash_comments_deleted: 'Papelera vaciada', revisions_deleted: 'Revisiones borradas',
+            expired: 'Transients expirados', orphaned: 'Huérfanos borrados',
+            active: 'Activo', presets_applied: 'Ajustes aplicados',
+            orphans: 'Archivos huérfanos', checked: 'Archivos revisados',
             // skip complex nested objects
             backup: null, core: null, plugins: null, themes: null, translations: null,
             recommendations: null, security_score: null, advanced_optimizations: null,
         };
 
         const lines = [];
-        for (const [key, val] of Object.entries(details)) {
-            if (key in labels && labels[key] === null) continue;
-            const label = labels[key] || key.replace(/_/g, ' ');
-            if (val === null || val === undefined) continue;
+
+        function renderVal(key, val) {
+            const label = (key in labels && labels[key] !== null) ? labels[key] : key.replace(/_/g, ' ');
+            if (key in labels && labels[key] === null) return;
+            if (val === null || val === undefined) return;
 
             let disp;
             if (typeof val === 'boolean') {
                 disp = val
                     ? '<span style="color:var(--rp-green,#4caf8e)">OK</span>'
                     : '<span style="color:var(--rp-error,#e05c5c)">No</span>';
-            } else if (typeof val === 'object' && !Array.isArray(val) && val.status) {
+            } else if (Array.isArray(val)) {
+                if (!val.length) return;
+                disp = val.map(function(v){ return typeof v === 'object' ? (v.option || v.file || v.name || JSON.stringify(v)) : String(v); }).join(', ');
+            } else if (typeof val === 'object' && val.status) {
                 const clr = val.status === 'good' ? 'var(--rp-green,#4caf8e)'
                     : val.status === 'warning' ? 'var(--rp-sun,#f5a623)' : 'var(--rp-error,#e05c5c)';
                 disp = '<span style="color:' + clr + '">' + (val.message || val.status) + '</span>';
+            } else if (typeof val === 'object') {
+                // Flatten one level: recurse into sub-keys
+                for (const [sk, sv] of Object.entries(val)) {
+                    renderVal(sk, sv);
+                }
+                return;
             } else if (typeof val === 'number') {
                 disp = val;
             } else if (typeof val === 'string') {
                 disp = val;
             } else {
-                continue;
+                return;
             }
 
             lines.push(
@@ -271,6 +285,10 @@
                 '<span style="color:var(--rp-muted,#8fa99a)">' + label + '</span>' +
                 '<span style="font-weight:500">' + disp + '</span></div>'
             );
+        }
+
+        for (const [key, val] of Object.entries(details)) {
+            renderVal(key, val);
         }
         return lines.length ? '<div style="margin-top:6px">' + lines.join('') + '</div>' : '';
     }

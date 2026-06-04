@@ -30,6 +30,7 @@ class RP_Care_Settings_Page {
         add_action('wp_ajax_rpcare_get_hub_reports', [$this, 'ajax_get_hub_reports']);
         add_action('wp_ajax_rpcare_check_updates', [$this, 'ajax_check_updates']);
         add_action('wp_ajax_rpcare_get_logs', [$this, 'ajax_get_logs']);
+        add_action('wp_ajax_rpcare_get_backup_history', [$this, 'ajax_get_backup_history']);
         
         // Hide other plugin notices on our settings page
         add_action('admin_head', [$this, 'hide_other_plugin_notices']);
@@ -722,37 +723,45 @@ class RP_Care_Settings_Page {
             <section class="rpc-actions">
                 <h2 class="rpc-section-title"><span class="rpc-section-icon dashicons dashicons-controls-play"></span> Acciones inmediatas</h2>
                 <div class="rpc-action-grid">
-                    <button class="rpc-action-card" data-task="updates" type="button">
+                    <button class="rpc-action-card" data-task="updates" type="button" title="Aplica actualizaciones pendientes de WordPress, plugins y temas con backup previo">
                         <span class="rpc-action-icon dashicons dashicons-update"></span>
                         <span class="rpc-action-label">Actualizaciones</span>
+                        <span class="rpc-action-hint dashicons dashicons-info" style="font-size:11px;position:absolute;top:6px;right:6px;color:var(--rp-muted,#8fa99a);cursor:help;" aria-label="Aplica actualizaciones pendientes de WordPress, plugins y temas con backup previo"></span>
                     </button>
-                    <button class="rpc-action-card" data-task="backup" type="button">
+                    <button class="rpc-action-card" data-task="backup" type="button" title="Crea una copia de seguridad completa del sitio via Backuply o WHM según la configuración">
                         <span class="rpc-action-icon dashicons dashicons-backup"></span>
                         <span class="rpc-action-label">Crear backup</span>
+                        <span class="rpc-action-hint dashicons dashicons-info" style="font-size:11px;position:absolute;top:6px;right:6px;color:var(--rp-muted,#8fa99a);cursor:help;" aria-label="Crea una copia de seguridad completa del sitio via Backuply o WHM según la configuración"></span>
                     </button>
-                    <button class="rpc-action-card" data-task="cache" type="button">
+                    <button class="rpc-action-card" data-task="cache" type="button" title="Purga el caché de página (LiteSpeed, WP Rocket, W3TC…) y el caché de objetos de PHP">
                         <span class="rpc-action-icon dashicons dashicons-trash"></span>
                         <span class="rpc-action-label">Limpiar caché</span>
+                        <span class="rpc-action-hint dashicons dashicons-info" style="font-size:11px;position:absolute;top:6px;right:6px;color:var(--rp-muted,#8fa99a);cursor:help;" aria-label="Purga el caché de página (LiteSpeed, WP Rocket, W3TC…) y el caché de objetos de PHP"></span>
                     </button>
-                    <button class="rpc-action-card" data-task="security" type="button">
+                    <button class="rpc-action-card" data-task="security" type="button" title="Escanea el sitio en busca de archivos sospechosos, usuarios sin seguridad y configuraciones vulnerables">
                         <span class="rpc-action-icon dashicons dashicons-shield-alt"></span>
                         <span class="rpc-action-label">Seguridad</span>
+                        <span class="rpc-action-hint dashicons dashicons-info" style="font-size:11px;position:absolute;top:6px;right:6px;color:var(--rp-muted,#8fa99a);cursor:help;" aria-label="Escanea el sitio en busca de archivos sospechosos, usuarios sin seguridad y configuraciones vulnerables"></span>
                     </button>
-                    <button class="rpc-action-card" data-task="health" type="button">
+                    <button class="rpc-action-card" data-task="health" type="button" title="Comprueba el estado del servidor, espacio en disco, memoria, WP Cron y funcionalidad de email">
                         <span class="rpc-action-icon dashicons dashicons-heart"></span>
                         <span class="rpc-action-label">Salud del sitio</span>
+                        <span class="rpc-action-hint dashicons dashicons-info" style="font-size:11px;position:absolute;top:6px;right:6px;color:var(--rp-muted,#8fa99a);cursor:help;" aria-label="Comprueba el estado del servidor, espacio en disco, memoria, WP Cron y funcionalidad de email"></span>
                     </button>
-                    <button class="rpc-action-card" data-task="report" type="button">
+                    <button class="rpc-action-card" data-task="report" type="button" title="Genera el informe mensual del sitio y lo envía por email al administrador">
                         <span class="rpc-action-icon dashicons dashicons-chart-bar"></span>
                         <span class="rpc-action-label">Generar informe</span>
+                        <span class="rpc-action-hint dashicons dashicons-info" style="font-size:11px;position:absolute;top:6px;right:6px;color:var(--rp-muted,#8fa99a);cursor:help;" aria-label="Genera el informe mensual del sitio y lo envía por email al administrador"></span>
                     </button>
-                    <button class="rpc-action-card" data-task="wpo" type="button">
+                    <button class="rpc-action-card" data-task="wpo" type="button" title="Optimiza la base de datos, limpia transients caducados, aplica ajustes de LiteSpeed y revisa imágenes grandes">
                         <span class="rpc-action-icon dashicons dashicons-performance"></span>
                         <span class="rpc-action-label">Optimizar WPO</span>
+                        <span class="rpc-action-hint dashicons dashicons-info" style="font-size:11px;position:absolute;top:6px;right:6px;color:var(--rp-muted,#8fa99a);cursor:help;" aria-label="Optimiza la base de datos, limpia transients caducados, aplica ajustes de LiteSpeed y revisa imágenes grandes"></span>
                     </button>
-                    <button class="rpc-action-card" data-task="seo" type="button">
+                    <button class="rpc-action-card" data-task="seo" type="button" title="Revisa meta títulos, meta descripciones, sitemap XML y robots.txt del sitio">
                         <span class="rpc-action-icon dashicons dashicons-search"></span>
                         <span class="rpc-action-label">Análisis SEO</span>
+                        <span class="rpc-action-hint dashicons dashicons-info" style="font-size:11px;position:absolute;top:6px;right:6px;color:var(--rp-muted,#8fa99a);cursor:help;" aria-label="Revisa meta títulos, meta descripciones, sitemap XML y robots.txt del sitio"></span>
                     </button>
                 </div>
                 <div class="rpc-results" id="rpcare-task-results"></div>
@@ -766,6 +775,16 @@ class RP_Care_Settings_Page {
                     <span id="rpc-reports-icon" class="dashicons dashicons-download"></span> Cargar informes
                 </button>
                 <div id="rpcare-reports-list" style="margin-top:14px;"></div>
+            </section>
+
+            <!-- HISTORIAL DE BACKUPS -->
+            <section class="rpc-backups">
+                <h2 class="rpc-section-title"><span class="rpc-section-icon dashicons dashicons-backup"></span> Historial de copias de seguridad</h2>
+                <p class="rpc-hint" style="margin-bottom:14px;">Últimas copias de seguridad realizadas en este sitio.</p>
+                <button type="button" class="rpc-btn rpc-btn-secondary rpc-btn-sm" id="rpcare-load-backups">
+                    <span id="rpc-backups-icon" class="dashicons dashicons-download"></span> Ver historial
+                </button>
+                <div id="rpcare-backups-list" style="margin-top:14px;"></div>
             </section>
 
             <!-- ACTIVIDAD RECIENTE -->
@@ -838,18 +857,70 @@ class RP_Care_Settings_Page {
 
             $(document).on('click', '.rpcare-view-report', function(){
                 var reportId = $(this).data('id');
+                var btn = $(this);
+                btn.prop('disabled', true).text('Cargando...');
                 $.post(rpcare_ajax.ajax_url, { action: 'rpcare_get_hub_reports', nonce: rpcare_ajax.nonce, report_id: reportId }, function(res){
-                    if (!res.success || !res.data.html) {
-                        if (window.ReplantaCare) window.ReplantaCare.showNotification('Error', res.data || 'No se pudo cargar el informe.', 'error');
+                    btn.prop('disabled', false).text('Ver');
+                    if (!res.success || !res.data || !res.data.html) {
+                        if (window.ReplantaCare) window.ReplantaCare.showNotification('Error al cargar informe', 'error');
                         return;
                     }
-                    var w = window.open('', '_blank');
-                    w.document.write(res.data.html);
-                    w.document.close();
+                    var overlay = $('<div id="rpcare-report-overlay" style="position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:100000;display:flex;align-items:flex-start;justify-content:center;padding:40px 20px;overflow-y:auto;"></div>');
+                    var box = $('<div style="background:#fff;border-radius:6px;width:100%;max-width:900px;min-height:200px;position:relative;box-shadow:0 8px 40px rgba(0,0,0,.35);"></div>');
+                    var header = $('<div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid #ddd;position:sticky;top:0;background:#fff;z-index:1;border-radius:6px 6px 0 0;"></div>');
+                    header.append('<strong style="font-size:14px;">' + ($('<span>').text(res.data.title || 'Informe').html()) + '</strong>');
+                    var closeBtn = $('<button type="button" style="background:none;border:none;font-size:20px;cursor:pointer;color:#666;padding:0 4px;" aria-label="Cerrar">&times;</button>');
+                    closeBtn.on('click', function(){ overlay.remove(); });
+                    header.append(closeBtn);
+                    var body = $('<div style="padding:20px;overflow:auto;"></div>').html(res.data.html);
+                    box.append(header).append(body);
+                    overlay.append(box);
+                    $('body').append(overlay);
+                    overlay.on('click', function(e){ if (e.target === overlay[0]) overlay.remove(); });
+                    $(document).one('keydown.rpcReport', function(e){ if (e.key === 'Escape') { overlay.remove(); $(document).off('keydown.rpcReport'); } });
+                });
+            });
+        })(jQuery);
+
+        /* Backup history loader */
+        (function($){
+            $('#rpcare-load-backups').on('click', function(){
+                var btn = $(this);
+                btn.prop('disabled', true);
+                $('#rpc-backups-icon').removeClass('dashicons-download').addClass('dashicons-update rpc-spin');
+                $('#rpcare-backups-list').html('<p class="rpc-hint">Cargando historial...</p>');
+                $.post(rpcare_ajax.ajax_url, { action: 'rpcare_get_backup_history', nonce: rpcare_ajax.nonce }, function(res){
+                    btn.prop('disabled', false);
+                    $('#rpc-backups-icon').removeClass('dashicons-update rpc-spin').addClass('dashicons-download');
+                    if (!res.success) {
+                        $('#rpcare-backups-list').html('<p class="rpc-hint error"><span class="dashicons dashicons-warning"></span> ' + (res.data || 'Error al cargar historial.') + '</p>');
+                        return;
+                    }
+                    var backups = res.data;
+                    if (!Array.isArray(backups) || !backups.length) {
+                        $('#rpcare-backups-list').html('<div class="rpc-empty"><span class="rpc-empty-icon dashicons dashicons-backup"></span>No hay copias de seguridad registradas todavía.</div>');
+                        return;
+                    }
+                    var html = '<table class="rpc-table"><thead><tr><th>Fecha</th><th>Nombre</th><th>Tamaño</th><th>Origen</th></tr></thead><tbody>';
+                    $.each(backups, function(i, b){
+                        html += '<tr>';
+                        html += '<td>' + $('<span>').text(b.date).html() + '</td>';
+                        html += '<td>' + $('<span>').text(b.name).html() + '</td>';
+                        html += '<td>' + $('<span>').text(b.size).html() + '</td>';
+                        html += '<td><span class="rpc-badge">' + $('<span>').text(b.source).html() + '</span></td>';
+                        html += '</tr>';
+                    });
+                    html += '</tbody></table>';
+                    $('#rpcare-backups-list').html(html);
+                }).fail(function(){
+                    btn.prop('disabled', false);
+                    $('#rpc-backups-icon').removeClass('dashicons-update rpc-spin').addClass('dashicons-download');
+                    $('#rpcare-backups-list').html('<p class="rpc-hint error"><span class="dashicons dashicons-warning"></span> Error de red.</p>');
                 });
             });
         })(jQuery);
         </script>
+        <!-- report modal placeholder -->
         <?php
     }
     
@@ -1414,13 +1485,8 @@ class RP_Care_Settings_Page {
 
         $report_id = sanitize_text_field($_POST['report_id'] ?? '');
 
-        $auth_headers = [
-            'Authorization' => 'Bearer ' . $token,
-        ];
-
         if (!empty($report_id)) {
             $response = wp_remote_post($endpoint, [
-                'headers' => $auth_headers,
                 'body'    => [
                     'action'       => 'rphub_view_report_modal',
                     'client_token' => $token,
@@ -1430,7 +1496,6 @@ class RP_Care_Settings_Page {
             ]);
         } else {
             $response = wp_remote_post($endpoint, [
-                'headers' => $auth_headers,
                 'body'    => [
                     'action'       => 'rphub_get_client_reports',
                     'client_token' => $token,
@@ -1465,7 +1530,54 @@ class RP_Care_Settings_Page {
         wp_send_json_success($body['data']);
     }
 
-    private static function format_updates_result(array $raw): array {
+    public function ajax_get_backup_history() {
+        check_ajax_referer('rpcare_ajax', 'nonce');
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('Permisos insuficientes'); return;
+        }
+
+        $history = [];
+
+        // Pull from Backuply option if available
+        $backuply_list = get_option('backuply_backup_list', []);
+        if (is_array($backuply_list) && !empty($backuply_list)) {
+            foreach ($backuply_list as $b) {
+                $ts = isset($b['time']) ? (int) $b['time'] : strtotime($b['date'] ?? '');
+                if (!$ts) continue;
+                $history[] = [
+                    'date'   => date('Y-m-d H:i', $ts),
+                    'name'   => $b['name'] ?? 'Backuply backup',
+                    'size'   => isset($b['size']) ? size_format((int) $b['size']) : '—',
+                    'source' => 'Backuply',
+                ];
+            }
+            usort($history, fn($a, $b) => strcmp($b['date'], $a['date']));
+            $history = array_slice($history, 0, 20);
+        }
+
+        // Fall back to Care logs if no Backuply data
+        if (empty($history)) {
+            global $wpdb;
+            $table = $wpdb->prefix . 'rpcare_logs';
+            if ($wpdb->get_var("SHOW TABLES LIKE '$table'")) {
+                $rows = $wpdb->get_results(
+                    "SELECT created_at, status, context FROM $table WHERE task = 'backup' ORDER BY created_at DESC LIMIT 20",
+                    ARRAY_A
+                );
+                foreach ($rows as $r) {
+                    $ctx = is_string($r['context']) ? json_decode($r['context'], true) : [];
+                    $history[] = [
+                        'date'   => $r['created_at'],
+                        'name'   => ($ctx['type'] ?? 'backup') . ($r['status'] === 'success' ? '' : ' (error)'),
+                        'size'   => '—',
+                        'source' => 'Care',
+                    ];
+                }
+            }
+        }
+
+        wp_send_json_success($history);
+    }
         $updated = [];
         $errors  = [];
 

@@ -3,7 +3,7 @@
  * Plugin Name: Replanta Care
  * Plugin URI: https://replanta.dev
  * Description: Plugin de mantenimiento WordPress automático para clientes de Replanta con integración Hub
- * Version: 1.8.9
+ * Version: 1.8.10
  * Author: Replanta
  * Author URI: https://replanta.dev
  * License: GPL v2 or later
@@ -17,7 +17,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('RPCARE_VERSION', '1.8.9');
+define('RPCARE_VERSION', '1.8.10');
 define('RPCARE_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('RPCARE_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('RPCARE_PLUGIN_FILE', __FILE__);
@@ -390,8 +390,11 @@ class ReplantaCare {
         // Clear all scheduled tasks (Action Scheduler + WP Cron fallback)
         $hooks = [
             'rpcare_task_updates', 'rpcare_task_backup', 'rpcare_task_wpo',
-            'rpcare_task_review', 'rpcare_task_monitor', 'rpcare_daily_check',
-            'rpcare_task_maintenance',
+            'rpcare_task_seo_review', 'rpcare_task_seo_audit', 'rpcare_task_basic_review',
+            'rpcare_task_monitor', 'rpcare_task_health', 'rpcare_task_404_cleanup',
+            'rpcare_task_maintenance', 'rpcare_task_report', 'rpcare_task_cwv',
+            'rpcare_task_anomaly',
+            'rpcare_daily_check', 'rpcare_hourly_monitor', 'rpcare_clear_cache',
         ];
         foreach ($hooks as $hook) {
             if (function_exists('as_unschedule_all_actions')) {

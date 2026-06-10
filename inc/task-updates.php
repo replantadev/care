@@ -26,6 +26,19 @@ class RP_Care_Task_Updates {
         $plan       = RP_Care_Plan::get_current();
         $exclusions = RP_Care_Tasks::get_exclusions();
 
+        // Si un fatal interrumpe un upgrade, WP dejaría el sitio bloqueado
+        // en modo mantenimiento (.maintenance). Lo retiramos al apagar.
+        register_shutdown_function(function () {
+            $error = error_get_last();
+            if ($error && in_array($error['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true)) {
+                $file = ABSPATH . '.maintenance';
+                if (file_exists($file)) {
+                    @unlink($file);
+                    RP_Care_Utils::log('updates', 'error', 'Fatal durante actualización — modo mantenimiento retirado', ['error' => $error['message']]);
+                }
+            }
+        });
+
         $results = [
             'backup'       => null,
             'core'         => null,

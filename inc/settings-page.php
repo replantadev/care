@@ -1578,6 +1578,9 @@ class RP_Care_Settings_Page {
 
         wp_send_json_success($history);
     }
+
+    private static function format_updates_result($raw) {
+        $raw = is_array($raw) ? $raw : [];
         $updated = [];
         $errors  = [];
 

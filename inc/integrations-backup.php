@@ -109,16 +109,17 @@ class RP_Care_Task_Backup {
             return [
                 'success'        => true,
                 'method'         => 'whm_cpanel',
-                'message'        => 'Backup managed by WHM/cPanel',
+                'message'        => 'Backup gestionado por WHM/cPanel',
                 'last_backup'    => $last_backup,
                 'managed_by_hub' => true,
             ];
         }
 
         return [
-            'success'        => false,
+            'success'        => true,
+            'verified'       => false,
             'method'         => 'whm_cpanel',
-            'message'        => 'Could not verify WHM/cPanel backup status',
+            'message'        => 'Backup gestionado por el hosting (no verificable desde WordPress)',
             'managed_by_hub' => true,
         ];
     }

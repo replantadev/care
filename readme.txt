@@ -4,7 +4,7 @@ Tags: maintenance, security, performance, updates, monitoring
 Requires at least: 5.0
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 1.8.11
+Stable tag: 1.9.0
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -106,6 +106,17 @@ Solo si configuras integraciones específicas. El plugin respeta tu privacidad y
 4. Sistema de notificaciones y alertas
 
 == Changelog ==
+
+= 1.9.0 (2026-06-11) =
+* Nuevo: WPO antes/después — mide tiempo de respuesta y PageSpeed antes y después de la optimización, con tarjeta visual en el informe
+* Nuevo: Informe mensual ampliado — actualizaciones realizadas, evolución Core Web Vitals, top 10 errores 404, tamaño de BD
+* Nuevo: Score de rendimiento usa datos reales de PageSpeed Insights cuando existen
+* Fix: Modal de informes — los informes generados localmente se sirven desde el propio sitio (antes pedía al Hub y fallaba)
+* Fix: Notificaciones al Hub — endpoint REST correcto (rphub/v1/notifications) en lugar de URL inexistente (404 recurrente)
+* Fix: Las notificaciones ya no penalizan el % de éxito de tareas del informe
+* Fix: Backup gestionado por hosting ya no aparece como fallo ("no verificable" en vez de error)
+* Mejora: Iconos de estado ✔/✖/⚠ en el informe (antes aparecían vacíos)
+* Mejora: Todas las cadenas del informe y recomendaciones en español
 
 = 1.4.0 (2026-02-19) =
 * Mayor: Sistema de planes unificado — normalize_plan() mapea nombres ingleses a españoles

@@ -275,43 +275,46 @@ class RP_Care_Utils {
     }
     
     public static function send_notification($type, $subject, $message, $data = null) {
-        $hub_url = get_option('rpcare_hub_url', 'https://sitios.replanta.dev');
-        $token = get_option('rpcare_token', '');
+        $options = get_option('rpcare_options', []);
+        $hub_url = !empty($options['hub_url']) ? $options['hub_url'] : get_option('rpcare_hub_url', 'https://replanta.net');
+        $token = !empty($options['site_token']) ? $options['site_token'] : get_option('rpcare_token', '');
         $site_url = get_site_url();
-        
+
         if (empty($token)) {
             return false;
         }
-        
+
         $payload = [
             'type' => $type,
             'subject' => $subject,
             'message' => $message,
             'site_url' => $site_url,
+            'site_token' => $token,
             'timestamp' => time(),
             'data' => $data
         ];
-        
-        $response = wp_remote_post($hub_url . '/api/v1/notifications', [
+
+        $response = wp_remote_post(rtrim($hub_url, '/') . '/wp-json/rphub/v1/notifications', [
             'headers' => [
-                'Authorization' => 'Bearer ' . $token,
+                'X-Site-Token' => $token,
+                'X-Site-URL' => $site_url,
                 'Content-Type' => 'application/json'
             ],
             'body' => wp_json_encode($payload),
             'timeout' => 15
         ]);
-        
+
         if (is_wp_error($response)) {
             self::log('notification', 'error', 'Failed to send notification: ' . $response->get_error_message());
             return false;
         }
-        
+
         $status_code = wp_remote_retrieve_response_code($response);
-        if ($status_code !== 200) {
+        if ($status_code < 200 || $status_code >= 300) {
             self::log('notification', 'error', "Notification failed with status $status_code");
             return false;
         }
-        
+
         return true;
     }
     

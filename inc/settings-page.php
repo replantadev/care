@@ -872,7 +872,15 @@ class RP_Care_Settings_Page {
                     var closeBtn = $('<button type="button" style="background:none;border:none;font-size:20px;cursor:pointer;color:#666;padding:0 4px;" aria-label="Cerrar">&times;</button>');
                     closeBtn.on('click', function(){ overlay.remove(); });
                     header.append(closeBtn);
-                    var body = $('<div style="padding:20px;overflow:auto;"></div>').html(res.data.html);
+                    var body;
+                    if (res.data.is_document) {
+                        body = $('<div style="height:75vh;"></div>');
+                        var iframe = $('<iframe style="width:100%;height:100%;border:none;border-radius:0 0 6px 6px;" sandbox=""></iframe>');
+                        iframe.attr('srcdoc', res.data.html);
+                        body.append(iframe);
+                    } else {
+                        body = $('<div style="padding:20px;overflow:auto;"></div>').html(res.data.html);
+                    }
                     box.append(header).append(body);
                     overlay.append(box);
                     $('body').append(overlay);
@@ -1463,8 +1471,8 @@ class RP_Care_Settings_Page {
     }
     
     /**
-     * AJAX: Obtiene reportes del Hub para este sitio usando el token configurado.
-     * Si se pasa `report_id` devuelve el HTML del reporte; si no, la lista.
+     * AJAX: Lista/visualiza informes. Primero los generados localmente
+     * (rpcare_reports_history); si no hay, recurre al Hub como fallback.
      */
     public function ajax_get_hub_reports() {
         check_ajax_referer('rpcare_ajax', 'nonce');
@@ -1473,17 +1481,63 @@ class RP_Care_Settings_Page {
             wp_send_json_error('Permisos insuficientes'); return;
         }
 
+        $report_id = sanitize_text_field($_POST['report_id'] ?? '');
+        $local_reports = get_option('rpcare_reports_history', []);
+
+        if (!empty($report_id)) {
+            // Buscar primero en los informes locales
+            foreach ($local_reports as $report) {
+                if (($report['id'] ?? '') === $report_id) {
+                    $html_file = $report['html_file'] ?? '';
+                    if ($html_file && file_exists($html_file)) {
+                        wp_send_json_success([
+                            'title'       => 'Informe del ' . mysql2date('d/m/Y', $report['generated_at'] ?? ''),
+                            'html'        => file_get_contents($html_file),
+                            'is_document' => true,
+                        ]);
+                    }
+                    wp_send_json_error('El archivo del informe ya no existe en el servidor.');
+                }
+            }
+            // No es local: intentar en el Hub
+            self::proxy_hub_reports($report_id);
+            return;
+        }
+
+        // Lista: informes locales primero
+        if (!empty($local_reports)) {
+            $list = [];
+            foreach (array_reverse($local_reports) as $report) {
+                $list[] = [
+                    'report_id'        => $report['id'] ?? '',
+                    'report_type'      => 'monthly',
+                    'report_type_name' => 'Informe mensual (' . ucfirst($report['plan'] ?? '') . ')',
+                    'generated_at'     => $report['generated_at'] ?? '',
+                ];
+            }
+            wp_send_json_success($list);
+        }
+
+        // Sin informes locales: fallback al Hub
+        self::proxy_hub_reports('');
+    }
+
+    /**
+     * Proxy al Hub (admin-ajax) para listar/ver informes generados en el Hub.
+     */
+    private static function proxy_hub_reports($report_id) {
         $options   = get_option('rpcare_options', []);
         $hub_url   = rtrim($options['hub_url'] ?? '', '/');
         $token     = $options['site_token'] ?? '';
 
         if (empty($hub_url) || empty($token)) {
-            wp_send_json_error('Configura la URL de Replanta y el Token antes de cargar informes.'); return;
+            if ($report_id) {
+                wp_send_json_error('Informe no encontrado localmente y el Hub no está configurado.');
+            }
+            wp_send_json_success([]);
         }
 
         $endpoint = $hub_url . '/wp-admin/admin-ajax.php';
-
-        $report_id = sanitize_text_field($_POST['report_id'] ?? '');
 
         if (!empty($report_id)) {
             $response = wp_remote_post($endpoint, [

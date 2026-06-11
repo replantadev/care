@@ -13,7 +13,7 @@ class RP_Care_Task_WPO {
     public static function run($args = []) {
         $plan = RP_Care_Plan::get_current();
         $wpo_level = RP_Care_Plan::get_wpo_level($plan);
-        
+
         $results = [
             'cache_purged' => false,
             'database_optimized' => false,
@@ -23,29 +23,105 @@ class RP_Care_Task_WPO {
             'webp_conversion' => false,
             'advanced_optimizations' => []
         ];
-        
+
+        // Medición ANTES (estado actual con su caché)
+        $perf_before = self::measure_response_time();
+        $cwv_last = get_option('rpcare_cwv_last');
+
         // Basic WPO (all plans)
         $results['cache_purged'] = self::purge_cache();
         $results['transients_cleaned'] = self::clean_transients();
         $results['database_optimized'] = self::optimize_database();
         $results['lscache_preset'] = self::apply_lscache_presets();
         $results['orphan_media'] = self::scan_orphan_media();
-        
+
         // Advanced WPO (Raíz and Ecosistema)
         if (in_array($wpo_level, ['advanced', 'premium'])) {
             $results['autoload_optimized'] = self::optimize_autoload();
             $results['images_checked'] = self::check_large_images();
             $results['webp_conversion'] = self::check_webp_support();
         }
-        
+
         // Premium WPO (Ecosistema only)
         if ($wpo_level === 'premium') {
             $results['advanced_optimizations'] = self::run_premium_optimizations();
         }
-        
+
+        // Medición DESPUÉS (con caché regenerada por el warm-up interno)
+        $perf_after = self::measure_response_time();
+
+        $wpo_perf = [
+            'measured_at' => current_time('mysql'),
+            'before' => [
+                'response_ms' => $perf_before,
+                'psi_mobile'  => $cwv_last['mobile']['scores']['performance'] ?? null,
+                'psi_desktop' => $cwv_last['desktop']['scores']['performance'] ?? null,
+            ],
+            'after' => [
+                'response_ms' => $perf_after,
+                'psi_mobile'  => null,
+                'psi_desktop' => null,
+            ],
+            'psi_pending' => true,
+        ];
+        update_option('rpcare_wpo_perf', $wpo_perf, false);
+
+        // PSI tarda 30-60s por estrategia: medir "después" en segundo plano (~5 min)
+        if (!wp_next_scheduled('rpcare_wpo_after_cwv')) {
+            wp_schedule_single_event(time() + 5 * MINUTE_IN_SECONDS, 'rpcare_wpo_after_cwv');
+        }
+
+        $mejora = null;
+        if ($perf_before && $perf_after && $perf_before > 0) {
+            $mejora = round((($perf_before - $perf_after) / $perf_before) * 100, 1);
+        }
+        $results['rendimiento'] = [
+            'respuesta_antes_ms'   => $perf_before,
+            'respuesta_despues_ms' => $perf_after,
+            'mejora'               => $mejora !== null ? ($mejora >= 0 ? "-{$mejora}% tiempo de respuesta" : '+' . abs($mejora) . '% tiempo de respuesta') : 'sin datos',
+            'pagespeed'            => 'Medición PageSpeed programada (resultado en ~5 min)',
+        ];
+
         RP_Care_Utils::log('wpo', 'success', 'WPO tasks completed', $results);
-        
+
         return $results;
+    }
+
+    /**
+     * Mide el tiempo de respuesta de la portada (ms). Warm-up + mejor de 2 mediciones.
+     */
+    private static function measure_response_time() {
+        $url = home_url('/');
+        wp_remote_get($url, ['timeout' => 30, 'sslverify' => false]);
+
+        $times = [];
+        for ($i = 0; $i < 2; $i++) {
+            $start = microtime(true);
+            $res = wp_remote_get($url, ['timeout' => 30, 'sslverify' => false]);
+            if (!is_wp_error($res) && wp_remote_retrieve_response_code($res) < 500) {
+                $times[] = (microtime(true) - $start) * 1000;
+            }
+        }
+
+        return !empty($times) ? (int) round(min($times)) : null;
+    }
+
+    /**
+     * Captura PageSpeed "después" en segundo plano tras un WPO.
+     */
+    public static function capture_after_cwv() {
+        if (!class_exists('RP_Care_Task_CWV')) {
+            return;
+        }
+        $payload = RP_Care_Task_CWV::run();
+        $perf = get_option('rpcare_wpo_perf');
+        if (!is_array($perf)) {
+            return;
+        }
+        $perf['after']['psi_mobile']  = $payload['mobile']['scores']['performance'] ?? null;
+        $perf['after']['psi_desktop'] = $payload['desktop']['scores']['performance'] ?? null;
+        $perf['psi_pending'] = false;
+        update_option('rpcare_wpo_perf', $perf, false);
     }
     
     private static function purge_cache() {
@@ -305,7 +381,7 @@ class RP_Care_Task_WPO {
     private static function check_webp_support() {
         // Check if server supports WebP
         if (!function_exists('imagewebp')) {
-            return ['supported' => false, 'reason' => 'GD extension does not support WebP'];
+            return ['supported' => false, 'reason' => 'La extensión GD no soporta WebP'];
         }
         
         // Check for WebP conversion plugins
@@ -339,7 +415,7 @@ class RP_Care_Task_WPO {
             'server_support' => true,
             'plugin_detected' => $detected_webp_plugin,
             'htaccess_rules' => $has_webp_rules,
-            'recommendation' => $detected_webp_plugin ? 'WebP plugin active' : 'Consider installing a WebP plugin'
+            'recommendation' => $detected_webp_plugin ? 'Plugin WebP activo' : 'Considera instalar un plugin de conversión WebP'
         ];
     }
     
@@ -384,13 +460,13 @@ class RP_Care_Task_WPO {
                 return [
                     'available' => true,
                     'connected' => true,
-                    'recommendation' => 'Redis is available and working'
+                    'recommendation' => 'Redis disponible y funcionando'
                 ];
             } else {
                 return [
                     'available' => true,
                     'connected' => false,
-                    'recommendation' => 'Redis is available but not running'
+                    'recommendation' => 'Redis disponible pero no está en ejecución'
                 ];
             }
         } catch (Exception $e) {
@@ -418,13 +494,13 @@ class RP_Care_Task_WPO {
                     'available' => true,
                     'connected' => true,
                     'version' => array_values($version)[0],
-                    'recommendation' => 'Memcached is available and working'
+                    'recommendation' => 'Memcached disponible y funcionando'
                 ];
             } else {
                 return [
                     'available' => true,
                     'connected' => false,
-                    'recommendation' => 'Memcached is available but not running'
+                    'recommendation' => 'Memcached disponible pero no está en ejecución'
                 ];
             }
         } catch (Exception $e) {
@@ -457,7 +533,7 @@ class RP_Care_Task_WPO {
         
         return [
             'plugin_detected' => $detected_cdn,
-            'recommendation' => $detected_cdn ? 'CDN plugin active' : 'Consider setting up a CDN'
+            'recommendation' => $detected_cdn ? 'Plugin CDN activo' : 'Considera configurar un CDN'
         ];
     }
     
@@ -494,7 +570,7 @@ class RP_Care_Task_WPO {
                 'slow_query_log' => $slow_query_log,
                 'query_cache_enabled' => isset($query_cache['query_cache_type']) && $query_cache['query_cache_type']->Value !== 'OFF',
                 'missing_indexes' => $missing_indexes,
-                'recommendations' => count($missing_indexes) > 0 ? 'Database could benefit from additional indexes' : 'Database indexes look good'
+                'recommendations' => count($missing_indexes) > 0 ? 'La base de datos podría beneficiarse de índices adicionales' : 'Los índices de la base de datos están correctos'
             ];
             
         } catch (Exception $e) {
@@ -504,7 +580,7 @@ class RP_Care_Task_WPO {
 
     private static function apply_lscache_presets() {
         if (!defined('LSCWP_V')) {
-            return ['active' => false, 'reason' => 'LiteSpeed Cache not installed'];
+            return ['active' => false, 'reason' => 'LiteSpeed Cache no instalado'];
         }
 
         // Recommended presets for a generic WP/Woo site
@@ -561,3 +637,5 @@ class RP_Care_Task_WPO {
         ];
     }
 }
+
+add_action('rpcare_wpo_after_cwv', ['RP_Care_Task_WPO', 'capture_after_cwv']);

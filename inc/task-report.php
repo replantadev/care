@@ -30,8 +30,8 @@ class RP_Care_Task_Report {
         // Notify hub
         RP_Care_Utils::send_notification(
             'monthly_report_generated',
-            'Monthly Report Generated',
-            "Monthly report generated for $site_url",
+            'Informe mensual generado',
+            "Informe mensual generado para $site_url",
             ['report_id' => $report_id]
         );
         
@@ -65,6 +65,9 @@ class RP_Care_Task_Report {
             'error_404_summary' => self::get_404_summary(),
             'backup_status' => self::get_backup_summary(),
             'external_metrics' => self::get_external_metrics(),
+            'updates_result' => get_option('rpcare_last_update_result', null),
+            'wpo_perf' => get_option('rpcare_wpo_perf', null),
+            'cwv_history' => class_exists('RP_Care_Task_CWV') ? RP_Care_Task_CWV::get_history() : [],
             'recommendations' => self::generate_recommendations()
         ];
         
@@ -85,8 +88,9 @@ class RP_Care_Task_Report {
                 SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as successful_runs,
                 SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) as failed_runs,
                 MAX(created_at) as last_run
-            FROM $table_name 
-            WHERE created_at BETWEEN %s AND %s 
+            FROM $table_name
+            WHERE created_at BETWEEN %s AND %s
+            AND task_type NOT IN ('notification', 'report_generation')
             GROUP BY task_type
             ORDER BY task_type
         ", $start_date, $end_date));
@@ -117,8 +121,29 @@ class RP_Care_Task_Report {
     }
     
     private static function get_performance_metrics() {
+        $psi_mobile = null;
+        $psi_desktop = null;
+        $cwv_last = class_exists('RP_Care_Task_CWV') ? RP_Care_Task_CWV::get_last() : null;
+        if (is_array($cwv_last)) {
+            $psi_mobile  = $cwv_last['mobile']['scores']['performance'] ?? null;
+            $psi_desktop = $cwv_last['desktop']['scores']['performance'] ?? null;
+        }
+
+        // Score real de PageSpeed si existe; si no, estimación local
+        if ($psi_mobile !== null) {
+            $score = $psi_mobile;
+            $score_source = 'PageSpeed Insights (móvil)';
+        } else {
+            $score = RP_Care_Utils::get_performance_score();
+            $score_source = 'estimación local';
+        }
+
         return [
-            'performance_score' => RP_Care_Utils::get_performance_score(),
+            'performance_score' => $score,
+            'score_source' => $score_source,
+            'psi_mobile' => $psi_mobile,
+            'psi_desktop' => $psi_desktop,
+            'cwv_measured_at' => is_array($cwv_last) ? ($cwv_last['measured_at'] ?? null) : null,
             'caching_enabled' => !empty(RP_Care_Utils::detect_caching_plugins()),
             'caching_plugins' => RP_Care_Utils::detect_caching_plugins(),
             'image_optimization' => self::has_image_optimization(),
@@ -202,49 +227,52 @@ class RP_Care_Task_Report {
             $recommendations[] = [
                 'type' => 'security',
                 'priority' => 'high',
-                'title' => 'Enable SSL Certificate',
-                'description' => 'Your site is not using HTTPS. This affects SEO and user trust.'
+                'title' => 'Activar certificado SSL',
+                'description' => 'Tu sitio no usa HTTPS. Esto afecta al SEO y a la confianza de los usuarios.'
             ];
         }
-        
+
         // Caching recommendation
         if (empty(RP_Care_Utils::detect_caching_plugins())) {
             $recommendations[] = [
                 'type' => 'performance',
                 'priority' => 'medium',
-                'title' => 'Install Caching Plugin',
-                'description' => 'A caching plugin can significantly improve your site\'s loading speed.'
+                'title' => 'Instalar plugin de caché',
+                'description' => 'Un plugin de caché puede mejorar significativamente la velocidad de carga del sitio.'
             ];
         }
-        
+
         // SEO plugin recommendation
         if (RP_Care_Utils::detect_seo_plugin() === 'None') {
             $recommendations[] = [
                 'type' => 'seo',
                 'priority' => 'medium',
-                'title' => 'Install SEO Plugin',
-                'description' => 'An SEO plugin helps optimize your content for search engines.'
+                'title' => 'Instalar plugin SEO',
+                'description' => 'Un plugin SEO ayuda a optimizar el contenido para los buscadores.'
             ];
         }
-        
+
         // WordPress version recommendation
         if (!self::is_wp_version_current()) {
             $recommendations[] = [
                 'type' => 'security',
                 'priority' => 'high',
-                'title' => 'Update WordPress',
-                'description' => 'Your WordPress version is outdated. Updates include security fixes.'
+                'title' => 'Actualizar WordPress',
+                'description' => 'Tu versión de WordPress está desactualizada. Las actualizaciones incluyen parches de seguridad.'
             ];
         }
-        
+
         // Performance score recommendation
-        $performance_score = RP_Care_Utils::get_performance_score();
+        $cwv_last = class_exists('RP_Care_Task_CWV') ? RP_Care_Task_CWV::get_last() : null;
+        $performance_score = (is_array($cwv_last) && isset($cwv_last['mobile']['scores']['performance']))
+            ? $cwv_last['mobile']['scores']['performance']
+            : RP_Care_Utils::get_performance_score();
         if ($performance_score < 70) {
             $recommendations[] = [
                 'type' => 'performance',
                 'priority' => 'medium',
-                'title' => 'Improve Site Performance',
-                'description' => 'Your site performance score is below optimal. Consider optimizing images and enabling caching.'
+                'title' => 'Mejorar el rendimiento del sitio',
+                'description' => 'La puntuación de rendimiento está por debajo del nivel óptimo. Considera optimizar imágenes y activar la caché.'
             ];
         }
         
@@ -276,6 +304,27 @@ class RP_Care_Task_Report {
                 .status-good { color: #28a745; }
                 .status-warning { color: #ffc107; }
                 .status-error { color: #dc3545; }
+                .status-info { color: #17a2b8; }
+                .metrics-grid { display: flex; flex-wrap: wrap; gap: 12px; margin: 15px 0; }
+                .metric-card { flex: 1 1 180px; background: #f9f9f9; border: 1px solid #eee; border-radius: 8px; padding: 15px; text-align: center; }
+                .metric-card .metric-value { font-size: 22px; font-weight: bold; }
+                .metric-card .metric-label { font-size: 12px; color: #666; margin-top: 4px; }
+                .wpo-compare { display: flex; align-items: center; justify-content: center; gap: 20px; background: #f0f7f1; border: 1px solid #d4e8d7; border-radius: 8px; padding: 20px; margin: 15px 0; }
+                .wpo-col { text-align: center; }
+                .wpo-col .wpo-num { font-size: 26px; font-weight: bold; }
+                .wpo-col .wpo-cap { font-size: 12px; color: #666; }
+                .wpo-arrow { font-size: 24px; color: <?php echo esc_attr($branding_color); ?>; }
+                .wpo-delta { font-size: 13px; font-weight: bold; }
+                .cwv-bars { margin: 15px 0; }
+                .cwv-bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 12px; }
+                .cwv-bar-date { width: 80px; color: #666; }
+                .cwv-bar-track { flex: 1; background: #eee; border-radius: 4px; height: 14px; overflow: hidden; }
+                .cwv-bar-fill { height: 14px; border-radius: 4px; }
+                .cwv-bar-score { width: 32px; text-align: right; font-weight: bold; }
+                .updates-list { background: #f9f9f9; border: 1px solid #eee; border-radius: 8px; padding: 15px; margin: 15px 0; }
+                .updates-list ul { margin: 8px 0 0 18px; padding: 0; }
+                .updates-list li { margin-bottom: 4px; font-size: 13px; }
+                .url-cell { word-break: break-all; font-size: 12px; }
                 .recommendations { background: #fff3cd; padding: 15px; border-radius: 5px; border-left: 4px solid #ffc107; }
                 .recommendation { margin-bottom: 10px; }
                 .priority-high { color: #dc3545; font-weight: bold; }
@@ -320,7 +369,7 @@ class RP_Care_Task_Report {
                     <tbody>
                         <?php foreach ($data['tasks_summary'] as $task_type => $summary): ?>
                         <tr>
-                            <td><?php echo esc_html(ucfirst(str_replace('_', ' ', $task_type))); ?></td>
+                            <td><?php echo esc_html(self::task_label($task_type)); ?></td>
                             <td><?php echo esc_html($summary['total_runs']); ?></td>
                             <td class="status-good"><?php echo esc_html($summary['successful_runs']); ?></td>
                             <td class="status-error"><?php echo esc_html($summary['failed_runs']); ?></td>
@@ -338,37 +387,140 @@ class RP_Care_Task_Report {
                 <div>
                     <div class="metric">
                         <div class="metric-value <?php echo $data['security_status']['ssl_enabled'] ? 'status-good' : 'status-error'; ?>">
-                            <?php echo $data['security_status']['ssl_enabled'] ? '' : ''; ?>
+                            <?php echo $data['security_status']['ssl_enabled'] ? '&#10004;' : '&#10006;'; ?>
                         </div>
                         <div class="metric-label">SSL</div>
                     </div>
                     <div class="metric">
                         <div class="metric-value <?php echo $data['security_status']['wp_version_current'] ? 'status-good' : 'status-warning'; ?>">
-                            <?php echo $data['security_status']['wp_version_current'] ? '' : '!'; ?>
+                            <?php echo $data['security_status']['wp_version_current'] ? '&#10004;' : '&#9888;'; ?>
                         </div>
                         <div class="metric-label">WP Actualizado</div>
                     </div>
                     <div class="metric">
                         <div class="metric-value <?php echo $data['security_status']['admin_user_secure'] ? 'status-good' : 'status-warning'; ?>">
-                            <?php echo $data['security_status']['admin_user_secure'] ? '' : '!'; ?>
+                            <?php echo $data['security_status']['admin_user_secure'] ? '&#10004;' : '&#9888;'; ?>
                         </div>
                         <div class="metric-label">Usuario Admin</div>
                     </div>
                 </div>
                 
                 <h2>Rendimiento</h2>
-                <div>
-                    <div class="metric">
-                        <div class="metric-value status-good"><?php echo esc_html($data['performance_metrics']['performance_score']); ?>%</div>
-                        <div class="metric-label">Puntuación</div>
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <?php $ps = (int) $data['performance_metrics']['performance_score'];
+                              $ps_class = $ps >= 90 ? 'status-good' : ($ps >= 50 ? 'status-warning' : 'status-error'); ?>
+                        <div class="metric-value <?php echo $ps_class; ?>"><?php echo esc_html($ps); ?></div>
+                        <div class="metric-label">Puntuación (<?php echo esc_html($data['performance_metrics']['score_source']); ?>)</div>
                     </div>
-                    <div class="metric">
+                    <?php if ($data['performance_metrics']['psi_desktop'] !== null): ?>
+                    <div class="metric-card">
+                        <?php $pd = (int) $data['performance_metrics']['psi_desktop'];
+                              $pd_class = $pd >= 90 ? 'status-good' : ($pd >= 50 ? 'status-warning' : 'status-error'); ?>
+                        <div class="metric-value <?php echo $pd_class; ?>"><?php echo esc_html($pd); ?></div>
+                        <div class="metric-label">PageSpeed escritorio</div>
+                    </div>
+                    <?php endif; ?>
+                    <div class="metric-card">
                         <div class="metric-value <?php echo $data['performance_metrics']['caching_enabled'] ? 'status-good' : 'status-warning'; ?>">
-                            <?php echo $data['performance_metrics']['caching_enabled'] ? '' : ''; ?>
+                            <?php echo $data['performance_metrics']['caching_enabled'] ? '&#10004;' : '&#9888;'; ?>
                         </div>
                         <div class="metric-label">Caché</div>
                     </div>
+                    <div class="metric-card">
+                        <div class="metric-value status-info"><?php echo esc_html($data['performance_metrics']['database_size']); ?></div>
+                        <div class="metric-label">Base de datos</div>
+                    </div>
                 </div>
+
+                <?php
+                $wpo = $data['wpo_perf'] ?? null;
+                if (is_array($wpo) && (!empty($wpo['before']['response_ms']) || $wpo['before']['psi_mobile'] !== null)):
+                    $b_ms = $wpo['before']['response_ms'] ?? null;
+                    $a_ms = $wpo['after']['response_ms'] ?? null;
+                    $b_psi = $wpo['before']['psi_mobile'] ?? null;
+                    $a_psi = $wpo['after']['psi_mobile'] ?? null;
+                ?>
+                <h2>Optimización WPO: Antes &rarr; Después</h2>
+                <div class="wpo-compare">
+                    <?php if ($b_ms !== null && $a_ms !== null): ?>
+                    <div class="wpo-col">
+                        <div class="wpo-num status-warning"><?php echo esc_html($b_ms); ?> ms</div>
+                        <div class="wpo-cap">Respuesta antes</div>
+                    </div>
+                    <div class="wpo-arrow">&rarr;</div>
+                    <div class="wpo-col">
+                        <div class="wpo-num <?php echo $a_ms <= $b_ms ? 'status-good' : 'status-warning'; ?>"><?php echo esc_html($a_ms); ?> ms</div>
+                        <div class="wpo-cap">Respuesta después</div>
+                        <?php if ($b_ms > 0): $delta = round((($b_ms - $a_ms) / $b_ms) * 100); ?>
+                        <div class="wpo-delta <?php echo $delta >= 0 ? 'status-good' : 'status-warning'; ?>">
+                            <?php echo $delta >= 0 ? '-' . $delta . '% más rápido' : '+' . abs($delta) . '%'; ?>
+                        </div>
+                        <?php endif; ?>
+                    </div>
+                    <?php endif; ?>
+                    <?php if ($b_psi !== null && $a_psi !== null): ?>
+                    <div class="wpo-col">
+                        <div class="wpo-num status-warning"><?php echo esc_html($b_psi); ?></div>
+                        <div class="wpo-cap">PageSpeed antes</div>
+                    </div>
+                    <div class="wpo-arrow">&rarr;</div>
+                    <div class="wpo-col">
+                        <div class="wpo-num <?php echo $a_psi >= $b_psi ? 'status-good' : 'status-warning'; ?>"><?php echo esc_html($a_psi); ?></div>
+                        <div class="wpo-cap">PageSpeed después</div>
+                    </div>
+                    <?php elseif (!empty($wpo['psi_pending'])): ?>
+                    <div class="wpo-col">
+                        <div class="wpo-cap">Medición PageSpeed posterior en curso&hellip;</div>
+                    </div>
+                    <?php endif; ?>
+                </div>
+                <p style="font-size:11px;color:#888;">Medido el <?php echo esc_html($wpo['measured_at'] ?? ''); ?> tras la última optimización WPO.</p>
+                <?php endif; ?>
+
+                <?php
+                $history = $data['cwv_history'] ?? [];
+                if (is_array($history) && count($history) >= 2):
+                    $history_slice = array_slice($history, -8);
+                ?>
+                <h2>Evolución Core Web Vitals (móvil)</h2>
+                <div class="cwv-bars">
+                    <?php foreach ($history_slice as $entry):
+                        $score = isset($entry['mobile']) ? (int) $entry['mobile'] : null;
+                        if ($score === null) continue;
+                        $color = $score >= 90 ? '#28a745' : ($score >= 50 ? '#ffc107' : '#dc3545');
+                    ?>
+                    <div class="cwv-bar-row">
+                        <span class="cwv-bar-date"><?php echo esc_html($entry['date'] ?? ''); ?></span>
+                        <span class="cwv-bar-track"><span class="cwv-bar-fill" style="width: <?php echo esc_attr($score); ?>%; background: <?php echo esc_attr($color); ?>;"></span></span>
+                        <span class="cwv-bar-score" style="color: <?php echo esc_attr($color); ?>;"><?php echo esc_html($score); ?></span>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+                <?php endif; ?>
+
+                <?php
+                $upd = $data['updates_result'] ?? null;
+                if (is_array($upd) && isset($upd['actualizados'])):
+                ?>
+                <h2>Actualizaciones Realizadas</h2>
+                <div class="updates-list">
+                    <strong><?php echo (int) $upd['actualizados']; ?> elemento(s) actualizado(s)</strong>
+                    <?php if (!empty($upd['backup_previo'])): ?>
+                        <span class="status-good">&#10004; con backup previo</span>
+                    <?php endif; ?>
+                    <?php if (!empty($upd['lista'])): ?>
+                    <ul>
+                        <?php foreach (explode(' | ', $upd['lista']) as $item): ?>
+                        <li><?php echo esc_html($item); ?></li>
+                        <?php endforeach; ?>
+                    </ul>
+                    <?php endif; ?>
+                    <?php if (!empty($upd['errores'])): ?>
+                    <p class="status-error">Errores: <?php echo esc_html($upd['errores']); ?></p>
+                    <?php endif; ?>
+                </div>
+                <?php endif; ?>
                 
                 <?php if (!empty($data['error_404_summary']['total_404s'])): ?>
                 <h2>Errores 404</h2>
@@ -386,6 +538,28 @@ class RP_Care_Task_Report {
                         <div class="metric-label">Resueltos</div>
                     </div>
                 </div>
+                <?php if (!empty($data['error_404_summary']['top_404s'])): ?>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>URL</th>
+                            <th>Hits</th>
+                            <th>Estado</th>
+                            <th>Redirección sugerida</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($data['error_404_summary']['top_404s'] as $row): ?>
+                        <tr>
+                            <td class="url-cell"><?php echo esc_html($row->url); ?></td>
+                            <td><?php echo esc_html($row->hits); ?></td>
+                            <td><?php echo $row->status === 'resolved' ? '<span class="status-good">Resuelto</span>' : '<span class="status-warning">Pendiente</span>'; ?></td>
+                            <td class="url-cell"><?php echo $row->suggested_redirect ? esc_html($row->suggested_redirect) : '&mdash;'; ?></td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+                <?php endif; ?>
                 <?php endif; ?>
 
                 <?php
@@ -426,7 +600,8 @@ class RP_Care_Task_Report {
                 <div class="recommendations">
                     <?php foreach ($data['recommendations'] as $rec): ?>
                     <div class="recommendation">
-                        <span class="priority-<?php echo esc_attr($rec['priority']); ?>">[<?php echo esc_html(strtoupper($rec['priority'])); ?>]</span>
+                        <?php $prio_labels = ['high' => 'ALTA', 'medium' => 'MEDIA', 'low' => 'BAJA']; ?>
+                        <span class="priority-<?php echo esc_attr($rec['priority']); ?>">[<?php echo esc_html($prio_labels[$rec['priority']] ?? strtoupper($rec['priority'])); ?>]</span>
                         <strong><?php echo esc_html($rec['title']); ?></strong><br>
                         <?php echo esc_html($rec['description']); ?>
                     </div>
@@ -498,6 +673,31 @@ class RP_Care_Task_Report {
     }
     
     // Helper functions
+    private static function task_label($type) {
+        $labels = [
+            'updates' => 'Actualizaciones',
+            'update' => 'Actualizaciones',
+            'backup' => 'Copias de seguridad',
+            'backups' => 'Copias de seguridad',
+            'security' => 'Seguridad',
+            'wpo' => 'Optimización WPO',
+            'seo' => 'SEO',
+            '404' => 'Errores 404',
+            '404_check' => 'Errores 404',
+            'cwv' => 'Core Web Vitals',
+            'health' => 'Salud del sitio',
+            'health_check' => 'Salud del sitio',
+            'database' => 'Base de datos',
+            'database_optimization' => 'Base de datos',
+            'images' => 'Imágenes',
+            'broken_links' => 'Enlaces rotos',
+            'uptime' => 'Disponibilidad',
+            'report_generation' => 'Informes',
+            'notification' => 'Notificaciones',
+        ];
+        return $labels[$type] ?? ucfirst(str_replace('_', ' ', $type));
+    }
+
     private static function is_wp_version_current() {
         $updates = get_site_transient('update_core');
         return empty($updates) || empty($updates->updates) || $updates->updates[0]->response !== 'upgrade';
@@ -554,7 +754,7 @@ class RP_Care_Task_Report {
             WHERE table_schema = '" . DB_NAME . "'
         ");
         
-        return $size ? $size . ' MB' : 'Unknown';
+        return $size ? $size . ' MB' : 'Desconocido';
     }
     
     private static function get_media_library_size() {

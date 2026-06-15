@@ -42,7 +42,7 @@ jobs:
           zip -r "$GITHUB_WORKSPACE/replanta-care-${VERSION}.zip" replanta-care/
           echo "Built replanta-care-${VERSION}.zip"
 
-      - name: Create GitHub Release
+      - name: Create or update GitHub Release
         id: release
         uses: softprops/action-gh-release@v2
         with:
@@ -50,6 +50,8 @@ jobs:
           name: Replanta Care v${{ steps.meta.outputs.version }}
           files: replanta-care-${{ steps.meta.outputs.version }}.zip
           make_latest: true
+          fail_on_unmatched_files: true
+          overwrite: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -60,9 +62,7 @@ jobs:
           VERSION=${{ steps.meta.outputs.version }}
 
           if [ -z "$HUB_DEPLOY_TOKEN" ]; then
-            echo "ERROR: HUB_DEPLOY_TOKEN secret not configured in GitHub Actions"
-            echo "Go to: github.com/replantadev/care/settings/secrets/actions"
-            echo "Add secret: HUB_DEPLOY_TOKEN = jJVfAFpbqF4oPKpdApzpln9GN2QaWoW4"
+            echo "ERROR: HUB_DEPLOY_TOKEN secret not configured"
             exit 1
           fi
 

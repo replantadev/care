@@ -1,5 +1,20 @@
 # Changelog — Replanta Care
 
+## [1.12.0]
+
+- ClientPortal rediseñado: panel orientado al cliente con lenguaje natural (sin jerga técnica)
+- Barra de estado con mensaje claro ("Tu sitio está en perfectas condiciones") y dominio destacado
+- Franja de estadísticas: actualizaciones, copias de seguridad, puntuación de salud, incidencias del mes
+- Tarjeta de Seguridad: vulnerabilidades, SSL y estado del mantenimiento automatizado
+- Tarjeta de Actualizaciones: historial de plugins sin puntuaciones de riesgo técnico
+- Tarjeta de Copias de seguridad: última copia con fecha legible, contador mensual, Backblaze B2
+- Timeline en lenguaje natural: "WooCommerce actualizado correctamente", no logs técnicos
+- Pie con plan contratado + CTA de soporte (info@replanta.dev) + enlace a configuración técnica
+- Fix: texto negro sobre fondo oscuro en el hero — todos los colores con !important para superar WP admin CSS
+- Fix: "Hub conectado" → "Conectado a Replanta"
+- Fix: páginas de configuración devolvían "no permissions" tras migrar URL (options-general.php → admin.php)
+- Hub: 2.2.0 · Care: 1.12.0
+
 ## [1.11.0]
 
 - ClientPortal: nuevo menú top-level "Replanta Care" con submenús "Mi Panel" y "Configuración"

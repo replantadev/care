@@ -3,7 +3,7 @@
  * Plugin Name: Replanta Care
  * Plugin URI: https://replanta.dev
  * Description: Plugin de mantenimiento WordPress automático para clientes de Replanta con integración Hub
- * Version: 1.11.0
+ * Version: 1.12.0
  * Author: Replanta
  * Author URI: https://replanta.dev
  * License: GPL v2 or later
@@ -17,7 +17,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('RPCARE_VERSION', '1.11.0');
+define('RPCARE_VERSION', '1.12.0');
 define('RPCARE_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('RPCARE_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('RPCARE_PLUGIN_FILE', __FILE__);
@@ -293,7 +293,7 @@ class ReplantaCare {
         $wp_admin_bar->add_menu([
             'id' => 'replanta-care',
             'title' => '<span class="ab-icon" style="background: url(' . RPCARE_PLUGIN_URL . 'assets/img/ico.png) center/16px no-repeat; width: 20px; height: 20px; margin-top: 6px;"></span><span class="ab-label">Mantenimiento Activo</span><span class="rpc-ab-dot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' . $dot_color . ';box-shadow:' . $dot_shadow . ';margin-left:8px;vertical-align:middle;"></span>',
-            'href' => admin_url('options-general.php?page=replanta-care'),
+            'href' => admin_url('admin.php?page=replanta-care-portal'),
             'meta' => [
                 'title' => 'Replanta Care - Mantenimiento Automático'
             ]
@@ -336,7 +336,7 @@ class ReplantaCare {
             'parent' => 'replanta-care',
             'id' => 'replanta-care-dashboard',
             'title' => '<span class="ab-icon" style="background: url(' . RPCARE_PLUGIN_URL . 'assets/img/ico.png) center/16px no-repeat;width:16px;height:16px;display:inline-block;vertical-align:-3px;margin-right:6px;"></span>Abrir panel de mantenimiento',
-            'href' => admin_url('options-general.php?page=replanta-care'),
+            'href' => admin_url('admin.php?page=replanta-care-portal'),
             'meta' => [
                 'class' => 'rpcare-dashboard-link'
             ]

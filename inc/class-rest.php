@@ -134,6 +134,26 @@ class RP_Care_REST {
                     'required' => false,
                     'type'     => 'string',
                 ],
+                'b2_key_id' => [
+                    'required' => false,
+                    'type'     => 'string',
+                ],
+                'b2_app_key' => [
+                    'required' => false,
+                    'type'     => 'string',
+                ],
+                'b2_bucket_id' => [
+                    'required' => false,
+                    'type'     => 'string',
+                ],
+                'b2_bucket_name' => [
+                    'required' => false,
+                    'type'     => 'string',
+                ],
+                'portal_cache' => [
+                    'required' => false,
+                    'type'     => 'object',
+                ],
             ]
         ]);
         
@@ -557,18 +577,29 @@ class RP_Care_REST {
             ];
         }
 
+        // Credenciales Backblaze B2 empujadas por Hub
+        $b2_saved = $this->saveB2Config($request);
+        if (!empty($b2_saved)) {
+            $updated['b2_config'] = $b2_saved;
+        }
+
+        // Portal cache empujado por Hub tras ciclos de actualización y checks diarios
+        $portal_cache = $request->get_param('portal_cache');
+        if (!empty($portal_cache)) {
+            $portal_cache['pushed_at'] = current_time('mysql');
+            update_option('rpcare_portal_cache', $portal_cache, false);
+            $updated['portal_cache'] = 'saved';
+        }
+
         // Hub can update its own URL remotely (e.g. on migration)
-        $new_hub_url = $request->get_param('hub_url');
+        $new_hub_url = esc_url_raw(rtrim((string) $request->get_param('hub_url'), '/'));
         if ($new_hub_url) {
-            $clean = esc_url_raw(rtrim($new_hub_url, '/'));
-            if ($clean) {
-                $opts = get_option('rpcare_options', []);
-                $opts['hub_url'] = $clean;
-                update_option('rpcare_options', $opts);
-                delete_transient('rpcare_plan_cache');
-                delete_transient('rpcare_hub_backoff');
-                $updated['hub_url'] = $clean;
-            }
+            $opts             = get_option('rpcare_options', []);
+            $opts['hub_url']  = $new_hub_url;
+            update_option('rpcare_options', $opts);
+            delete_transient('rpcare_plan_cache');
+            delete_transient('rpcare_hub_backoff');
+            $updated['hub_url'] = $new_hub_url;
         }
 
         RP_Care_Utils::log('config_update', 'info', 'Configuration updated via API', $updated);
@@ -580,6 +611,18 @@ class RP_Care_REST {
         ];
     }
     
+    private function saveB2Config($request) {
+        $saved = [];
+        foreach (['b2_key_id', 'b2_app_key', 'b2_bucket_id', 'b2_bucket_name'] as $field) {
+            $value = $request->get_param($field);
+            if ($value !== null && $value !== '') {
+                update_option('rpcare_' . $field, sanitize_text_field($value));
+                $saved[] = $field;
+            }
+        }
+        return $saved;
+    }
+
     public function get_schedule($request) {
         $scheduler = new RP_Care_Scheduler(RP_Care_Plan::get_current());
         $next_runs = $scheduler->get_next_runs();

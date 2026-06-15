@@ -37,9 +37,10 @@ class RP_Care_Settings_Page {
     }
     
     public function add_admin_menu() {
-        add_options_page(
-            'Replanta Care',
-            'Replanta Care',
+        add_submenu_page(
+            'replanta-care-portal',
+            'Configuración — Replanta Care',
+            'Configuración',
             'manage_options',
             'replanta-care',
             [$this, 'settings_page']

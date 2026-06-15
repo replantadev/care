@@ -3,7 +3,7 @@
  * Plugin Name: Replanta Care
  * Plugin URI: https://replanta.dev
  * Description: Plugin de mantenimiento WordPress automático para clientes de Replanta con integración Hub
- * Version: 1.9.0
+ * Version: 1.11.0
  * Author: Replanta
  * Author URI: https://replanta.dev
  * License: GPL v2 or later
@@ -17,7 +17,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('RPCARE_VERSION', '1.9.0');
+define('RPCARE_VERSION', '1.11.0');
 define('RPCARE_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('RPCARE_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('RPCARE_PLUGIN_FILE', __FILE__);
@@ -142,7 +142,8 @@ class ReplantaCare {
             'inc/integrations-cache.php',
             'inc/integrations-backup.php',
             
-            // Admin page
+            // Admin pages (portal must load before settings-page registers its submenu)
+            'inc/class-client-portal.php',
             'inc/settings-page.php'
         ];
         
@@ -185,9 +186,14 @@ class ReplantaCare {
                 new RP_Care_Task_404();
             }
             
-            // Initialize admin settings page
-            if (is_admin() && class_exists('RP_Care_Settings_Page')) {
-                RP_Care_Settings_Page::get_instance();
+            // Initialize client portal + admin settings page
+            if (is_admin()) {
+                if (class_exists('RP_Care_Client_Portal')) {
+                    RP_Care_Client_Portal::get_instance();
+                }
+                if (class_exists('RP_Care_Settings_Page')) {
+                    RP_Care_Settings_Page::get_instance();
+                }
             }
         } catch (Exception $e) {
             error_log('Replanta Care: Component initialization error - ' . $e->getMessage());

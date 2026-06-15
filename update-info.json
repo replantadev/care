@@ -1,14 +1,14 @@
 {
-    "name": "Replanta Care",
-    "version": "1.7.2",
-    "download_url": "https://sitios.replanta.dev/wp-content/uploads/replanta-updates/replanta-care-1.7.2.zip",
-    "author": "Replanta",
-    "author_homepage": "https://replanta.dev",
-    "requires": "6.0",
-    "tested": "6.7",
-    "requires_php": "7.4",
-    "sections": {
-        "description": "Plugin de mantenimiento automático para clientes de Replanta.",
-        "changelog": "<h4>1.7.2</h4><ul><li>Fix: REST ping/auth con try/catch para evitar bloqueos</li></ul><h4>1.7.1</h4><ul><li>Fix: token con validez 1 año + regeneración AJAX</li></ul><h4>1.7.0</h4><ul><li>Feat: backup antes de actualizar + rollback automático</li></ul><h4>1.6.0</h4><ul><li>Migración WP Cron → Action Scheduler</li></ul>"
-    }
+    "name":  "Replanta Care",
+    "version":  "1.11.0",
+    "download_url":  "https://sitios.replanta.dev/wp-content/uploads/replanta-updates/replanta-care-1.11.0.zip",
+    "author":  "Replanta",
+    "author_homepage":  "https://replanta.net/plugins",
+    "requires":  "6.0",
+    "tested":  "6.7",
+    "requires_php":  "7.4",
+    "sections":  {
+                     "description":  "Plugin de mantenimiento automático para clientes de Replanta. Gestiona actualizaciones con evaluación de riesgo IA, backups en Backblaze B2, seguridad y reportes antes/después.",
+                     "changelog":  "\u003ch4\u003e1.11.0\u003c/h4\u003e\u003cul\u003e\u003cli\u003eClientPortal: panel de cliente integrado en WP admin con datos en tiempo real\u003c/li\u003e\u003cli\u003eMenú top-level Replanta Care con Mi Panel y Configuración\u003c/li\u003e\u003cli\u003eHub sincroniza datos del portal tras cada ciclo de actualizaciones\u003c/li\u003e\u003c/ul\u003e\u003ch4\u003e1.10.0\u003c/h4\u003e\u003cul\u003e\u003cli\u003eBackups unificados en Backblaze B2 para todos los planes\u003c/li\u003e\u003cli\u003eRisk Scorer con Claude AI — evaluación de riesgo antes de actualizar\u003c/li\u003e\u003cli\u003eDelta Reporter — snapshots pre/post ciclo de mantenimiento\u003c/li\u003e\u003cli\u003eSmartUpdates mejorado: backup Care REST pre-update + rollback WP Toolkit\u003c/li\u003e\u003cli\u003eCare /config acepta credenciales B2 desde Hub\u003c/li\u003e\u003c/ul\u003e\u003ch4\u003e1.9.0\u003c/h4\u003e\u003cul\u003e\u003cli\u003eMejoras de estabilidad y compatibilidad con WordPress 6.7\u003c/li\u003e\u003cli\u003eSistema de reportes rediseñado con métricas de salud del sitio\u003c/li\u003e\u003cli\u003eIntegración Cloudflare mejorada con purgado selectivo de caché\u003c/li\u003e\u003cli\u003eDashboard widget actualizado con gradientes por plan\u003c/li\u003e\u003c/ul\u003e\u003ch4\u003e1.8.x\u003c/h4\u003e\u003cul\u003e\u003cli\u003eEscaneo de seguridad ampliado con detección de cambios en archivos críticos\u003c/li\u003e\u003cli\u003eDetección de anomalías de tráfico (plan Ecosistema)\u003c/li\u003e\u003c/ul\u003e\u003ch4\u003e1.7.x\u003c/h4\u003e\u003cul\u003e\u003cli\u003eBackup automático antes de aplicar actualizaciones\u003c/li\u003e\u003cli\u003eRollback automático si el health check post-actualización falla\u003c/li\u003e\u003cli\u003eToken Hub con validez 1 año y regeneración AJAX desde admin\u003c/li\u003e\u003c/ul\u003e"
+                 }
 }

@@ -213,8 +213,8 @@ class RP_Care_Dashboard {
             
             <!-- Footer -->
             <div class="rpcare-footer">
-                <a href="<?php echo esc_url(admin_url('options-general.php?page=replanta-care')); ?>" class="rpcare-link">
-                    Ver configuración completa
+                <a href="<?php echo esc_url(admin_url('admin.php?page=replanta-care-portal')); ?>" class="rpcare-link">
+                    Ver mi panel completo
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <line x1="5" y1="12" x2="19" y2="12"/>
                         <polyline points="12,5 19,12 12,19"/>

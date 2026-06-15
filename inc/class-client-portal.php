@@ -2,13 +2,12 @@
 /**
  * Client Portal — Panel de cliente de Replanta Care.
  *
- * Registra un menú top-level "Replanta Care" con dos submenús:
- *   · Mi Panel    — dashboard de datos orientado al cliente
- *   · Configuración — la página de ajustes existente
+ * Menú top-level "Replanta Care" (posición 59) con dos submenús:
+ *   · Mi Panel    — dashboard orientado al cliente (este archivo)
+ *   · Configuración — ajustes técnicos (settings-page.php)
  *
- * Los datos se leen de opciones locales (rpcare_*) y del cache
- * empujado por Hub (rpcare_portal_cache). Sin llamadas externas
- * en el render — carga instantánea.
+ * Datos: opciones locales (rpcare_*) + rpcare_portal_cache empujado por Hub.
+ * Sin llamadas externas en render — carga instantánea.
  */
 
 if (!defined('ABSPATH')) {
@@ -19,7 +18,6 @@ class RP_Care_Client_Portal {
 
     private static $instance = null;
 
-    // SVG hoja — base64 para icono del menú admin (monocromático, color adaptado por WP)
     const MENU_ICON = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjYTdhYWFkIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTExIDIwQTcgNyAwIDAgMSA5IDE5QzcgMTcgMyAxNCAzIDloMGE1IDUgMCAwIDEgNS01aDFhNyA3IDAgMCAxIDYgNGwxIDJhMyAzIDAgMCAxIDMgM2gwYTMgMyAwIDAgMS0zIDNoLTFsLTEgM2EzIDMgMCAwIDEtMyAxeiIvPjxwYXRoIGQ9Ik0xMiAxMkw5IDE1Ii8+PC9zdmc+';
 
     public static function get_instance() {
@@ -31,7 +29,6 @@ class RP_Care_Client_Portal {
 
     private function __construct() {
         add_action('admin_menu', [$this, 'register_menus'], 5);
-        add_action('admin_enqueue_scripts', [$this, 'enqueue_assets']);
     }
 
     // -------------------------------------------------------------------------
@@ -39,7 +36,6 @@ class RP_Care_Client_Portal {
     // -------------------------------------------------------------------------
 
     public function register_menus() {
-        // Top-level — Mi Panel (portal)
         add_menu_page(
             'Replanta Care',
             'Replanta Care',
@@ -50,7 +46,6 @@ class RP_Care_Client_Portal {
             59
         );
 
-        // Submenu: Mi Panel (mismo que el padre — evita duplicado en el title)
         add_submenu_page(
             'replanta-care-portal',
             'Mi Panel — Replanta Care',
@@ -59,21 +54,7 @@ class RP_Care_Client_Portal {
             'replanta-care-portal',
             [$this, 'render_portal']
         );
-
-        // Submenu: Configuración — apunta al slug existente de settings-page.php
-        // settings-page.php lo registrará como submenu bajo este padre
-        // (nada que registrar aquí — settings-page.php lo hace en prioridad 10)
-    }
-
-    // -------------------------------------------------------------------------
-    // Assets — CSS inline, sin ficheros extra
-    // -------------------------------------------------------------------------
-
-    public function enqueue_assets($hook) {
-        if ($hook !== 'toplevel_page_replanta-care-portal') {
-            return;
-        }
-        // No external deps — todo inline en render_portal()
+        // "Configuración" la registra settings-page.php en prioridad 10
     }
 
     // -------------------------------------------------------------------------
@@ -82,217 +63,217 @@ class RP_Care_Client_Portal {
 
     public function render_portal() {
         $d = $this->collect_data();
+        $this->render_css();
         ?>
         <div class="rcp-wrap">
-        <?php $this->render_portal_css(); ?>
 
-        <?php $this->render_hero($d); ?>
-        <?php $this->render_grid($d); ?>
-        <?php $this->render_timeline($d); ?>
-        <?php $this->render_tech_bar($d); ?>
+            <?php $this->render_status_bar($d); ?>
+            <?php $this->render_stats_strip($d); ?>
+            <?php $this->render_cards($d); ?>
+            <?php $this->render_timeline($d); ?>
+            <?php $this->render_footer_row($d); ?>
 
-        <p class="rcp-footer-note">
-            Replanta Care v<?php echo esc_html(RPCARE_VERSION); ?>
-            <?php if ($d['cache_age_label']): ?>
-            · Datos Hub: <?php echo esc_html($d['cache_age_label']); ?>
-            <?php endif; ?>
-            · <a href="<?php echo esc_url(admin_url('admin.php?page=replanta-care')); ?>">Configuración</a>
-        </p>
         </div>
         <?php
     }
 
     // -------------------------------------------------------------------------
-    // Secciones HTML
+    // Secciones
     // -------------------------------------------------------------------------
 
-    private function render_hero($d) {
-        $status_class = $d['overall_ok'] ? 'ok' : 'warn';
-        $status_text  = $d['overall_ok'] ? 'Todo en orden' : 'Requiere atención';
+    private function render_status_bar($d) {
+        $ok   = $d['overall_ok'];
+        $icon = $ok ? '&#10003;' : '&#9888;';
+        $msg  = $ok ? 'Tu sitio est&aacute; en perfectas condiciones' : 'Hay algo que requiere atenci&oacute;n';
+        $cls  = $ok ? 'rcp-st-ok' : 'rcp-st-warn';
         ?>
-        <div class="rcp-hero">
-            <div class="rcp-hero-brand">
+        <div class="rcp-status-bar <?php echo $cls; ?>">
+            <div class="rcp-st-left">
+                <span class="rcp-st-icon"><?php echo $icon; ?></span>
+                <div>
+                    <p class="rcp-st-msg"><?php echo $msg; ?></p>
+                    <p class="rcp-st-domain"><?php echo esc_html($d['domain']); ?></p>
+                </div>
+            </div>
+            <div class="rcp-st-right">
                 <span class="rcp-plan-badge rcp-plan-<?php echo esc_attr($d['plan']); ?>">
                     <?php echo esc_html($d['plan_name']); ?>
                 </span>
-                <h1 class="rcp-hero-title">Panel de mantenimiento</h1>
-                <p class="rcp-hero-domain"><?php echo esc_html(parse_url(home_url(), PHP_URL_HOST)); ?></p>
-            </div>
-
-            <div class="rcp-hero-stats">
-                <div class="rcp-hero-stat">
-                    <span class="rcp-stat-num"><?php echo intval($d['monthly']['updates_ok'] ?? 0); ?></span>
-                    <span class="rcp-stat-label">actualizaciones<br>este mes</span>
-                </div>
-                <div class="rcp-hero-stat">
-                    <span class="rcp-stat-num"><?php echo intval($d['backups_this_month']); ?></span>
-                    <span class="rcp-stat-label">backups<br>confirmados</span>
-                </div>
-                <div class="rcp-hero-stat">
-                    <span class="rcp-stat-num rcp-score-num"><?php echo intval($d['health_score']); ?></span>
-                    <span class="rcp-stat-label">salud<br>del sitio</span>
-                </div>
-            </div>
-
-            <div class="rcp-status-pill rcp-status-<?php echo $status_class; ?>">
-                <span class="rcp-status-dot"></span>
-                <?php echo esc_html($status_text); ?>
+                <?php if ($d['hub_connected']): ?>
+                <span class="rcp-connected-pill">
+                    <span class="rcp-conn-dot"></span>
+                    Conectado a Replanta
+                </span>
+                <?php endif; ?>
             </div>
         </div>
         <?php
     }
 
-    private function render_grid($d) {
+    private function render_stats_strip($d) {
+        $stats = [
+            [
+                'num'   => $d['monthly']['updates_ok'] ?? 0,
+                'label' => 'actualizaciones',
+                'sub'   => 'aplicadas este mes',
+                'warn'  => false,
+            ],
+            [
+                'num'   => $d['backups_this_month'],
+                'label' => 'copias de seguridad',
+                'sub'   => 'realizadas este mes',
+                'warn'  => $d['backups_this_month'] === 0,
+            ],
+            [
+                'num'   => $d['health_score'],
+                'label' => 'puntuaci&oacute;n de salud',
+                'sub'   => esc_html($d['health_label']),
+                'warn'  => $d['health_score'] < 70,
+            ],
+            [
+                'num'   => $d['incidents'],
+                'label' => 'incidencias',
+                'sub'   => 'detectadas este mes',
+                'warn'  => $d['incidents'] > 0,
+            ],
+        ];
         ?>
-        <div class="rcp-grid">
+        <div class="rcp-stats-strip">
+            <?php foreach ($stats as $s): ?>
+            <div class="rcp-stat-box<?php echo $s['warn'] ? ' rcp-stat-warn' : ''; ?>">
+                <span class="rcp-stat-big"><?php echo intval($s['num']); ?></span>
+                <span class="rcp-stat-lbl"><?php echo $s['label']; ?></span>
+                <span class="rcp-stat-sub"><?php echo $s['sub']; ?></span>
+            </div>
+            <?php endforeach; ?>
+        </div>
+        <?php
+    }
 
-            <?php /* ── COL 1: Actualizaciones ── */ ?>
+    private function render_cards($d) {
+        ?>
+        <div class="rcp-cards">
+
             <div class="rcp-card">
-                <h2 class="rcp-card-title">
+                <h2 class="rcp-card-h">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                    Seguridad y protecci&oacute;n
+                </h2>
+                <ul class="rcp-check-list">
+                    <?php foreach ($d['security_checks'] as $chk): ?>
+                    <li class="rcp-chk rcp-chk-<?php echo $chk['ok'] ? 'ok' : 'warn'; ?>">
+                        <span class="rcp-chk-ico"><?php echo $chk['ok'] ? '&#10003;' : '&#9888;'; ?></span>
+                        <div>
+                            <span class="rcp-chk-lbl"><?php echo esc_html($chk['label']); ?></span>
+                            <?php if ($chk['detail']): ?>
+                            <span class="rcp-chk-detail"><?php echo esc_html($chk['detail']); ?></span>
+                            <?php endif; ?>
+                        </div>
+                    </li>
+                    <?php endforeach; ?>
+                </ul>
+            </div>
+
+            <div class="rcp-card">
+                <h2 class="rcp-card-h">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-                    Actualizaciones
+                    Actualizaciones aplicadas
                 </h2>
 
                 <?php if (!empty($d['update_history'])): ?>
                 <ul class="rcp-update-list">
-                    <?php foreach (array_slice($d['update_history'], 0, 6) as $entry):
+                    <?php foreach (array_slice($d['update_history'], 0, 5) as $entry):
                         $ok   = ($entry['event_type'] ?? '') === 'update_completed';
-                        $risk = $d['risk_map'][$entry['data']['plugin_slug'] ?? ''] ?? null;
-                        $rl   = $this->risk_level($risk);
+                        $name = $entry['data']['plugin_name'] ?? ($entry['data']['type'] ?? 'Actualizaci&oacute;n');
                     ?>
-                    <li class="rcp-update-item rcp-update-<?php echo $ok ? 'ok' : 'fail'; ?>">
-                        <span class="rcp-update-icon"><?php echo $ok ? '✓' : '✕'; ?></span>
-                        <span class="rcp-update-name"><?php echo esc_html($entry['data']['plugin_name'] ?? ($entry['data']['type'] ?? '—')); ?></span>
-                        <?php if ($risk !== null): ?>
-                        <span class="rcp-risk-badge rcp-risk-<?php echo $rl; ?>" title="Riesgo <?php echo round($risk, 2); ?>">
-                            <?php echo $rl === 'low' ? '●' : ($rl === 'med' ? '●' : '●'); ?>
-                        </span>
-                        <?php endif; ?>
-                        <span class="rcp-update-time"><?php echo esc_html($this->human_time($entry['timestamp'] ?? '')); ?></span>
+                    <li class="rcp-upd-item rcp-upd-<?php echo $ok ? 'ok' : 'fail'; ?>">
+                        <span class="rcp-upd-dot"></span>
+                        <span class="rcp-upd-name"><?php echo esc_html($name); ?></span>
+                        <span class="rcp-upd-time"><?php echo esc_html($this->human_time($entry['timestamp'] ?? '')); ?></span>
                     </li>
                     <?php endforeach; ?>
                 </ul>
+                <?php elseif ($d['hub_connected']): ?>
+                <div class="rcp-empty-state">
+                    <span class="rcp-empty-ico">&#128260;</span>
+                    <p>El historial aparecer&aacute; tras el primer ciclo de mantenimiento automatizado.</p>
+                </div>
                 <?php else: ?>
-                <div class="rcp-empty">
-                    <p>Historial disponible tras el primer ciclo Hub</p>
-                    <?php if (!$d['hub_connected']): ?>
-                    <a href="<?php echo esc_url(admin_url('admin.php?page=replanta-care')); ?>" class="rcp-link-small">Verificar conexión →</a>
-                    <?php endif; ?>
+                <div class="rcp-empty-state">
+                    <span class="rcp-empty-ico">&#128268;</span>
+                    <p>Conecta tu sitio a Replanta para activar el mantenimiento autom&aacute;tico.</p>
+                    <a href="<?php echo esc_url(admin_url('admin.php?page=replanta-care')); ?>" class="rcp-link-sm">Configurar conexi&oacute;n &rarr;</a>
                 </div>
                 <?php endif; ?>
 
-                <?php if (!empty($d['pending_updates'])): ?>
-                <div class="rcp-pending-bar">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                    <?php echo intval($d['pending_updates']); ?> pendientes — se aplicarán automáticamente
+                <?php if ($d['pending_updates'] > 0): ?>
+                <div class="rcp-pending-notice">
+                    <?php echo intval($d['pending_updates']); ?> actualizaci&oacute;n<?php echo $d['pending_updates'] > 1 ? 'es pendientes' : ' pendiente'; ?> &mdash; se aplicar&aacute; autom&aacute;ticamente esta semana
                 </div>
                 <?php endif; ?>
             </div>
 
-            <?php /* ── COL 2: Backups B2 ── */ ?>
             <div class="rcp-card">
-                <h2 class="rcp-card-title">
+                <h2 class="rcp-card-h">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                    Backups B2
+                    Copias de seguridad
                 </h2>
 
                 <?php
-                $bh = $d['backup_health'];
-                $b2 = $d['last_b2_backup'];
-                $bh_class = $bh === 'ok' ? 'ok' : ($bh === 'warning' ? 'warn' : 'fail');
+                $b2   = $d['last_b2_backup'];
+                $bh   = $d['backup_health'];
+                $b2ok = !empty($b2['timestamp']) || !empty($d['last_backup']);
                 ?>
-                <div class="rcp-backup-status rcp-backup-<?php echo $bh_class; ?>">
-                    <span class="rcp-backup-dot"></span>
-                    <?php
-                    if ($b2 && !empty($b2['timestamp'])) {
-                        echo 'Último: ' . esc_html($this->human_time($b2['timestamp']));
-                    } elseif ($d['last_backup']) {
-                        echo 'Local: ' . esc_html($this->human_time($d['last_backup']));
-                    } else {
-                        echo 'Sin backups registrados';
-                    }
-                    ?>
+                <div class="rcp-backup-hero rcp-bh-<?php echo $b2ok ? 'ok' : 'warn'; ?>">
+                    <span class="rcp-bh-icon"><?php echo $b2ok ? '&#9729;' : '&#9888;'; ?></span>
+                    <div>
+                        <strong class="rcp-bh-title">
+                        <?php
+                        if (!empty($b2['timestamp'])) {
+                            echo '&Uacute;ltima copia: ' . esc_html($this->human_time($b2['timestamp']));
+                        } elseif ($d['last_backup']) {
+                            echo '&Uacute;ltima copia: ' . esc_html($this->human_time($d['last_backup']));
+                        } else {
+                            echo 'Sin copias registradas a&uacute;n';
+                        }
+                        ?>
+                        </strong>
+                        <span class="rcp-bh-sub">Almacenada en Backblaze B2 &mdash; nube externa segura</span>
+                    </div>
                 </div>
 
-                <?php if ($b2 && !empty($b2['files'])): ?>
-                <ul class="rcp-backup-files">
-                    <?php foreach ((array)$b2['files'] as $f): ?>
-                    <li><?php echo esc_html(basename($f)); ?></li>
-                    <?php endforeach; ?>
+                <ul class="rcp-check-list" style="margin-top:12px">
+                    <li class="rcp-chk rcp-chk-<?php echo $d['backups_this_month'] > 0 ? 'ok' : 'sub'; ?>">
+                        <span class="rcp-chk-ico"><?php echo $d['backups_this_month'] > 0 ? '&#10003;' : '&middot;'; ?></span>
+                        <div><span class="rcp-chk-lbl"><?php echo intval($d['backups_this_month']); ?> copias confirmadas este mes</span></div>
+                    </li>
+                    <li class="rcp-chk rcp-chk-ok">
+                        <span class="rcp-chk-ico">&#10003;</span>
+                        <div><span class="rcp-chk-lbl">Backup autom&aacute;tico antes de cada actualizaci&oacute;n</span></div>
+                    </li>
+                    <?php if ($d['ssl_days'] !== null): ?>
+                    <?php $ssl_cls = $d['ssl_days'] > 30 ? 'ok' : ($d['ssl_days'] > 14 ? 'warn' : 'fail'); ?>
+                    <li class="rcp-chk rcp-chk-<?php echo $ssl_cls; ?>">
+                        <span class="rcp-chk-ico"><?php echo $d['ssl_days'] > 30 ? '&#10003;' : '&#9888;'; ?></span>
+                        <div><span class="rcp-chk-lbl">SSL v&aacute;lido &mdash; <?php echo intval($d['ssl_days']); ?> d&iacute;as restantes</span></div>
+                    </li>
+                    <?php endif; ?>
                 </ul>
-                <?php endif; ?>
-
-                <?php if ($b2 && !empty($b2['prefix'])): ?>
-                <p class="rcp-backup-prefix">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
-                    <?php echo esc_html($b2['prefix']); ?>
-                </p>
-                <?php endif; ?>
-
-                <?php if ($d['ssl_days'] !== null): ?>
-                <div class="rcp-ssl-row rcp-ssl-<?php echo $d['ssl_days'] > 30 ? 'ok' : ($d['ssl_days'] > 14 ? 'warn' : 'fail'); ?>">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                    SSL: <?php echo intval($d['ssl_days']); ?> días restantes
-                </div>
-                <?php endif; ?>
             </div>
 
-            <?php /* ── COL 3: Salud del sitio ── */ ?>
-            <div class="rcp-card">
-                <h2 class="rcp-card-title">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-                    Salud del sitio
-                </h2>
-
-                <?php
-                $score = intval($d['health_score']);
-                $dash_fill = round($score * 2.199, 1); // 2.199 ≈ 219.9/100 (circ r=35)
-                $dash_empty = round(219.9 - $dash_fill, 1);
-                $score_color = $score >= 80 ? '#22C55E' : ($score >= 60 ? '#F59E0B' : '#EF4444');
-                ?>
-                <div class="rcp-gauge-wrap">
-                    <svg class="rcp-gauge" viewBox="0 0 100 100">
-                        <circle class="rcp-gauge-bg" cx="50" cy="50" r="35" fill="none" stroke="#E8F0EC" stroke-width="8"/>
-                        <circle class="rcp-gauge-fill" cx="50" cy="50" r="35" fill="none"
-                            stroke="<?php echo $score_color; ?>" stroke-width="8"
-                            stroke-dasharray="<?php echo $dash_fill . ' ' . $dash_empty; ?>"
-                            stroke-dashoffset="54.975"
-                            stroke-linecap="round"/>
-                        <text x="50" y="46" text-anchor="middle" class="rcp-gauge-num" fill="<?php echo $score_color; ?>"><?php echo $score; ?></text>
-                        <text x="50" y="59" text-anchor="middle" class="rcp-gauge-sub" fill="#6B7280">/ 100</text>
-                    </svg>
-                </div>
-
-                <?php if (!empty($d['sa_delta']) && $d['sa_delta']['change'] !== 0): ?>
-                <div class="rcp-delta <?php echo $d['sa_delta']['change'] > 0 ? 'rcp-delta-up' : 'rcp-delta-down'; ?>">
-                    <?php echo $d['sa_delta']['change'] > 0 ? '↑' : '↓'; ?>
-                    <?php echo abs($d['sa_delta']['change']); ?> pts este mes
-                    <span class="rcp-delta-range">(<?php echo intval($d['sa_delta']['first_score']); ?> → <?php echo intval($d['sa_delta']['last_score']); ?>)</span>
-                </div>
-                <?php endif; ?>
-
-                <?php if (!empty($d['monthly']['avg_risk_score'])): ?>
-                <div class="rcp-risk-avg">
-                    Riesgo medio aplicado:
-                    <strong class="rcp-risk-<?php echo $this->risk_level($d['monthly']['avg_risk_score']); ?>">
-                        <?php echo round($d['monthly']['avg_risk_score'], 2); ?>
-                    </strong>
-                    <span class="rcp-muted">/ 1.0</span>
-                </div>
-                <?php endif; ?>
-            </div>
-
-        </div><?php // .rcp-grid ?>
+        </div>
         <?php
     }
 
     private function render_timeline($d) {
-        if (empty($d['activity'])) return;
+        if (empty($d['activity'])) {
+            return;
+        }
         ?>
-        <div class="rcp-card rcp-card-full">
-            <h2 class="rcp-card-title">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-                Actividad reciente
+        <div class="rcp-card rcp-card-wide">
+            <h2 class="rcp-card-h">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                Actividad reciente de tu sitio
             </h2>
             <ol class="rcp-timeline">
                 <?php foreach ($d['activity'] as $ev): ?>
@@ -307,17 +288,40 @@ class RP_Care_Client_Portal {
         <?php
     }
 
-    private function render_tech_bar($d) {
+    private function render_footer_row($d) {
+        $plan_features = RP_Care_Plan::get_features($d['plan']);
         ?>
-        <div class="rcp-tech-bar">
-            <span>WordPress <?php echo esc_html($d['wp_version']); ?></span>
-            <span>PHP <?php echo esc_html($d['php_version']); ?></span>
-            <span><?php echo intval($d['plugins_count']); ?> plugins activos</span>
-            <?php if ($d['hub_connected']): ?>
-            <span class="rcp-hub-ok">● Hub conectado</span>
-            <?php else: ?>
-            <span class="rcp-hub-off">○ Hub no conectado</span>
-            <?php endif; ?>
+        <div class="rcp-footer-row">
+
+            <div class="rcp-footer-plan">
+                <h3 class="rcp-footer-h">Tu plan: <strong><?php echo esc_html($d['plan_name']); ?></strong></h3>
+                <?php if (!empty($plan_features)): ?>
+                <ul class="rcp-plan-feat">
+                    <?php foreach ((array) $plan_features as $feat): ?>
+                    <li>&middot; <?php echo esc_html($feat); ?></li>
+                    <?php endforeach; ?>
+                </ul>
+                <?php endif; ?>
+            </div>
+
+            <div class="rcp-footer-support">
+                <h3 class="rcp-footer-h">&iquest;Tienes alguna pregunta?</h3>
+                <p class="rcp-footer-p">Estamos aqu&iacute; para ayudarte.</p>
+                <a href="mailto:info@replanta.dev" class="rcp-btn-support">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                    info@replanta.dev
+                </a>
+                <a href="https://replanta.net" target="_blank" rel="noopener" class="rcp-btn-web">replanta.net</a>
+            </div>
+
+            <div class="rcp-footer-meta">
+                <p><a href="<?php echo esc_url(admin_url('admin.php?page=replanta-care')); ?>" class="rcp-link-sm">&#9881; Configuraci&oacute;n t&eacute;cnica</a></p>
+                <p class="rcp-version-note">Replanta Care v<?php echo esc_html(RPCARE_VERSION); ?></p>
+                <?php if ($d['cache_age_label']): ?>
+                <p class="rcp-version-note">Datos: <?php echo esc_html($d['cache_age_label']); ?></p>
+                <?php endif; ?>
+            </div>
+
         </div>
         <?php
     }
@@ -327,30 +331,14 @@ class RP_Care_Client_Portal {
     // -------------------------------------------------------------------------
 
     private function collect_data() {
-        $cache   = get_option('rpcare_portal_cache', []);
-        $plan    = RP_Care_Plan::get_current();
-        $b2_raw  = get_option('rpcare_last_b2_backup');
-        $b2      = is_array($b2_raw) ? $b2_raw : [];
+        $cache  = get_option('rpcare_portal_cache', []);
+        $plan   = RP_Care_Plan::get_current();
+        $b2_raw = get_option('rpcare_last_b2_backup');
+        $b2     = is_array($b2_raw) ? $b2_raw : [];
 
-        // Salud
         $health_score = intval(get_option('rpcare_health_score', 0));
+        $health_label = $this->health_label($health_score);
 
-        // Actualizaciones pendientes
-        $pending_updates = $this->count_pending_updates();
-
-        // Estado global
-        $backup_health = $cache['backup_health'] ?? ($b2 ? 'ok' : 'unknown');
-        $overall_ok    = $health_score >= 60 && $backup_health !== 'critical' && $pending_updates < 15;
-
-        // Historial + risk map
-        $update_history = $cache['update_history'] ?? [];
-        $risk_raw       = $cache['risk_assessments'] ?? [];
-        $risk_map       = [];
-        foreach ($risk_raw as $slug => $ra) {
-            $risk_map[$slug] = $ra['risk_score'] ?? null;
-        }
-
-        // Backups contados este mes
         $month_start        = strtotime('first day of this month midnight');
         $backups_this_month = 0;
         if (!empty($cache['backup_history'])) {
@@ -363,78 +351,100 @@ class RP_Care_Client_Portal {
             $backups_this_month = 1;
         }
 
-        // Edad del cache
+        $update_history = (array) ($cache['update_history'] ?? []);
+        $incidents      = intval($cache['incidents'] ?? $this->count_failed_updates($update_history));
+        $pending        = $this->count_pending_updates();
+
+        $vuln_data = get_option('rpcare_vulnerability_data', []);
+        $vuln_ok   = empty($vuln_data['vulnerabilities_found']);
+        $ssl_days  = $cache['ssl_days'] ?? null;
+
+        $security_checks = [
+            [
+                'ok'     => $vuln_ok,
+                'label'  => $vuln_ok ? 'Sin vulnerabilidades conocidas en plugins' : count($vuln_data['vulnerabilities_found']) . ' vulnerabilidades detectadas',
+                'detail' => !$vuln_ok ? 'Ver configuración para detalles' : '',
+            ],
+            [
+                'ok'     => $ssl_days === null || $ssl_days > 30,
+                'label'  => $ssl_days !== null ? 'Certificado SSL: ' . intval($ssl_days) . ' días restantes' : 'Certificado SSL activo',
+                'detail' => ($ssl_days !== null && $ssl_days <= 30) ? 'Renovar pronto' : '',
+            ],
+            [
+                'ok'     => $this->is_hub_connected(),
+                'label'  => $this->is_hub_connected() ? 'Mantenimiento automatizado activo' : 'Mantenimiento no configurado',
+                'detail' => $this->is_hub_connected() ? '' : 'Configura la conexión para activarlo',
+            ],
+        ];
+
+        $backup_health   = $cache['backup_health'] ?? ($b2 ? 'ok' : 'unknown');
+        $last_backup     = get_option('rpcare_last_backup');
+        $hub_connected   = $this->is_hub_connected();
+        $overall_ok      = $health_score >= 60 && $vuln_ok && $incidents === 0 && ($ssl_days === null || $ssl_days > 14);
+
         $cache_age_label = '';
         if (!empty($cache['pushed_at'])) {
             $cache_age_label = 'actualizado ' . $this->human_time($cache['pushed_at']);
         }
 
-        // Timeline de actividad
         $activity = $this->build_activity($update_history, $b2, $cache);
 
         return [
+            'domain'             => parse_url(home_url(), PHP_URL_HOST) ?: get_bloginfo('name'),
             'plan'               => $plan,
             'plan_name'          => RP_Care_Plan::get_plan_name($plan),
             'health_score'       => $health_score,
-            'pending_updates'    => $pending_updates,
+            'health_label'       => $health_label,
             'overall_ok'         => $overall_ok,
+            'pending_updates'    => $pending,
+            'security_checks'    => $security_checks,
             'backup_health'      => $backup_health,
-            'last_backup'        => get_option('rpcare_last_backup'),
+            'last_backup'        => $last_backup,
             'last_b2_backup'     => $b2,
             'backups_this_month' => $backups_this_month,
-            'ssl_days'           => $cache['ssl_days'] ?? null,
-            'sa_delta'           => $cache['sa_delta'] ?? null,
+            'ssl_days'           => $ssl_days,
             'monthly'            => $cache['monthly_summary'] ?? [],
             'update_history'     => $update_history,
-            'risk_map'           => $risk_map,
+            'incidents'          => $incidents,
             'activity'           => $activity,
-            'wp_version'         => get_bloginfo('version'),
-            'php_version'        => PHP_VERSION_ID >= 80000 ? PHP_MAJOR_VERSION . '.' . PHP_MINOR_VERSION : PHP_VERSION,
-            'plugins_count'      => count(get_option('active_plugins', [])),
-            'hub_connected'      => $this->is_hub_connected(),
+            'hub_connected'      => $hub_connected,
             'cache_age_label'    => $cache_age_label,
         ];
     }
 
-    private function build_activity($update_history, $b2, $cache) {
+    private function build_activity($history, $b2, $cache) {
         $events = [];
 
-        // Updates desde historial
-        foreach (array_slice((array) $update_history, 0, 5) as $entry) {
+        foreach (array_slice($history, 0, 6) as $entry) {
             $ok   = ($entry['event_type'] ?? '') === 'update_completed';
-            $type = $ok ? 'ok' : 'fail';
             $name = $entry['data']['plugin_name'] ?? ($entry['data']['type'] ?? 'Actualización');
             $events[] = [
-                'type'      => $type,
-                'text'      => $ok ? "{$name} actualizado correctamente" : "{$name} — error en la actualización",
+                'type'      => $ok ? 'ok' : 'fail',
+                'text'      => $ok ? $name . ' actualizado correctamente' : $name . ' — error en la actualización',
                 'time'      => $this->human_time($entry['timestamp'] ?? ''),
                 'timestamp' => strtotime($entry['timestamp'] ?? '') ?: 0,
             ];
         }
 
-        // Último B2 backup
         if ($b2 && !empty($b2['timestamp'])) {
             $events[] = [
                 'type'      => 'backup',
-                'text'      => 'Backup B2 completado — ' . esc_html($b2['domain'] ?? ''),
+                'text'      => 'Copia de seguridad completada y almacenada en Backblaze B2',
                 'time'      => $this->human_time($b2['timestamp']),
                 'timestamp' => strtotime($b2['timestamp']) ?: 0,
             ];
         }
 
-        // Alerta SSL desde cache
         if (!empty($cache['ssl_days']) && intval($cache['ssl_days']) < 30) {
             $events[] = [
                 'type'      => 'warn',
-                'text'      => 'SSL: ' . intval($cache['ssl_days']) . ' días para renovar',
+                'text'      => 'SSL caduca pronto — quedan ' . intval($cache['ssl_days']) . ' días',
                 'time'      => '',
-                'timestamp' => 0,
+                'timestamp' => time(),
             ];
         }
 
-        // Ordenar por fecha desc
         usort($events, fn($a, $b) => $b['timestamp'] - $a['timestamp']);
-
         return array_slice($events, 0, 8);
     }
 
@@ -442,15 +452,34 @@ class RP_Care_Client_Portal {
     // Helpers
     // -------------------------------------------------------------------------
 
+    private function health_label($score) {
+        if ($score >= 90) return 'Excelente';
+        if ($score >= 75) return 'Muy bien';
+        if ($score >= 60) return 'Correcto';
+        if ($score >= 40) return 'Mejorable';
+        return 'Requiere revisión';
+    }
+
     private function count_pending_updates() {
         $core    = get_site_transient('update_core');
         $plugins = get_site_transient('update_plugins');
         $themes  = get_site_transient('update_themes');
         $count   = 0;
-        if ($core    && !empty($core->updates))         $count += count($core->updates);
-        if ($plugins && !empty($plugins->response))     $count += count($plugins->response);
-        if ($themes  && !empty($themes->response))      $count += count($themes->response);
+        if ($core    && !empty($core->updates))     $count += count($core->updates);
+        if ($plugins && !empty($plugins->response)) $count += count($plugins->response);
+        if ($themes  && !empty($themes->response))  $count += count($themes->response);
         return $count;
+    }
+
+    private function count_failed_updates($history) {
+        $month_start = strtotime('first day of this month midnight');
+        $fail        = 0;
+        foreach ($history as $entry) {
+            if (strtotime($entry['timestamp'] ?? '') >= $month_start && ($entry['event_type'] ?? '') === 'update_failed') {
+                $fail++;
+            }
+        }
+        return $fail;
     }
 
     private function is_hub_connected() {
@@ -460,160 +489,396 @@ class RP_Care_Client_Portal {
         return !empty($hub) && !empty($tok);
     }
 
-    private function risk_level($score) {
-        if ($score === null) return 'none';
-        if ($score < 0.4)   return 'low';
-        if ($score < 0.65)  return 'med';
-        return 'high';
-    }
-
     private function human_time($mysql_or_ts) {
         if (!$mysql_or_ts) return '—';
         $ts   = is_numeric($mysql_or_ts) ? (int) $mysql_or_ts : strtotime($mysql_or_ts);
         if (!$ts) return '—';
         $diff = time() - $ts;
-        if ($diff < 60)         return 'hace un momento';
-        if ($diff < 3600)       return 'hace ' . round($diff / 60) . ' min';
-        if ($diff < 86400)      return 'hace ' . round($diff / 3600) . 'h';
-        if ($diff < 7 * 86400)  return 'hace ' . round($diff / 86400) . ' días';
-        return date_i18n('d M', $ts);
+        if ($diff < 60)        return 'hace un momento';
+        if ($diff < 3600)      return 'hace ' . round($diff / 60) . ' min';
+        if ($diff < 86400)     return 'hace ' . round($diff / 3600) . 'h';
+        if ($diff < 7 * 86400) return 'hace ' . round($diff / 86400) . ' días';
+        return date_i18n('d M Y', $ts);
     }
 
     // -------------------------------------------------------------------------
     // CSS
     // -------------------------------------------------------------------------
 
-    private function render_portal_css() {
+    private function render_css() {
         ?>
         <style>
-        :root {
-            --rp-primary:#1E2F23; --rp-accent:#93F1C9; --rp-accent-dk:#41999F;
-            --rp-bg:#F7FBF9; --rp-card:#fff; --rp-border:#E8F0EC;
-            --rp-text:#374151; --rp-muted:#6B7280;
-            --rp-ok:#22C55E; --rp-warn:#F59E0B; --rp-fail:#EF4444;
+        /* ── Variables ─────────────────────────────────────────────── */
+        .rcp-wrap {
+            --rp-green:   #1E2F23;
+            --rp-accent:  #93F1C9;
+            --rp-teal:    #41999F;
+            --rp-bg:      #F4F8F6;
+            --rp-card:    #FFFFFF;
+            --rp-border:  #DDE8E3;
+            --rp-text:    #2D3A33;
+            --rp-muted:   #6B7B72;
+            --rp-ok:      #16A34A;
+            --rp-warn:    #D97706;
+            --rp-fail:    #DC2626;
+            max-width: 1180px;
+            padding: 24px 20px 60px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            font-size: 14px;
+            color: var(--rp-text) !important;
         }
-        .rcp-wrap { max-width:1200px; padding:24px 20px 48px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; color:var(--rp-text); }
 
-        /* Hero */
-        .rcp-hero { display:flex; align-items:center; gap:32px; flex-wrap:wrap;
-            background:linear-gradient(135deg,var(--rp-primary) 0%,#2A5A40 60%,var(--rp-accent-dk) 100%);
-            color:#fff; padding:28px 32px; border-radius:16px; margin-bottom:24px; }
-        .rcp-hero-brand { flex:1; min-width:180px; }
-        .rcp-plan-badge { display:inline-block; padding:3px 12px; border-radius:20px; font-size:12px;
-            font-weight:600; text-transform:uppercase; letter-spacing:.5px; margin-bottom:8px; }
-        .rcp-plan-semilla  { background:rgba(147,241,201,.25); color:var(--rp-accent); }
-        .rcp-plan-raiz     { background:rgba(65,153,159,.3);   color:#7FE0E6; }
-        .rcp-plan-ecosistema { background:rgba(255,255,255,.2); color:#fff; }
-        .rcp-hero-title  { font-size:22px; font-weight:700; margin:0 0 4px; }
-        .rcp-hero-domain { font-size:13px; opacity:.7; margin:0; }
-        .rcp-hero-stats  { display:flex; gap:24px; flex-wrap:wrap; }
-        .rcp-hero-stat   { text-align:center; }
-        .rcp-stat-num    { display:block; font-size:36px; font-weight:800; line-height:1; }
-        .rcp-score-num   { color:var(--rp-accent); }
-        .rcp-stat-label  { font-size:11px; opacity:.75; line-height:1.3; margin-top:4px; display:block; }
-        .rcp-status-pill { display:flex; align-items:center; gap:8px; padding:8px 18px;
-            border-radius:24px; font-size:13px; font-weight:600; white-space:nowrap; margin-left:auto; }
-        .rcp-status-ok   { background:rgba(34,197,94,.2); color:#86EFAC; }
-        .rcp-status-warn { background:rgba(245,158,11,.2); color:#FDE68A; }
-        .rcp-status-dot  { width:8px; height:8px; border-radius:50%; background:currentColor; }
+        /* ── Status bar ──────────────────────────────────────────────── */
+        .rcp-status-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 16px;
+            padding: 22px 28px;
+            border-radius: 14px;
+            margin-bottom: 20px;
+        }
+        .rcp-st-ok   { background: linear-gradient(135deg, #1E2F23 0%, #2A5A40 60%, #41999F 100%); }
+        .rcp-st-warn { background: linear-gradient(135deg, #451a03 0%, #92400e 100%); }
+        .rcp-st-left { display: flex; align-items: center; gap: 16px; }
+        .rcp-st-icon {
+            font-size: 32px !important;
+            line-height: 1 !important;
+            color: #fff !important;
+        }
+        .rcp-st-msg {
+            font-size: 20px !important;
+            font-weight: 700 !important;
+            color: #fff !important;
+            margin: 0 0 2px !important;
+            line-height: 1.2 !important;
+        }
+        .rcp-st-domain {
+            font-size: 13px !important;
+            color: rgba(255,255,255,.75) !important;
+            margin: 0 !important;
+        }
+        .rcp-st-right {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .rcp-plan-badge {
+            display: inline-block;
+            padding: 4px 14px;
+            border-radius: 20px;
+            font-size: 12px !important;
+            font-weight: 700 !important;
+            text-transform: uppercase;
+            letter-spacing: .5px;
+            color: #fff !important;
+        }
+        .rcp-plan-semilla    { background: rgba(255,255,255,.2); }
+        .rcp-plan-raiz       { background: rgba(147,241,201,.3); color: #93F1C9 !important; }
+        .rcp-plan-ecosistema { background: rgba(65,153,159,.4); }
+        .rcp-connected-pill {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px !important;
+            color: rgba(255,255,255,.85) !important;
+            background: rgba(255,255,255,.12);
+            padding: 4px 12px;
+            border-radius: 20px;
+        }
+        .rcp-conn-dot {
+            width: 7px; height: 7px;
+            border-radius: 50%;
+            background: #93F1C9;
+            box-shadow: 0 0 0 3px rgba(147,241,201,.3);
+        }
 
-        /* Grid */
-        .rcp-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:20px; margin-bottom:20px; }
-        @media(max-width:900px){ .rcp-grid{ grid-template-columns:1fr 1fr; } }
-        @media(max-width:600px){ .rcp-grid{ grid-template-columns:1fr; } }
+        /* ── Stats strip ─────────────────────────────────────────────── */
+        .rcp-stats-strip {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 14px;
+            margin-bottom: 20px;
+        }
+        @media(max-width:780px) { .rcp-stats-strip { grid-template-columns: repeat(2,1fr); } }
+        .rcp-stat-box {
+            background: var(--rp-card);
+            border: 1px solid var(--rp-border);
+            border-radius: 12px;
+            padding: 18px 16px;
+            text-align: center;
+            box-shadow: 0 1px 3px rgba(0,0,0,.05);
+        }
+        .rcp-stat-box.rcp-stat-warn { border-color: #fcd34d; background: #fffbeb; }
+        .rcp-stat-big {
+            display: block !important;
+            font-size: 36px !important;
+            font-weight: 800 !important;
+            line-height: 1 !important;
+            color: var(--rp-green) !important;
+            margin-bottom: 4px !important;
+        }
+        .rcp-stat-warn .rcp-stat-big { color: var(--rp-warn) !important; }
+        .rcp-stat-lbl {
+            display: block !important;
+            font-size: 12px !important;
+            font-weight: 600 !important;
+            color: var(--rp-text) !important;
+            text-transform: uppercase;
+            letter-spacing: .4px;
+        }
+        .rcp-stat-sub {
+            display: block !important;
+            font-size: 11px !important;
+            color: var(--rp-muted) !important;
+            margin-top: 2px !important;
+        }
 
-        /* Cards */
-        .rcp-card { background:var(--rp-card); border:1px solid var(--rp-border); border-radius:12px;
-            padding:20px; box-shadow:0 1px 3px rgba(0,0,0,.06); }
-        .rcp-card-full { grid-column:1/-1; }
-        .rcp-card-title { font-size:14px; font-weight:700; color:var(--rp-primary);
-            margin:0 0 16px; display:flex; align-items:center; gap:8px; text-transform:uppercase;
-            letter-spacing:.4px; }
-        .rcp-card-title svg { width:16px; height:16px; opacity:.7; flex-shrink:0; }
+        /* ── Cards ───────────────────────────────────────────────────── */
+        .rcp-cards {
+            display: grid;
+            grid-template-columns: repeat(3,1fr);
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+        @media(max-width:900px) { .rcp-cards { grid-template-columns: 1fr 1fr; } }
+        @media(max-width:600px) { .rcp-cards { grid-template-columns: 1fr; } }
+        .rcp-card {
+            background: var(--rp-card);
+            border: 1px solid var(--rp-border);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,.05);
+        }
+        .rcp-card-wide { grid-column: 1/-1; }
+        .rcp-card-h {
+            display: flex !important;
+            align-items: center !important;
+            gap: 8px !important;
+            font-size: 12px !important;
+            font-weight: 700 !important;
+            text-transform: uppercase !important;
+            letter-spacing: .5px !important;
+            color: var(--rp-green) !important;
+            margin: 0 0 16px !important;
+            padding: 0 !important;
+            border: none !important;
+        }
+        .rcp-card-h svg { width: 15px; height: 15px; flex-shrink: 0; opacity: .8; }
 
-        /* Updates */
-        .rcp-update-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px; }
-        .rcp-update-item { display:flex; align-items:center; gap:8px; font-size:13px; padding:6px 0;
-            border-bottom:1px solid var(--rp-border); }
-        .rcp-update-item:last-child { border-bottom:none; }
-        .rcp-update-icon { font-size:12px; width:16px; text-align:center; }
-        .rcp-update-ok .rcp-update-icon  { color:var(--rp-ok); }
-        .rcp-update-fail .rcp-update-icon { color:var(--rp-fail); }
-        .rcp-update-name  { flex:1; font-weight:500; }
-        .rcp-update-time  { font-size:11px; color:var(--rp-muted); white-space:nowrap; }
-        .rcp-risk-badge   { width:10px; height:10px; border-radius:50%; display:inline-block; flex-shrink:0; }
-        .rcp-risk-low  .rcp-risk-badge, .rcp-risk-badge.rcp-risk-low  { color:var(--rp-ok); }
-        .rcp-risk-med  .rcp-risk-badge, .rcp-risk-badge.rcp-risk-med  { color:var(--rp-warn); }
-        .rcp-risk-high .rcp-risk-badge, .rcp-risk-badge.rcp-risk-high { color:var(--rp-fail); }
-        .rcp-pending-bar { margin-top:12px; background:#FEF3C7; border-radius:8px; padding:8px 12px;
-            font-size:12px; color:#92400E; display:flex; align-items:center; gap:6px; }
-        .rcp-pending-bar svg { width:14px; height:14px; flex-shrink:0; }
-        .rcp-empty { text-align:center; padding:24px 0; color:var(--rp-muted); font-size:13px; }
-        .rcp-link-small { font-size:12px; color:var(--rp-accent-dk); text-decoration:none; }
+        /* ── Check list ──────────────────────────────────────────────── */
+        .rcp-check-list {
+            list-style: none !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+        .rcp-chk {
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--rp-border);
+        }
+        .rcp-chk:last-child { border-bottom: none; }
+        .rcp-chk-ico {
+            flex-shrink: 0;
+            font-size: 13px;
+            width: 18px;
+            text-align: center;
+            margin-top: 1px;
+        }
+        .rcp-chk-ok   .rcp-chk-ico { color: var(--rp-ok) !important; }
+        .rcp-chk-warn .rcp-chk-ico { color: var(--rp-warn) !important; }
+        .rcp-chk-fail .rcp-chk-ico { color: var(--rp-fail) !important; }
+        .rcp-chk-sub  .rcp-chk-ico { color: var(--rp-muted) !important; }
+        .rcp-chk-lbl {
+            display: block;
+            font-size: 13px !important;
+            color: var(--rp-text) !important;
+            line-height: 1.4 !important;
+        }
+        .rcp-chk-detail {
+            display: block;
+            font-size: 11px !important;
+            color: var(--rp-muted) !important;
+            margin-top: 1px;
+        }
 
-        /* Backups */
-        .rcp-backup-status { display:flex; align-items:center; gap:8px; font-size:13px;
-            font-weight:600; margin-bottom:12px; }
-        .rcp-backup-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
-        .rcp-backup-ok   .rcp-backup-dot { background:var(--rp-ok); }
-        .rcp-backup-warn .rcp-backup-dot { background:var(--rp-warn); }
-        .rcp-backup-fail .rcp-backup-dot { background:var(--rp-fail); }
-        .rcp-backup-files { list-style:none; margin:0 0 10px; padding:0; }
-        .rcp-backup-files li { font-size:12px; color:var(--rp-muted); padding:2px 0;
-            font-family:monospace; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-        .rcp-backup-prefix { font-size:11px; color:var(--rp-muted); font-family:monospace;
-            overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
-            display:flex; align-items:center; gap:5px; margin:6px 0 0; }
-        .rcp-backup-prefix svg { width:12px; height:12px; flex-shrink:0; }
-        .rcp-ssl-row { font-size:12px; font-weight:600; margin-top:10px;
-            display:flex; align-items:center; gap:6px; }
-        .rcp-ssl-row svg { width:13px; height:13px; }
-        .rcp-ssl-ok   { color:var(--rp-ok); }
-        .rcp-ssl-warn { color:var(--rp-warn); }
-        .rcp-ssl-fail { color:var(--rp-fail); }
+        /* ── Updates ─────────────────────────────────────────────────── */
+        .rcp-update-list {
+            list-style: none !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+        .rcp-upd-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--rp-border);
+        }
+        .rcp-upd-item:last-child { border-bottom: none; }
+        .rcp-upd-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+        .rcp-upd-ok   .rcp-upd-dot { background: var(--rp-ok); }
+        .rcp-upd-fail .rcp-upd-dot { background: var(--rp-fail); }
+        .rcp-upd-name {
+            flex: 1;
+            font-size: 13px !important;
+            font-weight: 500 !important;
+            color: var(--rp-text) !important;
+        }
+        .rcp-upd-time {
+            font-size: 11px !important;
+            color: var(--rp-muted) !important;
+            white-space: nowrap;
+        }
+        .rcp-pending-notice {
+            margin-top: 12px;
+            background: #fefce8;
+            border: 1px solid #fde68a;
+            border-radius: 8px;
+            padding: 8px 12px;
+            font-size: 12px !important;
+            color: #854d0e !important;
+        }
+        .rcp-empty-state {
+            text-align: center;
+            padding: 20px 8px;
+        }
+        .rcp-empty-ico {
+            display: block;
+            font-size: 28px;
+            margin-bottom: 8px;
+        }
+        .rcp-empty-state p {
+            font-size: 13px !important;
+            color: var(--rp-muted) !important;
+            margin: 0 0 8px !important;
+        }
 
-        /* Gauge */
-        .rcp-gauge-wrap { display:flex; justify-content:center; margin-bottom:12px; }
-        .rcp-gauge { width:130px; height:130px; transform:rotate(-90deg); }
-        .rcp-gauge-fill { transition:stroke-dasharray 1s ease-out; }
-        .rcp-gauge-num  { font-size:22px; font-weight:800; transform:rotate(90deg);
-            dominant-baseline:middle; }
-        .rcp-gauge-sub  { font-size:10px; transform:rotate(90deg); dominant-baseline:middle; }
-        .rcp-delta { text-align:center; font-size:14px; font-weight:700; margin-bottom:8px; }
-        .rcp-delta-up   { color:var(--rp-ok); }
-        .rcp-delta-down { color:var(--rp-fail); }
-        .rcp-delta-range { font-size:11px; font-weight:400; color:var(--rp-muted); margin-left:4px; }
-        .rcp-risk-avg { text-align:center; font-size:12px; color:var(--rp-muted); }
-        .rcp-risk-avg strong { font-size:15px; }
-        .rcp-risk-avg strong.rcp-risk-low  { color:var(--rp-ok); }
-        .rcp-risk-avg strong.rcp-risk-med  { color:var(--rp-warn); }
-        .rcp-risk-avg strong.rcp-risk-high { color:var(--rp-fail); }
-        .rcp-muted { color:var(--rp-muted); }
+        /* ── Backup hero ─────────────────────────────────────────────── */
+        .rcp-backup-hero {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 12px;
+            border-radius: 8px;
+        }
+        .rcp-bh-ok   { background: #f0fdf4; border: 1px solid #bbf7d0; }
+        .rcp-bh-warn { background: #fffbeb; border: 1px solid #fde68a; }
+        .rcp-bh-icon { font-size: 22px; line-height: 1; flex-shrink: 0; margin-top: 2px; }
+        .rcp-bh-title {
+            display: block;
+            font-size: 13px !important;
+            font-weight: 600 !important;
+            color: var(--rp-text) !important;
+            margin-bottom: 2px;
+        }
+        .rcp-bh-sub {
+            font-size: 11px !important;
+            color: var(--rp-muted) !important;
+        }
 
-        /* Timeline */
-        .rcp-timeline { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:0; }
-        .rcp-tl-item  { display:grid; grid-template-columns:20px 1fr auto;
-            align-items:center; gap:12px; padding:10px 0;
-            border-bottom:1px solid var(--rp-border); font-size:13px; position:relative; }
-        .rcp-tl-item:last-child { border-bottom:none; }
-        .rcp-tl-dot   { width:10px; height:10px; border-radius:50%; justify-self:center; }
-        .rcp-tl-ok     .rcp-tl-dot { background:var(--rp-ok); }
-        .rcp-tl-fail   .rcp-tl-dot { background:var(--rp-fail); }
-        .rcp-tl-backup .rcp-tl-dot { background:var(--rp-accent-dk); }
-        .rcp-tl-warn   .rcp-tl-dot { background:var(--rp-warn); }
-        .rcp-tl-time { font-size:11px; color:var(--rp-muted); white-space:nowrap; }
+        /* ── Timeline ────────────────────────────────────────────────── */
+        .rcp-timeline {
+            list-style: none !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+        .rcp-tl-item {
+            display: grid;
+            grid-template-columns: 12px 1fr auto;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 0;
+            border-bottom: 1px solid var(--rp-border);
+        }
+        .rcp-tl-item:last-child { border-bottom: none; }
+        .rcp-tl-dot { width: 10px; height: 10px; border-radius: 50%; justify-self: center; }
+        .rcp-tl-ok     .rcp-tl-dot { background: var(--rp-ok); }
+        .rcp-tl-fail   .rcp-tl-dot { background: var(--rp-fail); }
+        .rcp-tl-backup .rcp-tl-dot { background: var(--rp-teal); }
+        .rcp-tl-warn   .rcp-tl-dot { background: var(--rp-warn); }
+        .rcp-tl-text {
+            font-size: 13px !important;
+            color: var(--rp-text) !important;
+        }
+        .rcp-tl-time {
+            font-size: 11px !important;
+            color: var(--rp-muted) !important;
+            white-space: nowrap;
+        }
 
-        /* Tech bar */
-        .rcp-tech-bar { display:flex; gap:20px; flex-wrap:wrap; padding:14px 20px;
-            background:var(--rp-card); border:1px solid var(--rp-border); border-radius:10px;
-            font-size:12px; color:var(--rp-muted); margin-top:20px; }
-        .rcp-tech-bar span { display:flex; align-items:center; gap:4px; }
-        .rcp-hub-ok  { color:var(--rp-ok); font-weight:600; }
-        .rcp-hub-off { color:var(--rp-muted); }
-
-        /* Footer */
-        .rcp-footer-note { margin-top:16px; font-size:11px; color:var(--rp-muted); text-align:right; }
-        .rcp-footer-note a { color:var(--rp-accent-dk); text-decoration:none; }
+        /* ── Footer row ──────────────────────────────────────────────── */
+        .rcp-footer-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr auto;
+            gap: 16px;
+            margin-top: 16px;
+            background: var(--rp-card);
+            border: 1px solid var(--rp-border);
+            border-radius: 12px;
+            padding: 20px 24px;
+            align-items: start;
+        }
+        @media(max-width:700px) { .rcp-footer-row { grid-template-columns: 1fr; } }
+        .rcp-footer-h {
+            font-size: 13px !important;
+            font-weight: 700 !important;
+            color: var(--rp-green) !important;
+            margin: 0 0 8px !important;
+        }
+        .rcp-plan-feat {
+            list-style: none !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            font-size: 12px !important;
+            color: var(--rp-muted) !important;
+            line-height: 1.8;
+        }
+        .rcp-footer-p {
+            font-size: 13px !important;
+            color: var(--rp-muted) !important;
+            margin: 0 0 10px !important;
+        }
+        .rcp-btn-support, .rcp-btn-web {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px !important;
+            font-weight: 600 !important;
+            padding: 7px 14px;
+            border-radius: 8px;
+            text-decoration: none !important;
+            margin-right: 8px;
+            margin-bottom: 4px;
+        }
+        .rcp-btn-support {
+            background: var(--rp-green) !important;
+            color: #fff !important;
+        }
+        .rcp-btn-support:hover { background: #2A5A40 !important; color: #fff !important; }
+        .rcp-btn-support svg { width: 14px; height: 14px; }
+        .rcp-btn-web {
+            background: var(--rp-bg) !important;
+            color: var(--rp-green) !important;
+            border: 1px solid var(--rp-border) !important;
+        }
+        .rcp-btn-web:hover { background: var(--rp-border) !important; }
+        .rcp-footer-meta { text-align: right; }
+        .rcp-link-sm {
+            font-size: 12px !important;
+            color: var(--rp-teal) !important;
+            text-decoration: none !important;
+        }
+        .rcp-link-sm:hover { text-decoration: underline !important; }
+        .rcp-version-note {
+            font-size: 11px !important;
+            color: var(--rp-muted) !important;
+            margin: 3px 0 !important;
+        }
         </style>
         <?php
     }

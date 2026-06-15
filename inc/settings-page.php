@@ -415,7 +415,7 @@ class RP_Care_Settings_Page {
         global $pagenow;
         
         // Only on our settings page
-        if ($pagenow === 'options-general.php' && isset($_GET['page']) && $_GET['page'] === 'replanta-care') {
+        if ($pagenow === 'admin.php' && isset($_GET['page']) && $_GET['page'] === 'replanta-care') {
             // Remove all admin notices except WordPress core ones
             remove_all_actions('admin_notices');
             remove_all_actions('all_admin_notices');

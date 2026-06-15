@@ -63,8 +63,8 @@ function GhApi {
 
 function GitExec {
     param([string]$WorkDir, [string[]]$GitArgs)
-    $result = & git -C $WorkDir @GitArgs 2>&1
-    if ($LASTEXITCODE -ne 0) { Fail "git $GitArgs => $result" }
+    $result = & git -C $WorkDir @GitArgs
+    if ($LASTEXITCODE -ne 0) { Fail "git $GitArgs => exit $LASTEXITCODE" }
     return $result
 }
 

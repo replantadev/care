@@ -189,7 +189,7 @@ class ReplantaCare {
             // Initialize client portal + admin settings page
             if (is_admin()) {
                 if (class_exists('RP_Care_Client_Portal')) {
-                    RP_Care_Client_Portal::get_instance();
+                    RP_Care_Client_Portal::getInstance();
                 }
                 if (class_exists('RP_Care_Settings_Page')) {
                     RP_Care_Settings_Page::get_instance();

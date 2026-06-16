@@ -1,5 +1,16 @@
 # Changelog — Replanta Care
 
+## [1.12.1]
+
+- Fix: emojis eliminados del portal — reemplazados por SVG inline
+- Fix: métodos renombrados a camelCase (SonarQube php:S100)
+- Fix: complejidad cognitiva reducida extrayendo renderSecurityCard, renderUpdatesCard, renderBackupsCard, buildSecurityChecks, countBackupsThisMonth (php:S3776)
+- Fix: humanTime y healthLabel reducidos a 3 returns máximo (php:S1142)
+- Fix: ternario anidado eliminado con sslClass() (php:S3358)
+- Fix: llaves en todos los if de una línea (php:S121)
+- Fix: literal "hace " definido como variable $prefix (php:S1192)
+- Fix: GitExec y landing check sin 2>&1 — compatible con PowerShell 5.1
+
 ## [1.12.0]
 
 - ClientPortal rediseñado: panel orientado al cliente con lenguaje natural (sin jerga técnica)

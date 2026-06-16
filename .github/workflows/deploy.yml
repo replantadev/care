@@ -51,7 +51,7 @@ jobs:
           files: replanta-care-${{ steps.meta.outputs.version }}.zip
           make_latest: true
           fail_on_unmatched_files: true
-          overwrite: true
+          overwrite_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

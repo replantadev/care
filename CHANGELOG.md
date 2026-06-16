@@ -1,5 +1,13 @@
 # Changelog — Replanta Care
 
+## [1.12.3]
+
+- Portal: dark mode completo con paleta forest-green (#0D1A10 / #1E2F23 / #93F1C9)
+- Portal: icono del menú de admin cambiado a escudo-estrella (shield-star)
+- Portal: "Tu plan" muestra características legibles (actualizaciones, backups, WPO, revisiones)
+- Configuración: dark mode restaurado tras migración del menú (selector body class actualizado)
+- CI: fix overwrite_files en action-gh-release@v2
+
 ## [1.12.2]
 
 - Fix crítico: class-client-portal.php no estaba siendo commiteado por build.ps1 — causaba Fatal error en producción (getInstance undefined)

@@ -18,7 +18,7 @@ class RP_Care_Client_Portal {
 
     private static $instance = null;
 
-    const MENU_ICON = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjYTdhYWFkIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTExIDIwQTcgNyAwIDAgMSA5IDE5QzcgMTcgMyAxNCAzIDloMGE1IDUgMCAwIDEgNS01aDFhNyA3IDAgMCAxIDYgNGwxIDJhMyAzIDAgMCAxIDMgM2gwYTMgMyAwIDAgMS0zIDNoLTFsLTEgM2EzIDMgMCAwIDEtMyAxeiIvPjxwYXRoIGQ9Ik0xMiAxMkw5IDE1Ii8+PC9zdmc+';
+    const MENU_ICON = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNTYgMjU2IiBmaWxsPSIjYTdhYWFkIj48cGF0aCBkPSJNODAuNTcsMTE3QTgsOCwwLDAsMSw5MSwxMTIuNTdsMjksMTEuNjFWOTZhOCw4LDAsMCwxLDE2LDB2MjguMThsMjktMTEuNjFBOCw4LDAsMSwxLDE3MSwxMjcuNDNsLTMwLjMxLDEyLjEyTDE1OC40LDE2My4yYTgsOCwwLDEsMS0xMi44LDkuNkwxMjgsMTQ5LjMzLDExMC40LDE3Mi44YTgsOCwwLDEsMS0xMi44LTkuNmwxNy43NC0yMy42NUw4NSwxMjcuNDNBOCw4LDAsMCwxLDgwLjU3LDExN1pNMjI0LDU2djU2YzAsNTIuNzItMjUuNTIsODQuNjctNDYuOTMsMTAyLjE5LTIzLjA2LDE4Ljg2LTQ2LDI1LjI3LTQ3LDI1LjUzYTgsOCwwLDAsMS00LjIsMGMtMS0uMjYtMjMuOTEtNi42Ny00Ny0yNS41M0M1Ny41MiwxOTYuNjcsMzIsMTY0LjcyLDMyLDExMlY1NkExNiwxNiwwLDAsMSw0OCw0MEgyMDhBMTYsMTYsMCwwLDEsMjI0LDU2Wm0tMTYsMEw0OCw1NmwwLDU2YzAsMzcuMywxMy44Miw2Ny41MSw0MS4wNyw4OS44MUExMjguMjUsMTI4LjI1LDAsMCwwLDEyOCwyMjMuNjJhMTI5LjMsMTI5LjMsMCwwLDAsMzkuNDEtMjIuMkMxOTQuMzQsMTc5LjE2LDIwOCwxNDkuMDcsMjA4LDExMloiLz48L3N2Zz4=';
 
     public static function getInstance() {
         if (self::$instance === null) {
@@ -326,17 +326,61 @@ class RP_Care_Client_Portal {
         <?php
     }
 
+    private function planFeaturesLabels($plan) {
+        $features = RP_Care_Plan::get_features($plan);
+        if (empty($features)) {
+            return [];
+        }
+        $freq = [
+            'daily'     => 'diarias',
+            'weekly'    => 'semanales',
+            'monthly'   => 'mensuales',
+            'quarterly' => 'trimestrales',
+            'biannual'  => 'bianuales',
+        ];
+        $wpo = ['basic' => 'básica', 'basic_plus' => 'media', 'advanced' => 'avanzada'];
+        $labels = [];
+        $upd_fr = $freq[$features['updates_frequency'] ?? 'monthly'] ?? 'mensuales';
+        if (!empty($features['update_control'])) {
+            $labels[] = 'Actualizaciones ' . $upd_fr;
+        }
+        if (!empty($features['automatic_updates'])) {
+            $labels[] = 'Actualizaciones automáticas con análisis de riesgo';
+        }
+        if (!empty($features['backup'])) {
+            $bk_fr = $freq[$features['backup_frequency'] ?? 'weekly'] ?? 'semanales';
+            $labels[] = 'Copias de seguridad ' . $bk_fr . ' en Backblaze B2';
+        }
+        if (!empty($features['monitoring'])) {
+            $labels[] = 'Monitorización 24/7';
+        }
+        if (!empty($features['priority_support'])) {
+            $labels[] = 'Soporte prioritario';
+        }
+        if (!empty($features['hosting_included'])) {
+            $labels[] = 'Hosting ecológico incluido';
+        }
+        $wl = $wpo[$features['wpo_level'] ?? 'basic'] ?? 'básica';
+        $labels[] = 'Optimización WPO ' . $wl;
+        $rv_fr = $freq[$features['review_frequency'] ?? 'quarterly'] ?? 'trimestrales';
+        $labels[] = 'Revisiones ' . $rv_fr;
+        return $labels;
+    }
+
     private function renderFooterRow($d) {
-        $plan_features = RP_Care_Plan::get_features($d['plan']);
+        $plan_labels = $this->planFeaturesLabels($d['plan']);
         ?>
         <div class="rcp-footer-row">
 
             <div class="rcp-footer-plan">
                 <h3 class="rcp-footer-h">Tu plan: <strong><?php echo esc_html($d['plan_name']); ?></strong></h3>
-                <?php if (!empty($plan_features)): ?>
+                <?php if (!empty($plan_labels)): ?>
                 <ul class="rcp-plan-feat">
-                    <?php foreach ((array) $plan_features as $feat): ?>
-                    <li>&middot; <?php echo esc_html($feat); ?></li>
+                    <?php foreach ($plan_labels as $label): ?>
+                    <li>
+                        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3,8 6,11 13,4"/></svg>
+                        <?php echo esc_html($label); ?>
+                    </li>
                     <?php endforeach; ?>
                 </ul>
                 <?php endif; ?>
@@ -578,24 +622,36 @@ class RP_Care_Client_Portal {
     private function renderCss() {
         ?>
         <style>
+        /* ── Dark background para la página del portal ──────────────── */
+        body.toplevel_page_replanta-care-portal #wpcontent,
+        body.toplevel_page_replanta-care-portal #wpfooter { background: #0D1A10; }
+        body.toplevel_page_replanta-care-portal #wpbody-content { padding-bottom: 0; }
+        body.toplevel_page_replanta-care-portal .wrap { margin: 0; padding: 0; max-width: none; }
+
         /* ── Variables ─────────────────────────────────────────────── */
         .rcp-wrap {
-            --rp-green:   #1E2F23;
+            --rp-green:   #93F1C9;
             --rp-accent:  #93F1C9;
             --rp-teal:    #41999F;
-            --rp-bg:      #F4F8F6;
-            --rp-card:    #FFFFFF;
-            --rp-border:  #DDE8E3;
-            --rp-text:    #2D3A33;
-            --rp-muted:   #6B7B72;
-            --rp-ok:      #16A34A;
-            --rp-warn:    #D97706;
-            --rp-fail:    #DC2626;
+            --rp-bg:      #0D1A10;
+            --rp-card:    #1E2F23;
+            --rp-card-2:  #253C2A;
+            --rp-border:  rgba(147,241,201,0.13);
+            --rp-border-s:rgba(147,241,201,0.30);
+            --rp-text:    #F7FBF9;
+            --rp-muted:   rgba(247,251,249,0.52);
+            --rp-ok:      #4ade80;
+            --rp-warn:    #fbbf24;
+            --rp-fail:    #f87171;
+            --rp-shadow:  0 4px 24px rgba(0,0,0,0.45);
             max-width: 1180px;
-            padding: 24px 20px 60px;
+            margin: 0 -20px;
+            padding: 24px 24px 60px;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             font-size: 14px;
             color: var(--rp-text) !important;
+            background: var(--rp-bg);
+            min-height: calc(100vh - 32px);
         }
 
         /* ── Status bar ──────────────────────────────────────────────── */
@@ -684,7 +740,7 @@ class RP_Care_Client_Portal {
             text-align: center;
             box-shadow: 0 1px 3px rgba(0,0,0,.05);
         }
-        .rcp-stat-box.rcp-stat-warn { border-color: #fcd34d; background: #fffbeb; }
+        .rcp-stat-box.rcp-stat-warn { border-color: rgba(251,191,36,0.35); background: rgba(251,191,36,0.08); }
         .rcp-stat-big {
             display: block !important;
             font-size: 36px !important;
@@ -811,12 +867,12 @@ class RP_Care_Client_Portal {
         }
         .rcp-pending-notice {
             margin-top: 12px;
-            background: #fefce8;
-            border: 1px solid #fde68a;
+            background: rgba(251,191,36,0.08);
+            border: 1px solid rgba(251,191,36,0.25);
             border-radius: 8px;
             padding: 8px 12px;
             font-size: 12px !important;
-            color: #854d0e !important;
+            color: #fbbf24 !important;
         }
         .rcp-empty-state {
             text-align: center;
@@ -836,8 +892,8 @@ class RP_Care_Client_Portal {
             padding: 12px;
             border-radius: 8px;
         }
-        .rcp-bh-ok   { background: #f0fdf4; border: 1px solid #bbf7d0; }
-        .rcp-bh-warn { background: #fffbeb; border: 1px solid #fde68a; }
+        .rcp-bh-ok   { background: rgba(74,222,128,0.08); border: 1px solid rgba(74,222,128,0.22); }
+        .rcp-bh-warn { background: rgba(251,191,36,0.08); border: 1px solid rgba(251,191,36,0.22); }
         .rcp-bh-icon {
             flex-shrink: 0;
             width: 28px; height: 28px;
@@ -916,7 +972,19 @@ class RP_Care_Client_Portal {
             padding: 0 !important;
             font-size: 12px !important;
             color: var(--rp-muted) !important;
-            line-height: 1.8;
+            line-height: 1.7;
+        }
+        .rcp-plan-feat li {
+            display: flex !important;
+            align-items: center !important;
+            gap: 6px !important;
+            padding: 2px 0 !important;
+        }
+        .rcp-plan-feat li svg {
+            width: 13px; height: 13px;
+            flex-shrink: 0;
+            color: var(--rp-accent) !important;
+            stroke: var(--rp-accent) !important;
         }
         .rcp-footer-p {
             font-size: 13px !important;

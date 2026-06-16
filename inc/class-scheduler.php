@@ -50,8 +50,12 @@ class RP_Care_Scheduler {
         $update_frequency = RP_Care_Plan::get_update_frequency($this->plan);
         $this->maybe_schedule('rpcare_task_updates', $update_frequency);
         
-        // Schedule backups (all plans)
+        // Schedule backups — eCommerce addon upgrades to 12h (twicedaily)
         $backup_frequency = RP_Care_Plan::get_backup_frequency($this->plan);
+        if (class_exists('RP_Care_Addon_Manager') && RP_Care_Addon_Manager::get()->is_active('ecommerce')) {
+            $ecom_cfg         = RP_Care_Addon_Manager::get()->get_config('ecommerce');
+            $backup_frequency = $ecom_cfg['backup_frequency'] ?? 'twicedaily';
+        }
         $this->maybe_schedule('rpcare_task_backup', $backup_frequency);
         
         // Schedule WPO tasks
@@ -83,6 +87,16 @@ class RP_Care_Scheduler {
             $this->maybe_schedule('rpcare_task_cwv', $freq);
         }
         
+        // eCommerce addon tasks — solo si el addon esta activo
+        if (class_exists('RP_Care_Addon_Manager') && RP_Care_Addon_Manager::get()->is_active('ecommerce')) {
+            $ecom_cfg = RP_Care_Addon_Manager::get()->get_config('ecommerce');
+            if (!empty($ecom_cfg['checkout_monitor'])) {
+                $this->maybe_schedule('rpcare_task_checkout_monitor', 'fifteen_minutes');
+            }
+            $this->maybe_schedule('rpcare_task_peak_scheduler', 'daily');
+            $this->maybe_schedule('rpcare_task_revenue_anomaly', 'twicedaily');
+        }
+
         // Schedule health checks (all plans)
         $this->maybe_schedule('rpcare_task_health', 'daily');
         
@@ -188,6 +202,11 @@ class RP_Care_Scheduler {
         add_filter('rpcare_task_cloudflare_configure', ['RP_Care_Task_Cloudflare', 'configure']);
         add_filter('rpcare_task_orphan_media', ['RP_Care_Task_OrphanMedia', 'scan']);
         add_filter('rpcare_task_staging_clone', ['RP_Care_Task_Staging', 'create_clone']);
+
+        // eCommerce addon
+        add_filter('rpcare_task_checkout_monitor', ['RP_Care_Task_Checkout_Monitor', 'run']);
+        add_filter('rpcare_task_peak_scheduler', ['RP_Care_Task_Peak_Scheduler', 'run']);
+        add_filter('rpcare_task_revenue_anomaly', ['RP_Care_Task_Revenue_Anomaly', 'run']);
     }
     
     public function clear_all() {
@@ -204,17 +223,41 @@ class RP_Care_Scheduler {
             'rpcare_task_maintenance',
             'rpcare_task_report',
             'rpcare_task_cwv',
-            'rpcare_task_anomaly'
+            'rpcare_task_anomaly',
+            'rpcare_task_checkout_monitor',
+            'rpcare_task_peak_scheduler',
+            'rpcare_task_revenue_anomaly',
         ];
-        
+
         foreach ($hooks as $hook) {
             if (function_exists('as_unschedule_all_actions')) {
                 as_unschedule_all_actions($hook, [], 'replanta-care');
             }
             wp_clear_scheduled_hook($hook); // also clear any legacy WP Cron entries
         }
-        
+
         RP_Care_Utils::log('scheduler', 'info', 'Cleared all scheduled tasks');
+    }
+
+    /**
+     * Limpia solo las tareas relacionadas con addons (backup + eCommerce).
+     * Llamado desde REST cuando cambia la lista de addons activos, para
+     * forzar que ensure() las reprograme con la nueva configuracion.
+     */
+    public function clear_addon_schedules(): void {
+        $hooks = [
+            'rpcare_task_backup',
+            'rpcare_task_checkout_monitor',
+            'rpcare_task_peak_scheduler',
+            'rpcare_task_revenue_anomaly',
+        ];
+        foreach ($hooks as $hook) {
+            if (function_exists('as_unschedule_all_actions')) {
+                as_unschedule_all_actions($hook, [], 'replanta-care');
+            }
+            wp_clear_scheduled_hook($hook);
+        }
+        RP_Care_Utils::log('scheduler', 'info', 'Addon schedules cleared for re-evaluation');
     }
     
     public function get_next_runs() {

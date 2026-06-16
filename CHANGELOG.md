@@ -1,5 +1,17 @@
 # Changelog — Replanta Care
 
+## [1.13.0]
+
+- Addon system: RP_Care_Addon_Manager singleton — Hub empuja addons activos via /config, Care los almacena y expone is_active() / get_config()
+- Addon eCommerce — Checkout Monitor: verifica shop/carrito/checkout/WC REST/pasarelas cada 15 min, alerta Hub tras 2 fallos consecutivos
+- Addon eCommerce — Peak Scheduler: analiza pedidos de 28 dias, detecta ventana de menor trafico y reprograma actualizaciones automaticamente
+- Addon eCommerce — Revenue Anomaly: compara ingresos (12h actual vs misma ventana hace 7d), alerta Hub + email si caida >= umbral (defecto 35%)
+- Addon eCommerce — Backups a 12h (twicedaily) cuando addon activo, con retencion de 90 dias
+- Portal: seccion "addon eCommerce" en Mi Panel mostrando estado de checkout, ingresos, backups 12h y ventana pico
+- REST /config: acepta parametros addons[] y ecommerce_config{}; reschedulea automaticamente al cambiar addons
+- Scheduler: clear_addon_schedules() para reschedule limpio al activar/desactivar addons
+- Hub: 2.3.0 / Care: 1.13.0
+
 ## [1.12.3]
 
 - Portal: dark mode completo con paleta forest-green (#0D1A10 / #1E2F23 / #93F1C9)

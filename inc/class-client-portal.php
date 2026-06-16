@@ -70,6 +70,7 @@ class RP_Care_Client_Portal {
             <?php $this->renderStatusBar($d); ?>
             <?php $this->renderStatsStrip($d); ?>
             <?php $this->renderCards($d); ?>
+            <?php $this->renderEcommerceSection($d); ?>
             <?php $this->renderTimeline($d); ?>
             <?php $this->renderFooterRow($d); ?>
 
@@ -409,6 +410,78 @@ class RP_Care_Client_Portal {
     }
 
     // -------------------------------------------------------------------------
+    // Seccion eCommerce addon
+    // -------------------------------------------------------------------------
+
+    private function renderEcommerceSection($d) {
+        if (empty($d['ecommerce_active'])) {
+            return;
+        }
+
+        $checkout = $d['checkout_status'];
+        $revenue  = $d['revenue_last_check'];
+        $peak     = $d['peak_window'];
+
+        $checkout_ok  = !empty($checkout['ok']);
+        $checkout_ts  = !empty($checkout['ts']) ? $this->humanTime($checkout['ts']) : 'nunca';
+        $checkout_str = $checkout_ok
+            ? sprintf('OK &mdash; %d/%d checks', $checkout['passed'] ?? 0, $checkout['total'] ?? 0)
+            : sprintf('Fallo &mdash; %d/%d checks pasados', $checkout['passed'] ?? 0, $checkout['total'] ?? 0);
+
+        $rev_str   = '';
+        $rev_alert = false;
+        if (!empty($revenue['current'])) {
+            $rev_str   = sprintf('%.2f&nbsp;EUR hoy &mdash; %.2f&nbsp;EUR hace 7&nbsp;d&iacute;as', $revenue['current']['total'] ?? 0, $revenue['baseline']['total'] ?? 0);
+            $rev_alert = !empty($revenue['alert']);
+        }
+
+        $peak_str = '';
+        if (!empty($peak['hour'])) {
+            $peak_str = sprintf('%02d:00&ndash;%02d:00', $peak['hour'], ($peak['hour'] + 2) % 24);
+        }
+        ?>
+        <div class="rcp-ecom-section">
+            <h3 class="rcp-ecom-title">addon eCommerce</h3>
+            <div class="rcp-ecom-grid">
+
+                <div class="rcp-ecom-card<?php echo $checkout_ok ? '' : ' rcp-ecom-card--warn'; ?>">
+                    <span class="rcp-ecom-card__label">Checkout</span>
+                    <span class="rcp-ecom-card__value"><?php echo $checkout_str; ?></span>
+                    <span class="rcp-ecom-card__sub">comprobado <?php echo $checkout_ts; ?></span>
+                </div>
+
+                <?php if ($rev_str): ?>
+                <div class="rcp-ecom-card<?php echo $rev_alert ? ' rcp-ecom-card--warn' : ''; ?>">
+                    <span class="rcp-ecom-card__label">Ingresos</span>
+                    <span class="rcp-ecom-card__value"><?php echo $rev_str; ?></span>
+                    <?php if ($rev_alert): ?>
+                    <span class="rcp-ecom-card__sub rcp-ecom-alert">Ca&iacute;da de <?php echo esc_html($revenue['drop_pct'] ?? 0); ?>% &mdash; Hub notificado</span>
+                    <?php else: ?>
+                    <span class="rcp-ecom-card__sub">sin anomal&iacute;as</span>
+                    <?php endif; ?>
+                </div>
+                <?php endif; ?>
+
+                <div class="rcp-ecom-card">
+                    <span class="rcp-ecom-card__label">Backups</span>
+                    <span class="rcp-ecom-card__value">cada 12&nbsp;h</span>
+                    <span class="rcp-ecom-card__sub">Backblaze&nbsp;B2 &mdash; retenci&oacute;n 90&nbsp;d&iacute;as</span>
+                </div>
+
+                <?php if ($peak_str): ?>
+                <div class="rcp-ecom-card">
+                    <span class="rcp-ecom-card__label">Ventana de actualizaciones</span>
+                    <span class="rcp-ecom-card__value"><?php echo $peak_str; ?></span>
+                    <span class="rcp-ecom-card__sub">horario de menor tr&aacute;fico calculado autom&aacute;ticamente</span>
+                </div>
+                <?php endif; ?>
+
+            </div>
+        </div>
+        <?php
+    }
+
+    // -------------------------------------------------------------------------
     // Datos
     // -------------------------------------------------------------------------
 
@@ -452,6 +525,10 @@ class RP_Care_Client_Portal {
             'activity'           => $this->buildActivity($update_history, $b2, $cache),
             'hub_connected'      => $hub_connected,
             'cache_age_label'    => $cache_age_label,
+            'ecommerce_active'   => class_exists('RP_Care_Addon_Manager') && RP_Care_Addon_Manager::get()->is_active('ecommerce'),
+            'checkout_status'    => get_option('rpcare_checkout_status', []),
+            'revenue_last_check' => get_option('rpcare_revenue_last_check', []),
+            'peak_window'        => get_option('rpcare_peak_window', []),
         ];
     }
 
@@ -1026,6 +1103,63 @@ class RP_Care_Client_Portal {
             font-size: 11px !important;
             color: var(--rp-muted) !important;
             margin: 3px 0 !important;
+        }
+
+        /* ── Addon eCommerce ─────────────────────────────────────────── */
+        .rcp-ecom-section {
+            margin-top: 16px;
+            background: var(--rp-card);
+            border: 1px solid var(--rp-border);
+            border-radius: 12px;
+            padding: 20px 24px;
+        }
+        .rcp-ecom-title {
+            font-size: 11px !important;
+            font-weight: 700 !important;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+            color: var(--rp-green) !important;
+            margin: 0 0 14px !important;
+        }
+        .rcp-ecom-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 12px;
+        }
+        .rcp-ecom-card {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            padding: 14px 16px;
+            border-radius: 10px;
+            background: rgba(147,241,201,0.05);
+            border: 1px solid var(--rp-border);
+        }
+        .rcp-ecom-card--warn {
+            background: rgba(251,191,36,0.07);
+            border-color: rgba(251,191,36,0.25);
+        }
+        .rcp-ecom-card__label {
+            font-size: 10px !important;
+            font-weight: 700 !important;
+            letter-spacing: .07em;
+            text-transform: uppercase;
+            color: var(--rp-muted) !important;
+        }
+        .rcp-ecom-card__value {
+            font-size: 13px !important;
+            font-weight: 600 !important;
+            color: var(--rp-text) !important;
+            line-height: 1.4;
+        }
+        .rcp-ecom-card--warn .rcp-ecom-card__value { color: var(--rp-warn) !important; }
+        .rcp-ecom-card__sub {
+            font-size: 11px !important;
+            color: var(--rp-muted) !important;
+        }
+        .rcp-ecom-alert {
+            color: var(--rp-warn) !important;
+            font-weight: 600 !important;
         }
         </style>
         <?php

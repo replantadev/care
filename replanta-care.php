@@ -3,7 +3,7 @@
  * Plugin Name: Replanta Care
  * Plugin URI: https://replanta.dev
  * Description: Plugin de mantenimiento WordPress automático para clientes de Replanta con integración Hub
- * Version: 1.12.3
+ * Version: 1.13.0
  * Author: Replanta
  * Author URI: https://replanta.dev
  * License: GPL v2 or later
@@ -17,7 +17,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('RPCARE_VERSION', '1.12.3');
+define('RPCARE_VERSION', '1.13.0');
 define('RPCARE_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('RPCARE_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('RPCARE_PLUGIN_FILE', __FILE__);
@@ -123,6 +123,7 @@ class ReplantaCare {
             'inc/class-update-control.php',
             'inc/class-dashboard.php',
             'inc/class-metrics.php',
+            'inc/class-addon-manager.php',
 
             // Task classes
             'inc/task-updates.php',
@@ -137,6 +138,11 @@ class ReplantaCare {
             'inc/task-anomaly.php',
             'inc/task-staging.php',
             'inc/task-orphan-media.php',
+
+            // eCommerce addon tasks
+            'inc/task-checkout-monitor.php',
+            'inc/task-peak-scheduler.php',
+            'inc/task-revenue-anomaly.php',
             
             // Integration classes
             'inc/integrations-cache.php',
@@ -162,6 +168,11 @@ class ReplantaCare {
     
     public function init_components() {
         try {
+            // Addon Manager must boot before the scheduler (scheduler reads addon state)
+            if (class_exists('RP_Care_Addon_Manager')) {
+                RP_Care_Addon_Manager::get();
+            }
+
             // Initialize scheduler based on plan
             if (class_exists('RP_Care_Plan')) {
                 $plan = RP_Care_Plan::get_current();

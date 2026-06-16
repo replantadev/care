@@ -154,6 +154,16 @@ class RP_Care_REST {
                     'required' => false,
                     'type'     => 'object',
                 ],
+                'addons' => [
+                    'required' => false,
+                    'type'     => 'array',
+                    'items'    => ['type' => 'string'],
+                    'default'  => [],
+                ],
+                'ecommerce_config' => [
+                    'required' => false,
+                    'type'     => 'object',
+                ],
             ]
         ]);
         
@@ -600,6 +610,35 @@ class RP_Care_REST {
             delete_transient('rpcare_plan_cache');
             delete_transient('rpcare_hub_backoff');
             $updated['hub_url'] = $new_hub_url;
+        }
+
+        // Addons activos empujados por Hub (ej: ['ecommerce'])
+        $addons           = $request->get_param('addons');
+        $ecommerce_config = $request->get_param('ecommerce_config');
+
+        if (!is_null($addons) && is_array($addons) && class_exists('RP_Care_Addon_Manager')) {
+            $manager    = RP_Care_Addon_Manager::get();
+            $old_addons = $manager->get_active();
+            $new_addons = array_values(array_map('sanitize_key', $addons));
+
+            $addon_configs = [];
+            if ($ecommerce_config && is_array($ecommerce_config)) {
+                $addon_configs['ecommerce'] = $ecommerce_config;
+            }
+
+            $manager->update($new_addons, $addon_configs);
+            $updated['addons'] = $new_addons;
+
+            // Re-evaluate addon schedules when the addon list changes
+            $addons_changed = ($old_addons !== $new_addons);
+            if ($addons_changed && class_exists('RP_Care_Scheduler')) {
+                $current_plan = RP_Care_Plan::get_current();
+                if ($current_plan) {
+                    $scheduler = new RP_Care_Scheduler($current_plan);
+                    $scheduler->clear_addon_schedules();
+                    $scheduler->ensure();
+                }
+            }
         }
 
         RP_Care_Utils::log('config_update', 'info', 'Configuration updated via API', $updated);

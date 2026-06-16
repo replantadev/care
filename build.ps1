@@ -202,8 +202,8 @@ if (-not $Deploy) {
 #  8. Git commit + push en plugin repo
 # ─────────────────────────────────────────────────────────────────────────────
 Step "Git commit en plugin repo"
-GitExec $PluginDir @("add", "replanta-care.php", "update-info.json", "CHANGELOG.md", "docs")
-$status = & git -C $PluginDir status --porcelain 2>&1
+GitExec $PluginDir @("add", "replanta-care.php", "update-info.json", "CHANGELOG.md", "docs", "build.ps1", "inc")
+$status = & git -C $PluginDir status --porcelain
 if ($status) {
     GitExec $PluginDir @("commit", "-m", "v$Version")
     OK "Commit creado"
@@ -278,9 +278,10 @@ if (-not (Test-Path $DocsLocal)) {
 # ─────────────────────────────────────────────────────────────────────────────
 Step "Comprobando repo landing"
 $LandingDir = Split-Path (Split-Path $LandingFile -Parent) -Parent | Split-Path -Parent
-$isLandingGit = & git -C $LandingDir rev-parse --is-inside-work-tree 2>&1
-if ($LASTEXITCODE -eq 0) {
-    $landingStatus = & git -C $LandingDir status --porcelain 2>&1
+& git -C $LandingDir rev-parse --is-inside-work-tree
+$isLandingGit = $LASTEXITCODE
+if ($isLandingGit -eq 0) {
+    $landingStatus = & git -C $LandingDir status --porcelain
     if ($landingStatus | Where-Object { $_ -match 'plugins-landing' }) {
         GitExec $LandingDir @("add", "app/public/plugins-landing.html")
         GitExec $LandingDir @("commit", "-m", "landing: Care v$Version")
@@ -297,3 +298,4 @@ if ($LASTEXITCODE -eq 0) {
 Write-Host "`n  Deploy completado: Replanta Care v$Version" -ForegroundColor Green
 Write-Host "  Release: https://github.com/$GhRepo/releases/tag/v$Version`n" -ForegroundColor Green
 Write-Host "  Docs:    https://replantadev.github.io/care-docs/`n" -ForegroundColor Cyan
+exit 0

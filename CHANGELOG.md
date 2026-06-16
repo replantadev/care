@@ -1,5 +1,10 @@
 # Changelog — Replanta Care
 
+## [1.12.2]
+
+- Fix crítico: class-client-portal.php no estaba siendo commiteado por build.ps1 — causaba Fatal error en producción (getInstance undefined)
+- build.ps1: ahora incluye inc/ y build.ps1 en git add para evitar desincronías entre local y GitHub Actions ZIP
+
 ## [1.12.1]
 
 - Fix: emojis eliminados del portal — reemplazados por SVG inline

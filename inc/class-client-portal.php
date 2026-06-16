@@ -20,7 +20,7 @@ class RP_Care_Client_Portal {
 
     const MENU_ICON = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjYTdhYWFkIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTExIDIwQTcgNyAwIDAgMSA5IDE5QzcgMTcgMyAxNCAzIDloMGE1IDUgMCAwIDEgNS01aDFhNyA3IDAgMCAxIDYgNGwxIDJhMyAzIDAgMCAxIDMgM2gwYTMgMyAwIDAgMS0zIDNoLTFsLTEgM2EzIDMgMCAwIDEtMyAxeiIvPjxwYXRoIGQ9Ik0xMiAxMkw5IDE1Ii8+PC9zdmc+';
 
-    public static function get_instance() {
+    public static function getInstance() {
         if (self::$instance === null) {
             self::$instance = new self();
         }
@@ -28,20 +28,20 @@ class RP_Care_Client_Portal {
     }
 
     private function __construct() {
-        add_action('admin_menu', [$this, 'register_menus'], 5);
+        add_action('admin_menu', [$this, 'registerMenus'], 5);
     }
 
     // -------------------------------------------------------------------------
     // Menú
     // -------------------------------------------------------------------------
 
-    public function register_menus() {
+    public function registerMenus() {
         add_menu_page(
             'Replanta Care',
             'Replanta Care',
             'manage_options',
             'replanta-care-portal',
-            [$this, 'render_portal'],
+            [$this, 'renderPortal'],
             self::MENU_ICON,
             59
         );
@@ -52,7 +52,7 @@ class RP_Care_Client_Portal {
             'Mi Panel',
             'manage_options',
             'replanta-care-portal',
-            [$this, 'render_portal']
+            [$this, 'renderPortal']
         );
         // "Configuración" la registra settings-page.php en prioridad 10
     }
@@ -61,17 +61,17 @@ class RP_Care_Client_Portal {
     // Render principal
     // -------------------------------------------------------------------------
 
-    public function render_portal() {
-        $d = $this->collect_data();
-        $this->render_css();
+    public function renderPortal() {
+        $d = $this->collectData();
+        $this->renderCss();
         ?>
         <div class="rcp-wrap">
 
-            <?php $this->render_status_bar($d); ?>
-            <?php $this->render_stats_strip($d); ?>
-            <?php $this->render_cards($d); ?>
-            <?php $this->render_timeline($d); ?>
-            <?php $this->render_footer_row($d); ?>
+            <?php $this->renderStatusBar($d); ?>
+            <?php $this->renderStatsStrip($d); ?>
+            <?php $this->renderCards($d); ?>
+            <?php $this->renderTimeline($d); ?>
+            <?php $this->renderFooterRow($d); ?>
 
         </div>
         <?php
@@ -81,15 +81,20 @@ class RP_Care_Client_Portal {
     // Secciones
     // -------------------------------------------------------------------------
 
-    private function render_status_bar($d) {
-        $ok   = $d['overall_ok'];
-        $icon = $ok ? '&#10003;' : '&#9888;';
-        $msg  = $ok ? 'Tu sitio est&aacute; en perfectas condiciones' : 'Hay algo que requiere atenci&oacute;n';
-        $cls  = $ok ? 'rcp-st-ok' : 'rcp-st-warn';
+    private function renderStatusBar($d) {
+        $ok  = $d['overall_ok'];
+        $msg = $ok ? 'Tu sitio est&aacute; en perfectas condiciones' : 'Hay algo que requiere atenci&oacute;n';
+        $cls = $ok ? 'rcp-st-ok' : 'rcp-st-warn';
         ?>
         <div class="rcp-status-bar <?php echo $cls; ?>">
             <div class="rcp-st-left">
-                <span class="rcp-st-icon"><?php echo $icon; ?></span>
+                <span class="rcp-st-icon">
+                    <?php if ($ok): ?>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                    <?php else: ?>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                    <?php endif; ?>
+                </span>
                 <div>
                     <p class="rcp-st-msg"><?php echo $msg; ?></p>
                     <p class="rcp-st-domain"><?php echo esc_html($d['domain']); ?></p>
@@ -110,7 +115,7 @@ class RP_Care_Client_Portal {
         <?php
     }
 
-    private function render_stats_strip($d) {
+    private function renderStatsStrip($d) {
         $stats = [
             [
                 'num'   => $d['monthly']['updates_ok'] ?? 0,
@@ -150,122 +155,155 @@ class RP_Care_Client_Portal {
         <?php
     }
 
-    private function render_cards($d) {
+    private function renderCards($d) {
         ?>
         <div class="rcp-cards">
-
-            <div class="rcp-card">
-                <h2 class="rcp-card-h">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                    Seguridad y protecci&oacute;n
-                </h2>
-                <ul class="rcp-check-list">
-                    <?php foreach ($d['security_checks'] as $chk): ?>
-                    <li class="rcp-chk rcp-chk-<?php echo $chk['ok'] ? 'ok' : 'warn'; ?>">
-                        <span class="rcp-chk-ico"><?php echo $chk['ok'] ? '&#10003;' : '&#9888;'; ?></span>
-                        <div>
-                            <span class="rcp-chk-lbl"><?php echo esc_html($chk['label']); ?></span>
-                            <?php if ($chk['detail']): ?>
-                            <span class="rcp-chk-detail"><?php echo esc_html($chk['detail']); ?></span>
-                            <?php endif; ?>
-                        </div>
-                    </li>
-                    <?php endforeach; ?>
-                </ul>
-            </div>
-
-            <div class="rcp-card">
-                <h2 class="rcp-card-h">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-                    Actualizaciones aplicadas
-                </h2>
-
-                <?php if (!empty($d['update_history'])): ?>
-                <ul class="rcp-update-list">
-                    <?php foreach (array_slice($d['update_history'], 0, 5) as $entry):
-                        $ok   = ($entry['event_type'] ?? '') === 'update_completed';
-                        $name = $entry['data']['plugin_name'] ?? ($entry['data']['type'] ?? 'Actualizaci&oacute;n');
-                    ?>
-                    <li class="rcp-upd-item rcp-upd-<?php echo $ok ? 'ok' : 'fail'; ?>">
-                        <span class="rcp-upd-dot"></span>
-                        <span class="rcp-upd-name"><?php echo esc_html($name); ?></span>
-                        <span class="rcp-upd-time"><?php echo esc_html($this->human_time($entry['timestamp'] ?? '')); ?></span>
-                    </li>
-                    <?php endforeach; ?>
-                </ul>
-                <?php elseif ($d['hub_connected']): ?>
-                <div class="rcp-empty-state">
-                    <span class="rcp-empty-ico">&#128260;</span>
-                    <p>El historial aparecer&aacute; tras el primer ciclo de mantenimiento automatizado.</p>
-                </div>
-                <?php else: ?>
-                <div class="rcp-empty-state">
-                    <span class="rcp-empty-ico">&#128268;</span>
-                    <p>Conecta tu sitio a Replanta para activar el mantenimiento autom&aacute;tico.</p>
-                    <a href="<?php echo esc_url(admin_url('admin.php?page=replanta-care')); ?>" class="rcp-link-sm">Configurar conexi&oacute;n &rarr;</a>
-                </div>
-                <?php endif; ?>
-
-                <?php if ($d['pending_updates'] > 0): ?>
-                <div class="rcp-pending-notice">
-                    <?php echo intval($d['pending_updates']); ?> actualizaci&oacute;n<?php echo $d['pending_updates'] > 1 ? 'es pendientes' : ' pendiente'; ?> &mdash; se aplicar&aacute; autom&aacute;ticamente esta semana
-                </div>
-                <?php endif; ?>
-            </div>
-
-            <div class="rcp-card">
-                <h2 class="rcp-card-h">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                    Copias de seguridad
-                </h2>
-
-                <?php
-                $b2   = $d['last_b2_backup'];
-                $bh   = $d['backup_health'];
-                $b2ok = !empty($b2['timestamp']) || !empty($d['last_backup']);
-                ?>
-                <div class="rcp-backup-hero rcp-bh-<?php echo $b2ok ? 'ok' : 'warn'; ?>">
-                    <span class="rcp-bh-icon"><?php echo $b2ok ? '&#9729;' : '&#9888;'; ?></span>
-                    <div>
-                        <strong class="rcp-bh-title">
-                        <?php
-                        if (!empty($b2['timestamp'])) {
-                            echo '&Uacute;ltima copia: ' . esc_html($this->human_time($b2['timestamp']));
-                        } elseif ($d['last_backup']) {
-                            echo '&Uacute;ltima copia: ' . esc_html($this->human_time($d['last_backup']));
-                        } else {
-                            echo 'Sin copias registradas a&uacute;n';
-                        }
-                        ?>
-                        </strong>
-                        <span class="rcp-bh-sub">Almacenada en Backblaze B2 &mdash; nube externa segura</span>
-                    </div>
-                </div>
-
-                <ul class="rcp-check-list" style="margin-top:12px">
-                    <li class="rcp-chk rcp-chk-<?php echo $d['backups_this_month'] > 0 ? 'ok' : 'sub'; ?>">
-                        <span class="rcp-chk-ico"><?php echo $d['backups_this_month'] > 0 ? '&#10003;' : '&middot;'; ?></span>
-                        <div><span class="rcp-chk-lbl"><?php echo intval($d['backups_this_month']); ?> copias confirmadas este mes</span></div>
-                    </li>
-                    <li class="rcp-chk rcp-chk-ok">
-                        <span class="rcp-chk-ico">&#10003;</span>
-                        <div><span class="rcp-chk-lbl">Backup autom&aacute;tico antes de cada actualizaci&oacute;n</span></div>
-                    </li>
-                    <?php if ($d['ssl_days'] !== null): ?>
-                    <?php $ssl_cls = $d['ssl_days'] > 30 ? 'ok' : ($d['ssl_days'] > 14 ? 'warn' : 'fail'); ?>
-                    <li class="rcp-chk rcp-chk-<?php echo $ssl_cls; ?>">
-                        <span class="rcp-chk-ico"><?php echo $d['ssl_days'] > 30 ? '&#10003;' : '&#9888;'; ?></span>
-                        <div><span class="rcp-chk-lbl">SSL v&aacute;lido &mdash; <?php echo intval($d['ssl_days']); ?> d&iacute;as restantes</span></div>
-                    </li>
-                    <?php endif; ?>
-                </ul>
-            </div>
-
+            <?php $this->renderSecurityCard($d); ?>
+            <?php $this->renderUpdatesCard($d); ?>
+            <?php $this->renderBackupsCard($d); ?>
         </div>
         <?php
     }
 
-    private function render_timeline($d) {
+    private function renderSecurityCard($d) {
+        ?>
+        <div class="rcp-card">
+            <h2 class="rcp-card-h">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                Seguridad y protecci&oacute;n
+            </h2>
+            <ul class="rcp-check-list">
+                <?php foreach ($d['security_checks'] as $chk): ?>
+                <li class="rcp-chk rcp-chk-<?php echo $chk['ok'] ? 'ok' : 'warn'; ?>">
+                    <span class="rcp-chk-ico">
+                        <?php if ($chk['ok']): ?>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+                        <?php else: ?>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                        <?php endif; ?>
+                    </span>
+                    <div>
+                        <span class="rcp-chk-lbl"><?php echo esc_html($chk['label']); ?></span>
+                        <?php if ($chk['detail']): ?>
+                        <span class="rcp-chk-detail"><?php echo esc_html($chk['detail']); ?></span>
+                        <?php endif; ?>
+                    </div>
+                </li>
+                <?php endforeach; ?>
+            </ul>
+        </div>
+        <?php
+    }
+
+    private function renderUpdatesCard($d) {
+        ?>
+        <div class="rcp-card">
+            <h2 class="rcp-card-h">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                Actualizaciones aplicadas
+            </h2>
+
+            <?php if (!empty($d['update_history'])): ?>
+            <ul class="rcp-update-list">
+                <?php foreach (array_slice($d['update_history'], 0, 5) as $entry):
+                    $ok   = ($entry['event_type'] ?? '') === 'update_completed';
+                    $name = $entry['data']['plugin_name'] ?? ($entry['data']['type'] ?? 'Actualizaci&oacute;n');
+                ?>
+                <li class="rcp-upd-item rcp-upd-<?php echo $ok ? 'ok' : 'fail'; ?>">
+                    <span class="rcp-upd-dot"></span>
+                    <span class="rcp-upd-name"><?php echo esc_html($name); ?></span>
+                    <span class="rcp-upd-time"><?php echo esc_html($this->humanTime($entry['timestamp'] ?? '')); ?></span>
+                </li>
+                <?php endforeach; ?>
+            </ul>
+            <?php elseif ($d['hub_connected']): ?>
+            <div class="rcp-empty-state">
+                <p>El historial aparecer&aacute; tras el primer ciclo de mantenimiento automatizado.</p>
+            </div>
+            <?php else: ?>
+            <div class="rcp-empty-state">
+                <p>Conecta tu sitio a Replanta para activar el mantenimiento autom&aacute;tico.</p>
+                <a href="<?php echo esc_url(admin_url('admin.php?page=replanta-care')); ?>" class="rcp-link-sm">Configurar conexi&oacute;n &rarr;</a>
+            </div>
+            <?php endif; ?>
+
+            <?php if ($d['pending_updates'] > 0): ?>
+            <div class="rcp-pending-notice">
+                <?php echo intval($d['pending_updates']); ?> actualizaci&oacute;n<?php echo $d['pending_updates'] > 1 ? 'es pendientes' : ' pendiente'; ?> &mdash; se aplicar&aacute; autom&aacute;ticamente esta semana
+            </div>
+            <?php endif; ?>
+        </div>
+        <?php
+    }
+
+    private function renderBackupsCard($d) {
+        $b2   = $d['last_b2_backup'];
+        $b2ok = !empty($b2['timestamp']) || !empty($d['last_backup']);
+        ?>
+        <div class="rcp-card">
+            <h2 class="rcp-card-h">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Copias de seguridad
+            </h2>
+
+            <div class="rcp-backup-hero rcp-bh-<?php echo $b2ok ? 'ok' : 'warn'; ?>">
+                <span class="rcp-bh-icon">
+                    <?php if ($b2ok): ?>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>
+                    <?php else: ?>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                    <?php endif; ?>
+                </span>
+                <div>
+                    <strong class="rcp-bh-title">
+                    <?php
+                    if (!empty($b2['timestamp'])) {
+                        echo '&Uacute;ltima copia: ' . esc_html($this->humanTime($b2['timestamp']));
+                    } elseif ($d['last_backup']) {
+                        echo '&Uacute;ltima copia: ' . esc_html($this->humanTime($d['last_backup']));
+                    } else {
+                        echo 'Sin copias registradas a&uacute;n';
+                    }
+                    ?>
+                    </strong>
+                    <span class="rcp-bh-sub">Almacenada en Backblaze B2 &mdash; nube externa segura</span>
+                </div>
+            </div>
+
+            <ul class="rcp-check-list" style="margin-top:12px">
+                <li class="rcp-chk rcp-chk-<?php echo $d['backups_this_month'] > 0 ? 'ok' : 'sub'; ?>">
+                    <span class="rcp-chk-ico">
+                        <?php if ($d['backups_this_month'] > 0): ?>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+                        <?php else: ?>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                        <?php endif; ?>
+                    </span>
+                    <div><span class="rcp-chk-lbl"><?php echo intval($d['backups_this_month']); ?> copias confirmadas este mes</span></div>
+                </li>
+                <li class="rcp-chk rcp-chk-ok">
+                    <span class="rcp-chk-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+                    <div><span class="rcp-chk-lbl">Backup autom&aacute;tico antes de cada actualizaci&oacute;n</span></div>
+                </li>
+                <?php if ($d['ssl_days'] !== null): ?>
+                <?php $sslCls = $this->sslClass($d['ssl_days']); ?>
+                <li class="rcp-chk rcp-chk-<?php echo $sslCls; ?>">
+                    <span class="rcp-chk-ico">
+                        <?php if ($d['ssl_days'] > 30): ?>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+                        <?php else: ?>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                        <?php endif; ?>
+                    </span>
+                    <div><span class="rcp-chk-lbl">SSL v&aacute;lido &mdash; <?php echo intval($d['ssl_days']); ?> d&iacute;as restantes</span></div>
+                </li>
+                <?php endif; ?>
+            </ul>
+        </div>
+        <?php
+    }
+
+    private function renderTimeline($d) {
         if (empty($d['activity'])) {
             return;
         }
@@ -288,7 +326,7 @@ class RP_Care_Client_Portal {
         <?php
     }
 
-    private function render_footer_row($d) {
+    private function renderFooterRow($d) {
         $plan_features = RP_Care_Plan::get_features($d['plan']);
         ?>
         <div class="rcp-footer-row">
@@ -315,7 +353,7 @@ class RP_Care_Client_Portal {
             </div>
 
             <div class="rcp-footer-meta">
-                <p><a href="<?php echo esc_url(admin_url('admin.php?page=replanta-care')); ?>" class="rcp-link-sm">&#9881; Configuraci&oacute;n t&eacute;cnica</a></p>
+                <p><a href="<?php echo esc_url(admin_url('admin.php?page=replanta-care')); ?>" class="rcp-link-sm">Configuraci&oacute;n t&eacute;cnica</a></p>
                 <p class="rcp-version-note">Replanta Care v<?php echo esc_html(RPCARE_VERSION); ?></p>
                 <?php if ($d['cache_age_label']): ?>
                 <p class="rcp-version-note">Datos: <?php echo esc_html($d['cache_age_label']); ?></p>
@@ -330,89 +368,85 @@ class RP_Care_Client_Portal {
     // Datos
     // -------------------------------------------------------------------------
 
-    private function collect_data() {
+    private function collectData() {
         $cache  = get_option('rpcare_portal_cache', []);
         $plan   = RP_Care_Plan::get_current();
         $b2_raw = get_option('rpcare_last_b2_backup');
         $b2     = is_array($b2_raw) ? $b2_raw : [];
 
-        $health_score = intval(get_option('rpcare_health_score', 0));
-        $health_label = $this->health_label($health_score);
-
-        $month_start        = strtotime('first day of this month midnight');
-        $backups_this_month = 0;
-        if (!empty($cache['backup_history'])) {
-            foreach ((array) $cache['backup_history'] as $bk) {
-                if (strtotime($bk['timestamp'] ?? '') >= $month_start) {
-                    $backups_this_month++;
-                }
-            }
-        } elseif ($b2 && strtotime($b2['timestamp'] ?? '') >= $month_start) {
-            $backups_this_month = 1;
-        }
-
-        $update_history = (array) ($cache['update_history'] ?? []);
-        $incidents      = intval($cache['incidents'] ?? $this->count_failed_updates($update_history));
-        $pending        = $this->count_pending_updates();
-
-        $vuln_data = get_option('rpcare_vulnerability_data', []);
-        $vuln_ok   = empty($vuln_data['vulnerabilities_found']);
-        $ssl_days  = $cache['ssl_days'] ?? null;
-
-        $security_checks = [
-            [
-                'ok'     => $vuln_ok,
-                'label'  => $vuln_ok ? 'Sin vulnerabilidades conocidas en plugins' : count($vuln_data['vulnerabilities_found']) . ' vulnerabilidades detectadas',
-                'detail' => !$vuln_ok ? 'Ver configuración para detalles' : '',
-            ],
-            [
-                'ok'     => $ssl_days === null || $ssl_days > 30,
-                'label'  => $ssl_days !== null ? 'Certificado SSL: ' . intval($ssl_days) . ' días restantes' : 'Certificado SSL activo',
-                'detail' => ($ssl_days !== null && $ssl_days <= 30) ? 'Renovar pronto' : '',
-            ],
-            [
-                'ok'     => $this->is_hub_connected(),
-                'label'  => $this->is_hub_connected() ? 'Mantenimiento automatizado activo' : 'Mantenimiento no configurado',
-                'detail' => $this->is_hub_connected() ? '' : 'Configura la conexión para activarlo',
-            ],
-        ];
-
-        $backup_health   = $cache['backup_health'] ?? ($b2 ? 'ok' : 'unknown');
-        $last_backup     = get_option('rpcare_last_backup');
-        $hub_connected   = $this->is_hub_connected();
+        $health_score    = intval(get_option('rpcare_health_score', 0));
+        $update_history  = (array) ($cache['update_history'] ?? []);
+        $incidents       = intval($cache['incidents'] ?? $this->countFailedUpdates($update_history));
+        $ssl_days        = $cache['ssl_days'] ?? null;
+        $vuln_data       = get_option('rpcare_vulnerability_data', []);
+        $vuln_ok         = empty($vuln_data['vulnerabilities_found']);
+        $hub_connected   = $this->isHubConnected();
         $overall_ok      = $health_score >= 60 && $vuln_ok && $incidents === 0 && ($ssl_days === null || $ssl_days > 14);
 
         $cache_age_label = '';
         if (!empty($cache['pushed_at'])) {
-            $cache_age_label = 'actualizado ' . $this->human_time($cache['pushed_at']);
+            $cache_age_label = 'actualizado ' . $this->humanTime($cache['pushed_at']);
         }
-
-        $activity = $this->build_activity($update_history, $b2, $cache);
 
         return [
             'domain'             => parse_url(home_url(), PHP_URL_HOST) ?: get_bloginfo('name'),
             'plan'               => $plan,
             'plan_name'          => RP_Care_Plan::get_plan_name($plan),
             'health_score'       => $health_score,
-            'health_label'       => $health_label,
+            'health_label'       => $this->healthLabel($health_score),
             'overall_ok'         => $overall_ok,
-            'pending_updates'    => $pending,
-            'security_checks'    => $security_checks,
-            'backup_health'      => $backup_health,
-            'last_backup'        => $last_backup,
+            'pending_updates'    => $this->countPendingUpdates(),
+            'security_checks'    => $this->buildSecurityChecks($cache, $vuln_data),
+            'backup_health'      => $cache['backup_health'] ?? ($b2 ? 'ok' : 'unknown'),
+            'last_backup'        => get_option('rpcare_last_backup'),
             'last_b2_backup'     => $b2,
-            'backups_this_month' => $backups_this_month,
+            'backups_this_month' => $this->countBackupsThisMonth($cache, $b2),
             'ssl_days'           => $ssl_days,
             'monthly'            => $cache['monthly_summary'] ?? [],
             'update_history'     => $update_history,
             'incidents'          => $incidents,
-            'activity'           => $activity,
+            'activity'           => $this->buildActivity($update_history, $b2, $cache),
             'hub_connected'      => $hub_connected,
             'cache_age_label'    => $cache_age_label,
         ];
     }
 
-    private function build_activity($history, $b2, $cache) {
+    private function buildSecurityChecks($cache, $vuln_data) {
+        $vuln_ok  = empty($vuln_data['vulnerabilities_found']);
+        $ssl_days = $cache['ssl_days'] ?? null;
+        $connected = $this->isHubConnected();
+
+        $vuln_label  = $vuln_ok ? 'Sin vulnerabilidades conocidas en plugins' : count($vuln_data['vulnerabilities_found']) . ' vulnerabilidades detectadas';
+        $ssl_label   = $ssl_days !== null ? 'Certificado SSL: ' . intval($ssl_days) . ' días restantes' : 'Certificado SSL activo';
+        $ssl_detail  = ($ssl_days !== null && $ssl_days <= 30) ? 'Renovar pronto' : '';
+        $conn_label  = $connected ? 'Mantenimiento automatizado activo' : 'Mantenimiento no configurado';
+        $conn_detail = $connected ? '' : 'Configura la conexión para activarlo';
+
+        return [
+            ['ok' => $vuln_ok,                                   'label' => $vuln_label,  'detail' => !$vuln_ok ? 'Ver configuración para detalles' : ''],
+            ['ok' => $ssl_days === null || $ssl_days > 30,       'label' => $ssl_label,   'detail' => $ssl_detail],
+            ['ok' => $connected,                                  'label' => $conn_label,  'detail' => $conn_detail],
+        ];
+    }
+
+    private function countBackupsThisMonth($cache, $b2) {
+        $month_start = strtotime('first day of this month midnight');
+        $count       = 0;
+
+        if (!empty($cache['backup_history'])) {
+            foreach ((array) $cache['backup_history'] as $bk) {
+                if (strtotime($bk['timestamp'] ?? '') >= $month_start) {
+                    $count++;
+                }
+            }
+        } elseif ($b2 && strtotime($b2['timestamp'] ?? '') >= $month_start) {
+            $count = 1;
+        }
+
+        return $count;
+    }
+
+    private function buildActivity($history, $b2, $cache) {
         $events = [];
 
         foreach (array_slice($history, 0, 6) as $entry) {
@@ -421,7 +455,7 @@ class RP_Care_Client_Portal {
             $events[] = [
                 'type'      => $ok ? 'ok' : 'fail',
                 'text'      => $ok ? $name . ' actualizado correctamente' : $name . ' — error en la actualización',
-                'time'      => $this->human_time($entry['timestamp'] ?? ''),
+                'time'      => $this->humanTime($entry['timestamp'] ?? ''),
                 'timestamp' => strtotime($entry['timestamp'] ?? '') ?: 0,
             ];
         }
@@ -430,7 +464,7 @@ class RP_Care_Client_Portal {
             $events[] = [
                 'type'      => 'backup',
                 'text'      => 'Copia de seguridad completada y almacenada en Backblaze B2',
-                'time'      => $this->human_time($b2['timestamp']),
+                'time'      => $this->humanTime($b2['timestamp']),
                 'timestamp' => strtotime($b2['timestamp']) ?: 0,
             ];
         }
@@ -452,26 +486,49 @@ class RP_Care_Client_Portal {
     // Helpers
     // -------------------------------------------------------------------------
 
-    private function health_label($score) {
-        if ($score >= 90) return 'Excelente';
-        if ($score >= 75) return 'Muy bien';
-        if ($score >= 60) return 'Correcto';
-        if ($score >= 40) return 'Mejorable';
+    private function healthLabel($score) {
+        $labels = [
+            90 => 'Excelente',
+            75 => 'Muy bien',
+            60 => 'Correcto',
+            40 => 'Mejorable',
+        ];
+        foreach ($labels as $threshold => $label) {
+            if ($score >= $threshold) {
+                return $label;
+            }
+        }
         return 'Requiere revisión';
     }
 
-    private function count_pending_updates() {
+    private function sslClass($days) {
+        if ($days > 30) {
+            return 'ok';
+        }
+        if ($days > 14) {
+            return 'warn';
+        }
+        return 'fail';
+    }
+
+    private function countPendingUpdates() {
         $core    = get_site_transient('update_core');
         $plugins = get_site_transient('update_plugins');
         $themes  = get_site_transient('update_themes');
         $count   = 0;
-        if ($core    && !empty($core->updates))     $count += count($core->updates);
-        if ($plugins && !empty($plugins->response)) $count += count($plugins->response);
-        if ($themes  && !empty($themes->response))  $count += count($themes->response);
+        if ($core && !empty($core->updates)) {
+            $count += count($core->updates);
+        }
+        if ($plugins && !empty($plugins->response)) {
+            $count += count($plugins->response);
+        }
+        if ($themes && !empty($themes->response)) {
+            $count += count($themes->response);
+        }
         return $count;
     }
 
-    private function count_failed_updates($history) {
+    private function countFailedUpdates($history) {
         $month_start = strtotime('first day of this month midnight');
         $fail        = 0;
         foreach ($history as $entry) {
@@ -482,30 +539,43 @@ class RP_Care_Client_Portal {
         return $fail;
     }
 
-    private function is_hub_connected() {
+    private function isHubConnected() {
         $opts = get_option('rpcare_options', []);
         $hub  = $opts['hub_url'] ?? get_option('rpcare_hub_url', '');
         $tok  = get_option('rpcare_token', '');
         return !empty($hub) && !empty($tok);
     }
 
-    private function human_time($mysql_or_ts) {
-        if (!$mysql_or_ts) return '—';
-        $ts   = is_numeric($mysql_or_ts) ? (int) $mysql_or_ts : strtotime($mysql_or_ts);
-        if (!$ts) return '—';
-        $diff = time() - $ts;
-        if ($diff < 60)        return 'hace un momento';
-        if ($diff < 3600)      return 'hace ' . round($diff / 60) . ' min';
-        if ($diff < 86400)     return 'hace ' . round($diff / 3600) . 'h';
-        if ($diff < 7 * 86400) return 'hace ' . round($diff / 86400) . ' días';
-        return date_i18n('d M Y', $ts);
+    private function humanTime($mysqlOrTs) {
+        if (!$mysqlOrTs) {
+            return '—';
+        }
+        $ts   = is_numeric($mysqlOrTs) ? (int) $mysqlOrTs : strtotime($mysqlOrTs);
+        $diff = $ts > 0 ? (time() - $ts) : -1;
+        if ($ts <= 0 || $diff < 0) {
+            return '—';
+        }
+        if ($diff >= 7 * 86400) {
+            return date_i18n('d M Y', $ts);
+        }
+        $prefix = 'hace ';
+        if ($diff < 60) {
+            $label = 'un momento';
+        } elseif ($diff < 3600) {
+            $label = round($diff / 60) . ' min';
+        } elseif ($diff < 86400) {
+            $label = round($diff / 3600) . 'h';
+        } else {
+            $label = round($diff / 86400) . ' días';
+        }
+        return $prefix . $label;
     }
 
     // -------------------------------------------------------------------------
     // CSS
     // -------------------------------------------------------------------------
 
-    private function render_css() {
+    private function renderCss() {
         ?>
         <style>
         /* ── Variables ─────────────────────────────────────────────── */
@@ -543,10 +613,13 @@ class RP_Care_Client_Portal {
         .rcp-st-warn { background: linear-gradient(135deg, #451a03 0%, #92400e 100%); }
         .rcp-st-left { display: flex; align-items: center; gap: 16px; }
         .rcp-st-icon {
-            font-size: 32px !important;
-            line-height: 1 !important;
-            color: #fff !important;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 40px; height: 40px;
+            flex-shrink: 0;
         }
+        .rcp-st-icon svg { width: 28px; height: 28px; color: #fff !important; stroke: #fff !important; }
         .rcp-st-msg {
             font-size: 20px !important;
             font-weight: 700 !important;
@@ -684,11 +757,13 @@ class RP_Care_Client_Portal {
         .rcp-chk:last-child { border-bottom: none; }
         .rcp-chk-ico {
             flex-shrink: 0;
-            font-size: 13px;
-            width: 18px;
-            text-align: center;
+            width: 18px; height: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
             margin-top: 1px;
         }
+        .rcp-chk-ico svg { width: 14px; height: 14px; }
         .rcp-chk-ok   .rcp-chk-ico { color: var(--rp-ok) !important; }
         .rcp-chk-warn .rcp-chk-ico { color: var(--rp-warn) !important; }
         .rcp-chk-fail .rcp-chk-ico { color: var(--rp-fail) !important; }
@@ -747,11 +822,6 @@ class RP_Care_Client_Portal {
             text-align: center;
             padding: 20px 8px;
         }
-        .rcp-empty-ico {
-            display: block;
-            font-size: 28px;
-            margin-bottom: 8px;
-        }
         .rcp-empty-state p {
             font-size: 13px !important;
             color: var(--rp-muted) !important;
@@ -768,7 +838,17 @@ class RP_Care_Client_Portal {
         }
         .rcp-bh-ok   { background: #f0fdf4; border: 1px solid #bbf7d0; }
         .rcp-bh-warn { background: #fffbeb; border: 1px solid #fde68a; }
-        .rcp-bh-icon { font-size: 22px; line-height: 1; flex-shrink: 0; margin-top: 2px; }
+        .rcp-bh-icon {
+            flex-shrink: 0;
+            width: 28px; height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-top: 1px;
+        }
+        .rcp-bh-icon svg { width: 22px; height: 22px; }
+        .rcp-bh-ok   .rcp-bh-icon { color: var(--rp-ok); }
+        .rcp-bh-warn .rcp-bh-icon { color: var(--rp-warn); }
         .rcp-bh-title {
             display: block;
             font-size: 13px !important;

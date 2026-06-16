@@ -227,8 +227,12 @@ class RP_Care_Security {
             'rpcare_report_frequency' => 'sanitize_text_field',
             'rpcare_branding_logo' => 'esc_url_raw',
             'rpcare_branding_color' => 'sanitize_hex_color',
-            'rpcare_exclude_plugins' => 'array',
-            'rpcare_exclude_themes' => 'array'
+            'rpcare_exclude_plugins'  => 'array',
+            'rpcare_exclude_themes'   => 'array',
+            'rpcare_b2_key_id'        => 'sanitize_text_field',
+            'rpcare_b2_app_key'       => 'sanitize_text_field',
+            'rpcare_b2_bucket_id'     => 'sanitize_text_field',
+            'rpcare_b2_bucket_name'   => 'sanitize_text_field',
         ];
         
         foreach ($settings as $key => $value) {

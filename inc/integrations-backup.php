@@ -406,11 +406,242 @@ class RP_Care_Task_Backup {
         $results['message'] = 'Basic backup completed';
         $results['backup_size'] = self::get_directory_size($backup_dir);
         $results['backup_time'] = current_time('mysql');
-        
+
+        // Upload to Backblaze B2 if configured
+        if (self::is_b2_configured()) {
+            $b2_result = self::upload_to_b2($backup_dir, $db_backup['file'] ?? null);
+            $results['b2_upload'] = $b2_result;
+            if (!$b2_result['success']) {
+                RP_Care_Utils::log('backup', 'warning', 'B2 upload failed: ' . $b2_result['message'], $b2_result);
+            }
+        }
+
         // Clean old backups
         self::cleanup_old_backups();
-        
+
         return $results;
+    }
+
+    // -------------------------------------------------------------------------
+    // Backblaze B2 integration
+    // -------------------------------------------------------------------------
+
+    private static function is_b2_configured() {
+        return !empty(get_option('rpcare_b2_key_id'))
+            && !empty(get_option('rpcare_b2_app_key'))
+            && !empty(get_option('rpcare_b2_bucket_id'));
+    }
+
+    private static function get_b2_config() {
+        return [
+            'key_id'      => get_option('rpcare_b2_key_id', ''),
+            'app_key'     => get_option('rpcare_b2_app_key', ''),
+            'bucket_id'   => get_option('rpcare_b2_bucket_id', ''),
+            'bucket_name' => get_option('rpcare_b2_bucket_name', ''),
+        ];
+    }
+
+    /**
+     * Authorize against B2 API. Returns ['api_url', 'auth_token'] or WP_Error.
+     * Token is cached in a 23-hour transient to avoid hammering the auth endpoint.
+     */
+    private static function b2_authorize() {
+        $cached = get_transient('rpcare_b2_auth');
+        if ($cached && !empty($cached['auth_token'])) {
+            return $cached;
+        }
+
+        $cfg  = self::get_b2_config();
+        $creds = base64_encode($cfg['key_id'] . ':' . $cfg['app_key']);
+
+        $response = wp_remote_get('https://api.backblazeb2.com/b2api/v3/b2_authorize_account', [
+            'timeout' => 20,
+            'headers' => ['Authorization' => 'Basic ' . $creds],
+        ]);
+
+        if (is_wp_error($response)) {
+            return $response;
+        }
+
+        $code = wp_remote_retrieve_response_code($response);
+        $body = json_decode(wp_remote_retrieve_body($response), true);
+
+        if ($code !== 200 || empty($body['authorizationToken'])) {
+            return new WP_Error('b2_auth_failed', 'B2 auth HTTP ' . $code . ': ' . ($body['message'] ?? 'unknown'));
+        }
+
+        $auth = [
+            'api_url'    => rtrim($body['apiInfo']['storageApi']['apiUrl'] ?? $body['apiUrl'], '/'),
+            'auth_token' => $body['authorizationToken'],
+        ];
+
+        set_transient('rpcare_b2_auth', $auth, 23 * HOUR_IN_SECONDS);
+        return $auth;
+    }
+
+    /**
+     * Upload the backup SQL dump (gzipped) plus a site manifest to B2.
+     * Prefix: {domain}/backup_{YYYY-MM-DD_HH-ii-ss}/
+     */
+    private static function upload_to_b2($backup_dir, $sql_file = null) {
+        $auth = self::b2_authorize();
+        if (is_wp_error($auth)) {
+            return ['success' => false, 'message' => $auth->get_error_message()];
+        }
+
+        $cfg    = self::get_b2_config();
+        $domain = wp_parse_url(home_url(), PHP_URL_HOST);
+        $ts     = date('Y-m-d_H-i-s');
+        $prefix = $domain . '/backup_' . $ts . '/';
+
+        $uploaded = [];
+        $errors   = [];
+
+        // 1. Gzip + upload the database dump
+        $sql_path = $sql_file ?: ($backup_dir . '/database.sql');
+        if (file_exists($sql_path)) {
+            $gz_path = $sql_path . '.gz';
+            self::gzip_file($sql_path, $gz_path);
+            $remote_name = $prefix . 'database.sql.gz';
+            $up = self::b2_upload_file($auth, $cfg['bucket_id'], $gz_path, $remote_name);
+            if ($up['success']) {
+                $uploaded[] = $remote_name;
+            } else {
+                $errors[] = 'database: ' . $up['message'];
+            }
+            @unlink($gz_path);
+        }
+
+        // 2. Upload a manifest (JSON metadata about the site)
+        $manifest = wp_json_encode([
+            'domain'     => $domain,
+            'wp_version' => get_bloginfo('version'),
+            'php_version'=> PHP_VERSION,
+            'backup_time'=> current_time('c'),
+            'plan'       => get_option('rpcare_plan', 'unknown'),
+            'db_name'    => DB_NAME,
+            'site_url'   => home_url(),
+        ]);
+        $manifest_tmp = $backup_dir . '/manifest.json';
+        file_put_contents($manifest_tmp, $manifest);
+        $up = self::b2_upload_file($auth, $cfg['bucket_id'], $manifest_tmp, $prefix . 'manifest.json');
+        if ($up['success']) {
+            $uploaded[] = $prefix . 'manifest.json';
+        }
+        @unlink($manifest_tmp);
+
+        // Persist the remote path so Hub can verify without reading B2
+        update_option('rpcare_last_b2_backup', [
+            'prefix'    => $prefix,
+            'timestamp' => time(),
+            'files'     => $uploaded,
+            'domain'    => $domain,
+        ], false);
+
+        if (empty($errors)) {
+            return ['success' => true, 'message' => 'B2 upload OK', 'files' => $uploaded, 'prefix' => $prefix];
+        }
+
+        return [
+            'success' => count($uploaded) > 0,
+            'message' => 'B2 partial: ' . implode('; ', $errors),
+            'files'   => $uploaded,
+        ];
+    }
+
+    /**
+     * Upload a single local file to B2.
+     * Gets a fresh upload URL per file (B2 requirement).
+     */
+    private static function b2_upload_file($auth, $bucket_id, $local_path, $remote_name) {
+        if (!file_exists($local_path)) {
+            return ['success' => false, 'message' => 'Local file not found: ' . $local_path];
+        }
+
+        // Step 1: get upload URL
+        $url_response = wp_remote_post($auth['api_url'] . '/b2api/v3/b2_get_upload_url', [
+            'timeout' => 20,
+            'headers' => [
+                'Authorization' => $auth['auth_token'],
+                'Content-Type'  => 'application/json',
+            ],
+            'body' => wp_json_encode(['bucketId' => $bucket_id]),
+        ]);
+
+        if (is_wp_error($url_response)) {
+            return ['success' => false, 'message' => $url_response->get_error_message()];
+        }
+
+        $url_body = json_decode(wp_remote_retrieve_body($url_response), true);
+        if (empty($url_body['uploadUrl']) || empty($url_body['authorizationToken'])) {
+            return ['success' => false, 'message' => 'Could not get B2 upload URL'];
+        }
+
+        $upload_url   = $url_body['uploadUrl'];
+        $upload_token = $url_body['authorizationToken'];
+        $file_content = file_get_contents($local_path);
+        $sha1         = sha1($file_content);
+        $file_size    = strlen($file_content);
+
+        // Step 2: upload
+        $up_response = wp_remote_post($upload_url, [
+            'timeout' => max(60, intval($file_size / (1024 * 50))), // ~50 KB/s min
+            'headers' => [
+                'Authorization'     => $upload_token,
+                'X-Bz-File-Name'    => rawurlencode($remote_name),
+                'Content-Type'      => 'b2/x-auto',
+                'Content-Length'    => $file_size,
+                'X-Bz-Content-Sha1' => $sha1,
+            ],
+            'body' => $file_content,
+        ]);
+
+        // Free memory
+        unset($file_content);
+
+        if (is_wp_error($up_response)) {
+            return ['success' => false, 'message' => $up_response->get_error_message()];
+        }
+
+        $code    = wp_remote_retrieve_response_code($up_response);
+        $up_body = json_decode(wp_remote_retrieve_body($up_response), true);
+
+        if ($code === 200 && !empty($up_body['fileId'])) {
+            return ['success' => true, 'file_id' => $up_body['fileId'], 'size' => $file_size];
+        }
+
+        return ['success' => false, 'message' => 'B2 upload HTTP ' . $code . ': ' . ($up_body['message'] ?? 'unknown')];
+    }
+
+    private static function gzip_file($source, $destination) {
+        $fh_in  = fopen($source, 'rb');
+        $fh_out = gzopen($destination, 'wb9');
+        if (!$fh_in || !$fh_out) {
+            return false;
+        }
+        while (!feof($fh_in)) {
+            gzwrite($fh_out, fread($fh_in, 524288)); // 512 KB chunks
+        }
+        fclose($fh_in);
+        gzclose($fh_out);
+        return true;
+    }
+
+    /**
+     * Returns B2 backup info for get_backup_status().
+     */
+    private static function get_b2_backup_info() {
+        $data = get_option('rpcare_last_b2_backup', null);
+        if (!$data || empty($data['timestamp'])) {
+            return null;
+        }
+        return [
+            'date'      => date('Y-m-d H:i:s', $data['timestamp']),
+            'timestamp' => $data['timestamp'],
+            'prefix'    => $data['prefix'],
+            'age_hours' => round((time() - $data['timestamp']) / 3600, 1),
+            'domain'    => $data['domain'] ?? '',
+        ];
     }
     
     private static function get_backup_base_dir() {
@@ -746,7 +977,18 @@ class RP_Care_Task_Backup {
         } else {
             $status['method'] = 'basic';
         }
-        
+
+        // B2 remote status (overlaid on any local method)
+        if (self::is_b2_configured()) {
+            $b2_info = self::get_b2_backup_info();
+            $status['b2_enabled']   = true;
+            $status['b2_last_backup'] = $b2_info ? $b2_info['date'] : null;
+            $status['b2_age_hours']   = $b2_info ? $b2_info['age_hours'] : null;
+            $status['b2_prefix']      = $b2_info ? $b2_info['prefix'] : null;
+        } else {
+            $status['b2_enabled'] = false;
+        }
+
         return $status;
     }
 }

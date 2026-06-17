@@ -105,7 +105,7 @@ class RP_Care_Addon_Manager {
             return;
         }
 
-        wp_remote_post(
+        $result = wp_remote_post(
             "{$hub}/wp-admin/admin-ajax.php",
             [
                 'timeout'  => 5,
@@ -119,6 +119,9 @@ class RP_Care_Addon_Manager {
                 ],
             ]
         );
+        if (is_wp_error($result)) {
+            error_log('replanta-care notify_hub event=' . $event . ' — ' . $result->get_error_message());
+        }
     }
 
     private function load(): void {

@@ -6,13 +6,26 @@
 
 /* --- DARK MODE SCOPE --- */
 body.settings_page_replanta-care #wpcontent,
-body.settings_page_replanta-care #wpfooter {
+body.settings_page_replanta-care #wpfooter,
+body.replanta-care-portal_page_replanta-care #wpcontent,
+body.replanta-care-portal_page_replanta-care #wpfooter,
+body.toplevel_page_replanta-care-portal #wpcontent,
+body.toplevel_page_replanta-care-portal #wpfooter {
     background: #0D1A10;
+}
+
+/* Kill WP default body grey so no seams show around #wpcontent */
+body.settings_page_replanta-care,
+body.replanta-care-portal_page_replanta-care,
+body.toplevel_page_replanta-care-portal {
+    background: #0D1A10 !important;
 }
 
 /* --- CSS VARIABLES --- */
 /* Defined on body so #rpc-toasts (appended to body, outside .rpc-wrap) can inherit them */
-body.settings_page_replanta-care {
+body.settings_page_replanta-care,
+body.replanta-care-portal_page_replanta-care,
+body.toplevel_page_replanta-care-portal {
     --rp-bg:        #0D1A10;
     --rp-surface:   #1E2F23;
     --rp-surface-2: #253C2A;
@@ -42,8 +55,12 @@ body.settings_page_replanta-care {
 }
 
 /* Full-bleed: kill the default WP .wrap left padding so our dark surface reaches the edge */
-body.settings_page_replanta-care #wpbody-content { padding-bottom: 0; }
-body.settings_page_replanta-care .wrap { margin: 0; padding: 0; max-width: none; }
+body.settings_page_replanta-care #wpbody-content,
+body.replanta-care-portal_page_replanta-care #wpbody-content,
+body.toplevel_page_replanta-care-portal #wpbody-content { padding-bottom: 0; }
+body.settings_page_replanta-care .wrap,
+body.replanta-care-portal_page_replanta-care .wrap,
+body.toplevel_page_replanta-care-portal .wrap { margin: 0; padding: 0; max-width: none; }
 
 /* Reset WP defaults */
 .rpc-wrap h1, .rpc-wrap h2, .rpc-wrap h3, .rpc-wrap h4,
@@ -1052,9 +1069,21 @@ body.settings_page_replanta-care .update-nag,
 body.settings_page_replanta-care #message,
 body.settings_page_replanta-care .e-notice,
 body.settings_page_replanta-care .yoast-notification,
-body.settings_page_replanta-care div[class*="-notice"]:not([class*="rpc"]) { display: none !important; }
+body.settings_page_replanta-care div[class*="-notice"]:not([class*="rpc"]),
+body.replanta-care-portal_page_replanta-care #wpbody-content > .notice,
+body.replanta-care-portal_page_replanta-care #wpbody-content > .updated,
+body.replanta-care-portal_page_replanta-care #wpbody-content > .error,
+body.replanta-care-portal_page_replanta-care .notice:not(.rpc-keep),
+body.replanta-care-portal_page_replanta-care .updated:not(.rpc-keep),
+body.replanta-care-portal_page_replanta-care .error.settings-error,
+body.replanta-care-portal_page_replanta-care .update-nag,
+body.replanta-care-portal_page_replanta-care #message,
+body.replanta-care-portal_page_replanta-care .e-notice,
+body.replanta-care-portal_page_replanta-care .yoast-notification,
+body.replanta-care-portal_page_replanta-care div[class*="-notice"]:not([class*="rpc"]) { display: none !important; }
 
-body.settings_page_replanta-care .rpcare-notice { display: block !important; }
+body.settings_page_replanta-care .rpcare-notice,
+body.replanta-care-portal_page_replanta-care .rpcare-notice { display: block !important; }
 
 /* ================================================================
    LEGACY COMPAT (for old JS functions still in admin.js)

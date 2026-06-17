@@ -1,5 +1,12 @@
 # Changelog — Replanta Care
 
+## [1.13.1]
+
+- Fix dark mode en pagina portal (body.toplevel_page_replanta-care-portal faltaba en admin.css)
+- Rebrand: "Backblaze B2" renombrado a "Backup externo Replanta" en portal del cliente
+- notify_hub(): logging de error si wp_remote_post falla localmente (sin afectar flujo fire-and-forget)
+- deploy.yml: excluye directorio docs/ del ZIP de distribucion
+
 ## [1.13.0]
 
 - Addon system: RP_Care_Addon_Manager singleton — Hub empuja addons activos via /config, Care los almacena y expone is_active() / get_config()

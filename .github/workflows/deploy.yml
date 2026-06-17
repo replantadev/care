@@ -32,6 +32,7 @@ jobs:
             --exclude='.git' \
             --exclude='.github' \
             --exclude='*.md' \
+            --exclude='docs/' \
             --exclude='composer.json' \
             --exclude='composer.lock' \
             --exclude='config-sample.php' \

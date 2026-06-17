@@ -267,7 +267,7 @@ class RP_Care_Client_Portal {
                     }
                     ?>
                     </strong>
-                    <span class="rcp-bh-sub">Almacenada en Backblaze B2 &mdash; nube externa segura</span>
+                    <span class="rcp-bh-sub">Almacenada en Backup externo Replanta &mdash; nube externa segura</span>
                 </div>
             </div>
 
@@ -350,7 +350,7 @@ class RP_Care_Client_Portal {
         }
         if (!empty($features['backup'])) {
             $bk_fr = $freq[$features['backup_frequency'] ?? 'weekly'] ?? 'semanales';
-            $labels[] = 'Copias de seguridad ' . $bk_fr . ' en Backblaze B2';
+            $labels[] = 'Copias de seguridad ' . $bk_fr . ' en Backup externo Replanta';
         }
         if (!empty($features['monitoring'])) {
             $labels[] = 'Monitorización 24/7';
@@ -465,7 +465,7 @@ class RP_Care_Client_Portal {
                 <div class="rcp-ecom-card">
                     <span class="rcp-ecom-card__label">Backups</span>
                     <span class="rcp-ecom-card__value">cada 12&nbsp;h</span>
-                    <span class="rcp-ecom-card__sub">Backblaze&nbsp;B2 &mdash; retenci&oacute;n 90&nbsp;d&iacute;as</span>
+                    <span class="rcp-ecom-card__sub">Backup&nbsp;externo&nbsp;Replanta &mdash; retenci&oacute;n 90&nbsp;d&iacute;as</span>
                 </div>
 
                 <?php if ($peak_str): ?>
@@ -584,7 +584,7 @@ class RP_Care_Client_Portal {
         if ($b2 && !empty($b2['timestamp'])) {
             $events[] = [
                 'type'      => 'backup',
-                'text'      => 'Copia de seguridad completada y almacenada en Backblaze B2',
+                'text'      => 'Copia de seguridad completada y almacenada en Backup externo Replanta',
                 'time'      => $this->humanTime($b2['timestamp']),
                 'timestamp' => strtotime($b2['timestamp']) ?: 0,
             ];

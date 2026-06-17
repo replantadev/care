@@ -218,197 +218,6 @@ class RP_Care_Settings_Page {
             ]
         ]);
         
-        // Add inline CSS for plan detection display
-        $css = "
-        .rpcare-plan-detected {
-            background: #e7f5e7;
-            border: 1px solid #46b450;
-            border-radius: 4px;
-            padding: 10px;
-            margin-bottom: 10px;
-        }
-        .rpcare-plan-detected strong {
-            color: #135e96;
-            font-size: 16px;
-        }
-        .rpcare-plan-detected .plan-price {
-            color: #666;
-            margin-left: 10px;
-        }
-        
-        /* Plan Selection Cards */
-        .rpcare-plans-wrapper {
-            max-width: 1200px;
-            margin: 20px 0;
-        }
-        .rpcare-plans-intro {
-            background: #fff3cd;
-            border: 1px solid #ffeaa7;
-            border-radius: 6px;
-            padding: 15px;
-            margin-bottom: 20px;
-            color: #856404;
-        }
-        .rpcare-plans-cards {
-            display: flex;
-            gap: 20px;
-            flex-wrap: wrap;
-            margin-top: 20px;
-        }
-        .rpcare-plan-card {
-            flex: 1;
-            min-width: 300px;
-            background: #fff;
-            border: 2px solid #e1e5e9;
-            border-radius: 12px;
-            overflow: hidden;
-            transition: all 0.3s ease;
-            position: relative;
-        }
-        .rpcare-plan-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(0,0,0,0.1);
-        }
-        .rpcare-plan-card.selected {
-            border-color: #0073aa;
-            box-shadow: 0 0 0 1px #0073aa;
-        }
-        .rpcare-plan-card.plan-featured {
-            border-color: #d63384;
-            position: relative;
-        }
-        .rpcare-plan-card.plan-featured .featured-label {
-            position: absolute;
-            top: 15px;
-            right: 15px;
-            background: #d63384;
-            color: white;
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-size: 12px;
-            font-weight: 600;
-        }
-        .plan-header {
-            padding: 25px 20px 20px;
-            text-align: center;
-            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-        }
-        .plan-header h3 {
-            margin: 0 0 8px;
-            font-size: 24px;
-            font-weight: 700;
-            color: #2c3e50;
-        }
-        .plan-sub {
-            margin: 0 0 15px;
-            color: #6c757d;
-            font-size: 14px;
-        }
-        .plan-price {
-            font-size: 28px;
-            font-weight: 700;
-            color: #0073aa;
-        }
-        .plan-price small {
-            font-size: 16px;
-            color: #6c757d;
-            font-weight: 400;
-        }
-        .plan-features {
-            list-style: none;
-            padding: 20px;
-            margin: 0;
-        }
-        .plan-features li {
-            display: flex;
-            align-items: flex-start;
-            padding: 8px 0;
-            font-size: 14px;
-            line-height: 1.5;
-        }
-        .check-icon {
-            color: #28a745;
-            margin-right: 10px;
-            font-weight: 600;
-            flex-shrink: 0;
-        }
-        .plan-cta {
-            padding: 20px;
-            border-top: 1px solid #e9ecef;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-        .plan-selector {
-            cursor: pointer;
-            display: block;
-        }
-        .plan-selector input[type='radio'] {
-            display: none;
-        }
-        .plan-btn {
-            display: block;
-            width: 100%;
-            padding: 12px 20px;
-            background: #f8f9fa;
-            border: 2px solid #e9ecef;
-            border-radius: 6px;
-            color: #495057;
-            text-decoration: none;
-            text-align: center;
-            font-weight: 600;
-            transition: all 0.3s ease;
-            cursor: pointer;
-        }
-        .plan-btn:hover, .plan-selector:hover .plan-btn {
-            background: #e9ecef;
-            border-color: #0073aa;
-            color: #0073aa;
-            text-decoration: none;
-        }
-        .plan-btn.primary {
-            background: #0073aa;
-            border-color: #0073aa;
-            color: white;
-        }
-        .plan-btn.primary:hover, .plan-selector:hover .plan-btn.primary {
-            background: #005a87;
-            border-color: #005a87;
-            color: white;
-        }
-        .plan-selector input[type='radio']:checked + .plan-btn {
-            background: #0073aa;
-            border-color: #0073aa;
-            color: white;
-        }
-        .plan-btn-external {
-            display: block;
-            padding: 8px 20px;
-            background: transparent;
-            border: 1px solid #dee2e6;
-            border-radius: 4px;
-            color: #6c757d;
-            text-decoration: none;
-            text-align: center;
-            font-size: 13px;
-            transition: all 0.3s ease;
-        }
-        .plan-btn-external:hover {
-            background: #f8f9fa;
-            color: #495057;
-            text-decoration: none;
-        }
-        
-        @media (max-width: 768px) {
-            .rpcare-plans-cards {
-                flex-direction: column;
-            }
-            .rpcare-plan-card {
-                min-width: auto;
-            }
-        }
-        ";
-        wp_add_inline_style('rpcare-admin', $css);
     }
     
     public function hide_other_plugin_notices() {
@@ -425,6 +234,152 @@ class RP_Care_Settings_Page {
         }
     }
     
+    private function renderCss(): void {
+        ?>
+        <style>
+        body.settings_page_replanta-care #wpcontent,
+        body.settings_page_replanta-care #wpfooter { background: #0D1A10; }
+        body.settings_page_replanta-care #wpbody-content { padding-bottom: 0; }
+        body.settings_page_replanta-care .wrap { margin: 0; padding: 0; max-width: none; }
+
+        .rcp-wrap {
+            --rp-green:    #93F1C9;
+            --rp-accent:   #93F1C9;
+            --rp-teal:     #41999F;
+            --rp-bg:       #0D1A10;
+            --rp-card:     #1E2F23;
+            --rp-card-2:   #253C2A;
+            --rp-border:   rgba(147,241,201,0.13);
+            --rp-border-s: rgba(147,241,201,0.30);
+            --rp-text:     #F7FBF9;
+            --rp-muted:    rgba(247,251,249,0.52);
+            --rp-ok:       #4ade80;
+            --rp-warn:     #fbbf24;
+            --rp-fail:     #f87171;
+            --rp-shadow:   0 4px 24px rgba(0,0,0,0.45);
+            max-width: 1180px;
+            margin: 0 -20px;
+            padding: 24px 24px 60px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            font-size: 14px;
+            color: var(--rp-text) !important;
+            background: var(--rp-bg);
+            min-height: calc(100vh - 32px);
+        }
+
+        /* Status bar */
+        .rcp-status-bar {
+            display: flex; align-items: center; justify-content: space-between;
+            flex-wrap: wrap; gap: 16px; padding: 22px 28px;
+            border-radius: 14px; margin-bottom: 20px;
+        }
+        .rcp-st-ok   { background: linear-gradient(135deg, #1E2F23 0%, #2A5A40 60%, #41999F 100%); }
+        .rcp-st-warn { background: linear-gradient(135deg, #451a03 0%, #92400e 100%); }
+        .rcp-st-left { display: flex; align-items: center; gap: 16px; }
+        .rcp-st-icon {
+            display: flex; align-items: center; justify-content: center;
+            width: 40px; height: 40px; flex-shrink: 0;
+        }
+        .rcp-st-icon svg { width: 28px; height: 28px; color: #fff !important; stroke: #fff !important; }
+        .rcp-st-msg {
+            font-size: 20px !important; font-weight: 700 !important;
+            color: #fff !important; margin: 0 0 2px !important; line-height: 1.2 !important;
+        }
+        .rcp-st-domain { font-size: 13px !important; color: rgba(255,255,255,.75) !important; margin: 0 !important; }
+        .rcp-st-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+        .rcp-plan-badge {
+            display: inline-block; padding: 4px 14px; border-radius: 20px;
+            font-size: 12px !important; font-weight: 700 !important;
+            text-transform: uppercase; letter-spacing: .5px; color: #fff !important;
+        }
+        .rcp-plan-semilla    { background: rgba(255,255,255,.2); }
+        .rcp-plan-raiz       { background: rgba(147,241,201,.3); color: #93F1C9 !important; }
+        .rcp-plan-ecosistema { background: rgba(65,153,159,.4); }
+        .rcp-connected-pill {
+            display: flex; align-items: center; gap: 6px;
+            font-size: 12px !important; color: rgba(255,255,255,.85) !important;
+            background: rgba(255,255,255,.12); padding: 4px 12px; border-radius: 20px;
+        }
+        .rcp-conn-dot {
+            width: 7px; height: 7px; border-radius: 50%;
+            background: #93F1C9; box-shadow: 0 0 0 3px rgba(147,241,201,.3);
+        }
+
+        /* Stats strip */
+        .rcp-stats-strip {
+            display: grid; grid-template-columns: repeat(4,1fr); gap: 14px; margin-bottom: 20px;
+        }
+        @media(max-width:780px) { .rcp-stats-strip { grid-template-columns: repeat(2,1fr); } }
+        .rcp-stat-box {
+            background: var(--rp-card); border: 1px solid var(--rp-border);
+            border-radius: 12px; padding: 18px 16px; text-align: center;
+        }
+        .rcp-stat-box.rcp-stat-warn { border-color: rgba(251,191,36,0.35); background: rgba(251,191,36,0.08); }
+        .rcp-stat-big {
+            display: block !important; font-size: 36px !important; font-weight: 800 !important;
+            line-height: 1 !important; color: var(--rp-green) !important; margin-bottom: 4px !important;
+        }
+        .rcp-stat-warn .rcp-stat-big { color: var(--rp-warn) !important; }
+        .rcp-stat-lbl {
+            display: block !important; font-size: 12px !important; font-weight: 600 !important;
+            color: var(--rp-text) !important; text-transform: uppercase; letter-spacing: .4px;
+        }
+        .rcp-stat-sub { display: block !important; font-size: 11px !important; color: var(--rp-muted) !important; margin-top: 2px !important; }
+
+        /* Cards */
+        .rcp-cards { display: grid; grid-template-columns: repeat(2,1fr); gap: 16px; margin-bottom: 16px; }
+        @media(max-width:900px) { .rcp-cards { grid-template-columns: 1fr; } }
+        .rcp-card {
+            background: var(--rp-card); border: 1px solid var(--rp-border);
+            border-radius: 12px; padding: 20px;
+        }
+        .rcp-card-wide { grid-column: 1/-1; }
+        .rcp-card-h {
+            display: flex !important; align-items: center !important; gap: 8px !important;
+            font-size: 12px !important; font-weight: 700 !important;
+            text-transform: uppercase !important; letter-spacing: .5px !important;
+            color: var(--rp-green) !important; margin: 0 0 16px !important;
+            padding: 0 !important; border: none !important;
+        }
+        .rcp-card-h svg { width: 15px; height: 15px; flex-shrink: 0; opacity: .8; }
+
+        /* Feature chips */
+        .rcp-feat-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+        .rcp-feat-chip { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 20px; font-size: 12px !important; }
+        .rcp-feat-ok { background: rgba(147,241,201,0.12); color: var(--rp-green) !important; border: 1px solid rgba(147,241,201,0.25); }
+        .rcp-feat-off { background: rgba(255,255,255,0.04); color: var(--rp-muted) !important; border: 1px solid rgba(255,255,255,0.07); }
+
+        /* Save row */
+        .rcp-save-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+        .rcp-save-row > div { display: flex; gap: 8px; flex-wrap: wrap; }
+
+        /* Dark plan cards */
+        .rpcare-plan-card { background: var(--rp-card) !important; border-color: var(--rp-border) !important; color: var(--rp-text) !important; }
+        .rpcare-plan-card.selected { border-color: var(--rp-green) !important; box-shadow: 0 0 0 1px var(--rp-green) !important; }
+        .rpcare-plan-card.plan-featured { border-color: var(--rp-teal) !important; }
+        .rpcare-plan-card.plan-featured .featured-label { background: var(--rp-teal) !important; }
+        .plan-header { background: var(--rp-card-2) !important; }
+        .plan-header h3 { color: var(--rp-text) !important; }
+        .plan-sub { color: var(--rp-muted) !important; }
+        .plan-price { color: var(--rp-green) !important; }
+        .plan-price small { color: var(--rp-muted) !important; }
+        .plan-features li { color: var(--rp-text) !important; }
+        .plan-cta { border-top-color: var(--rp-border) !important; }
+        .plan-btn { background: rgba(255,255,255,0.06) !important; border-color: var(--rp-border) !important; color: var(--rp-text) !important; }
+        .plan-btn:hover, .plan-selector:hover .plan-btn { background: var(--rp-card-2) !important; border-color: var(--rp-green) !important; color: var(--rp-green) !important; }
+        .plan-btn.primary { background: var(--rp-green) !important; border-color: var(--rp-green) !important; color: #0D1A10 !important; }
+        .plan-btn.primary:hover, .plan-selector:hover .plan-btn.primary { background: #7DD8B0 !important; border-color: #7DD8B0 !important; color: #0D1A10 !important; }
+        .plan-selector input[type='radio']:checked + .plan-btn { background: var(--rp-green) !important; border-color: var(--rp-green) !important; color: #0D1A10 !important; }
+        .plan-btn-external { border-color: var(--rp-border) !important; color: var(--rp-muted) !important; }
+        .plan-btn-external:hover { background: var(--rp-card-2) !important; color: var(--rp-text) !important; }
+        .rpcare-plans-intro { background: rgba(251,191,36,0.08) !important; border-color: rgba(251,191,36,0.25) !important; color: #fbbf24 !important; }
+        .rpcare-plan-detected { background: rgba(147,241,201,0.08) !important; border-color: rgba(147,241,201,0.25) !important; }
+        .rpcare-plan-detected strong { color: var(--rp-green) !important; }
+        .rpcare-plan-detected .plan-price { color: var(--rp-muted) !important; }
+        </style>
+        <?php
+    }
+
     public function settings_page() {
         if (!current_user_can('manage_options')) {
             return;
@@ -471,81 +426,68 @@ class RP_Care_Settings_Page {
         $backup_on    = !isset($options['backup_enabled']) || $options['backup_enabled'];
         $cache_on     = !isset($options['cache_clearing']) || $options['cache_clearing'];
         $security_on  = !isset($options['security_monitoring']) || $options['security_monitoring'];
-        ?>
-        <div class="rpc-wrap">
+        <?php $this->renderCss(); ?>
+        <div class="rcp-wrap">
 
-            <!-- HEADER -->
-            <header class="rpc-header">
-                <div class="rpc-header-brand">
-                    <img src="<?php echo esc_url(RPCARE_PLUGIN_URL . 'assets/img/ico.png'); ?>" alt="Replanta Care" class="rpc-logo">
+            <!-- STATUS BAR -->
+            <div class="rcp-status-bar <?php echo $hub_connected ? 'rcp-st-ok' : 'rcp-st-warn'; ?>">
+                <div class="rcp-st-left">
+                    <div class="rcp-st-icon">
+                        <?php if ($hub_connected): ?>
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                        <?php else: ?>
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                        <?php endif; ?>
+                    </div>
                     <div>
-                        <h1 class="rpc-title">Replanta Care</h1>
-                        <span class="rpc-version">v<?php echo esc_html(RPCARE_VERSION); ?></span>
+                        <p class="rcp-st-msg" id="rpc-conn-label"><?php echo esc_html($conn_label); ?></p>
+                        <p class="rcp-st-domain"><?php echo esc_html(get_bloginfo('name')); ?> &mdash; Replanta Care v<?php echo esc_html(RPCARE_VERSION); ?></p>
                     </div>
                 </div>
-                <div class="rpc-header-status">
-                    <div class="rpc-connection <?php echo $conn_class; ?>" id="rpc-hub-pill">
-                        <span class="rpc-dot"></span>
-                        <span id="rpc-conn-label"><?php echo esc_html($conn_label); ?></span>
-                    </div>
+                <div class="rcp-st-right" id="rpc-hub-pill">
                     <?php if ($plan_display): ?>
-                    <div class="rpc-plan-badge" id="rpc-plan-badge"><?php echo esc_html($plan_display); ?></div>
+                    <span class="rcp-plan-badge rcp-plan-<?php echo esc_attr($current_plan); ?>" id="rpc-plan-badge"><?php echo esc_html($plan_display); ?></span>
                     <?php endif; ?>
+                    <span class="rcp-connected-pill">
+                        <span class="rcp-conn-dot"></span>
+                        <?php echo $hub_connected ? 'Protegido' : 'Sin conexion'; ?>
+                    </span>
                 </div>
-            </header>
+            </div>
 
-            <!-- STATS BAR -->
-            <div class="rpc-stats-bar">
-                <div class="rpc-stat">
-                    <span class="rpc-stat-icon dashicons dashicons-wordpress-alt"></span>
-                    <span class="rpc-stat-label">WordPress</span>
-                    <span class="rpc-stat-value"><?php echo esc_html($wp_version); ?></span>
+            <!-- STATS STRIP -->
+            <div class="rcp-stats-strip">
+                <div class="rcp-stat-box">
+                    <span class="rcp-stat-big"><?php echo esc_html($wp_version); ?></span>
+                    <span class="rcp-stat-lbl">WordPress</span>
                 </div>
-                <div class="rpc-stat">
-                    <span class="rpc-stat-icon dashicons dashicons-editor-code"></span>
-                    <span class="rpc-stat-label">PHP</span>
-                    <span class="rpc-stat-value"><?php echo esc_html($php_version); ?></span>
+                <div class="rcp-stat-box">
+                    <span class="rcp-stat-big"><?php echo esc_html(substr($php_version, 0, 6)); ?></span>
+                    <span class="rcp-stat-lbl">PHP</span>
                 </div>
-                <div class="rpc-stat">
-                    <span class="rpc-stat-icon dashicons dashicons-backup"></span>
-                    <span class="rpc-stat-label">Último backup</span>
-                    <span class="rpc-stat-value <?php echo $last_backup ? 'good' : 'warn'; ?>">
-                        <?php echo $last_backup ? esc_html(wp_date('d M', strtotime($last_backup))) : 'Nunca'; ?>
-                    </span>
+                <div class="rcp-stat-box <?php echo !$ssl_ok ? 'rcp-stat-warn' : ''; ?>">
+                    <span class="rcp-stat-big" style="font-size:22px!important;"><?php echo $ssl_ok ? 'Activo' : 'Inactivo'; ?></span>
+                    <span class="rcp-stat-lbl">SSL</span>
                 </div>
-                <div class="rpc-stat">
-                    <span class="rpc-stat-icon dashicons dashicons-lock"></span>
-                    <span class="rpc-stat-label">SSL</span>
-                    <span class="rpc-stat-value <?php echo $ssl_ok ? 'good' : 'bad'; ?>"><?php echo $ssl_ok ? 'Activo' : 'Inactivo'; ?></span>
-                </div>
-                <div class="rpc-stat">
-                    <span class="rpc-stat-icon dashicons dashicons-update"></span>
-                    <span class="rpc-stat-label">Actualizaciones</span>
-                    <span class="rpc-stat-value <?php echo $pending_upd > 0 ? 'warn' : 'good'; ?>">
-                        <?php echo $pending_upd > 0 ? $pending_upd . ' pendientes' : 'Al día'; ?>
-                    </span>
-                </div>
-                <div class="rpc-stat">
-                    <span class="rpc-stat-icon dashicons dashicons-heart"></span>
-                    <span class="rpc-stat-label">Salud</span>
-                    <span class="rpc-stat-value rpc-health-num"><?php echo $health_score; ?>%</span>
-                </div>
-                <div class="rpc-stat">
-                    <span class="rpc-stat-icon dashicons dashicons-performance"></span>
-                    <span class="rpc-stat-label">Tareas</span>
-                    <span class="rpc-stat-value <?php echo $tasks_active ? 'good' : 'warn'; ?>"><?php echo $tasks_active ? 'Activas' : 'Inactivas'; ?></span>
+                <div class="rcp-stat-box <?php echo $pending_upd > 0 ? 'rcp-stat-warn' : ''; ?>">
+                    <span class="rcp-stat-big"><?php echo $pending_upd; ?></span>
+                    <span class="rcp-stat-lbl">Actualizaciones</span>
+                    <span class="rcp-stat-sub"><?php echo $pending_upd > 0 ? 'pendientes' : 'al dia'; ?></span>
                 </div>
             </div>
 
             <!-- SETTINGS FORM -->
-            <form method="post" action="options.php" class="rpc-form" id="rpc-settings-form">
+            <form method="post" action="options.php" id="rpc-settings-form">
                 <?php settings_fields('rpcare_settings'); ?>
 
-                <div class="rpc-sections">
+                <div class="rcp-cards">
 
-                    <!-- CONEXIÓN HUB -->
-                    <section class="rpc-section">
-                        <h2 class="rpc-section-title"><span class="rpc-section-icon dashicons dashicons-admin-links"></span> Conexión con Replanta Hub</h2>
+                    <!-- CONEXION HUB -->
+                    <div class="rcp-card">
+                        <h2 class="rcp-card-h">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                            Conexion con Replanta Hub
+                        </h2>
 
                         <div class="rpc-field">
                             <label class="rpc-label" for="rpc-hub-url">URL del Hub <small style="text-transform:none;font-weight:400;color:var(--rp-muted)">(por defecto: https://replanta.net)</small></label>
@@ -554,21 +496,23 @@ class RP_Care_Settings_Page {
                         </div>
 
                         <div class="rpc-field">
-                            <label class="rpc-label" for="rpc-site-token">Token del sitio <small style="text-transform:none;font-weight:400;color:var(--rp-muted)">(proporcionado por Replanta Hub al añadir el sitio)</small></label>
+                            <label class="rpc-label" for="rpc-site-token">Token del sitio <small style="text-transform:none;font-weight:400;color:var(--rp-muted)">(proporcionado por Replanta Hub al anadir el sitio)</small></label>
                             <div class="rpc-input-row">
                                 <input type="text" id="rpc-site-token" name="rpcare_options[site_token]"
                                        class="rpc-input rpc-input-mono" value="<?php echo $token; ?>"
-                                       placeholder="Pega aquí el token que generó Replanta Hub" autocomplete="off">
+                                       placeholder="Pega aqui el token que genero Replanta Hub" autocomplete="off">
                                 <?php if ($has_token): ?>
                                 <button type="button" class="rpc-btn rpc-btn-secondary rpc-btn-sm"
-                                        onclick="rpcare_copy_token()" title="Copiar token"><span class="dashicons dashicons-clipboard"></span></button>
+                                        onclick="rpcare_copy_token()" title="Copiar token">
+                                    <span class="dashicons dashicons-clipboard"></span>
+                                </button>
                                 <?php endif; ?>
                             </div>
                             <span class="rpc-hint <?php echo $has_token ? 'ok' : 'warn'; ?>">
                                 <?php if ($has_token): ?>
                                     <span class="dashicons dashicons-yes-alt"></span> Token configurado. Hub autenticado.
                                 <?php else: ?>
-                                    <span class="dashicons dashicons-warning"></span> Sin token: copia el token desde Hub (panel de sitios) y pégalo aquí.
+                                    <span class="dashicons dashicons-warning"></span> Sin token: copia el token desde Hub y pegalo aqui.
                                 <?php endif; ?>
                             </span>
                         </div>
@@ -580,20 +524,23 @@ class RP_Care_Settings_Page {
                         </div>
 
                         <button type="button" class="rpc-btn rpc-btn-secondary" id="test-connection" style="margin-top:4px;">
-                            <span id="rpc-test-icon" class="dashicons dashicons-rest-api"></span> Probar conexión
+                            <span id="rpc-test-icon" class="dashicons dashicons-rest-api"></span> Probar conexion
                         </button>
                         <div id="rpc-connection-result"></div>
                         <div id="connection-status" style="display:none;"></div>
-                    </section>
+                    </div>
 
-                    <!-- PLAN / TAREAS -->
-                    <section class="rpc-section">
-                        <h2 class="rpc-section-title"><span class="rpc-section-icon dashicons dashicons-performance"></span> Tareas automáticas</h2>
+                    <!-- TAREAS AUTOMATICAS -->
+                    <div class="rcp-card">
+                        <h2 class="rcp-card-h">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                            Tareas automaticas
+                        </h2>
 
                         <?php if ($hub_connected && $current_plan): ?>
                         <div class="rpc-hint ok" style="margin-bottom:16px;">
                             <span class="dashicons dashicons-yes-alt"></span> Plan <strong><?php echo esc_html($plan_display); ?></strong> detectado desde el Hub.
-                            Las tareas se ajustan automáticamente.
+                            Las tareas se ajustan automaticamente.
                         </div>
                         <input type="hidden" name="rpcare_options[plan]" value="<?php echo esc_attr($current_plan); ?>">
                         <?php else: ?>
@@ -604,7 +551,7 @@ class RP_Care_Settings_Page {
                         <?php endif; ?>
 
                         <div class="rpc-field" style="margin-top:12px;">
-                            <label class="rpc-label">Actualizaciones automáticas</label>
+                            <label class="rpc-label">Actualizaciones automaticas</label>
                             <select name="rpcare_options[auto_updates]" class="rpc-select">
                                 <option value="disabled" <?php selected($auto_updates, 'disabled'); ?>>Deshabilitadas</option>
                                 <option value="minor_only" <?php selected($auto_updates, 'minor_only'); ?>>Solo actualizaciones menores</option>
@@ -614,8 +561,8 @@ class RP_Care_Settings_Page {
 
                         <div class="rpc-toggle-row">
                             <div class="rpc-toggle-info">
-                                <span class="rpc-toggle-name"><span class="dashicons dashicons-backup"></span> Copias de seguridad</span>
-                                <span class="rpc-toggle-desc">Backups automáticos con Backuply según tu plan</span>
+                                <span class="rpc-toggle-name">Copias de seguridad</span>
+                                <span class="rpc-toggle-desc">Backups automaticos con Backuply segun tu plan</span>
                             </div>
                             <label class="rpc-switch">
                                 <input type="checkbox" name="rpcare_options[backup_enabled]" value="1" <?php checked($backup_on); ?>>
@@ -625,8 +572,8 @@ class RP_Care_Settings_Page {
 
                         <div class="rpc-toggle-row">
                             <div class="rpc-toggle-info">
-                                <span class="rpc-toggle-name"><span class="dashicons dashicons-trash"></span> Limpieza de caché</span>
-                                <span class="rpc-toggle-desc">Vaciar caché tras actualizaciones</span>
+                                <span class="rpc-toggle-name">Limpieza de cache</span>
+                                <span class="rpc-toggle-desc">Vaciar cache tras actualizaciones</span>
                             </div>
                             <label class="rpc-switch">
                                 <input type="checkbox" name="rpcare_options[cache_clearing]" value="1" <?php checked($cache_on); ?>>
@@ -636,8 +583,8 @@ class RP_Care_Settings_Page {
 
                         <div class="rpc-toggle-row">
                             <div class="rpc-toggle-info">
-                                <span class="rpc-toggle-name"><span class="dashicons dashicons-shield-alt"></span> Escaneo de seguridad</span>
-                                <span class="rpc-toggle-desc">Análisis periódico de vulnerabilidades</span>
+                                <span class="rpc-toggle-name">Escaneo de seguridad</span>
+                                <span class="rpc-toggle-desc">Analisis periodico de vulnerabilidades</span>
                             </div>
                             <label class="rpc-switch">
                                 <input type="checkbox" name="rpcare_options[security_monitoring]" value="1" <?php checked($security_on); ?>>
@@ -647,46 +594,49 @@ class RP_Care_Settings_Page {
 
                         <?php
                         $feat_map = [
-                            'updates'      => ['Actualizaciones',    'dashicons-update'],
-                            'backups'      => ['Copias de seguridad','dashicons-backup'],
-                            'wpo_basic'    => ['Optimización WPO',   'dashicons-performance'],
-                            'wpo_advanced' => ['WPO Avanzado',       'dashicons-performance'],
-                            'monitoring'   => ['Monitorización 24/7','dashicons-visibility'],
-                            'seo_reviews'  => ['Revisiones SEO',     'dashicons-search'],
-                            'staging'      => ['Entorno staging',    'dashicons-admin-multisite'],
-                            'cdn_config'   => ['CDN / Cloudflare',   'dashicons-networking'],
-                            'audit'        => ['Auditoría SEO/WPO',  'dashicons-clipboard'],
+                            'updates'      => 'Actualizaciones',
+                            'backups'      => 'Copias de seguridad',
+                            'wpo_basic'    => 'Optimizacion WPO',
+                            'wpo_advanced' => 'WPO Avanzado',
+                            'monitoring'   => 'Monitorizacion 24/7',
+                            'seo_reviews'  => 'Revisiones SEO',
+                            'staging'      => 'Entorno staging',
+                            'cdn_config'   => 'CDN / Cloudflare',
+                            'audit'        => 'Auditoria SEO/WPO',
                         ];
                         ?>
                         <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--rp-border);">
                             <label class="rpc-label" style="margin-bottom:10px;display:block;">Funciones incluidas en tu plan</label>
-                            <div style="display:flex;flex-wrap:wrap;gap:8px;">
-                            <?php foreach ($feat_map as $feat => [$label, $icon]):
+                            <div class="rcp-feat-chips">
+                            <?php foreach ($feat_map as $feat => $label):
                                 $active = class_exists('RP_Care_Plan') && RP_Care_Plan::can_access_feature($feat, $current_plan ?? '');
                             ?>
-                                <span style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:20px;font-size:12px;
-                                    background:<?php echo $active ? 'rgba(76,175,78,0.15)' : 'rgba(255,255,255,0.04)'; ?>;
-                                    color:<?php echo $active ? 'var(--rp-green,#4caf8e)' : 'var(--rp-muted,#8fa99a)'; ?>;
-                                    border:1px solid <?php echo $active ? 'rgba(76,175,78,0.3)' : 'rgba(255,255,255,0.08)'; ?>;">
-                                    <span class="dashicons <?php echo $active ? esc_attr($icon) : 'dashicons-lock'; ?>" style="font-size:13px;width:13px;height:13px;margin-top:2px;"></span>
+                                <span class="rcp-feat-chip <?php echo $active ? 'rcp-feat-ok' : 'rcp-feat-off'; ?>">
+                                    <?php if ($active): ?>
+                                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                                    <?php else: ?>
+                                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                                    <?php endif; ?>
                                     <?php echo esc_html($label); ?>
                                 </span>
                             <?php endforeach; ?>
                             </div>
                         </div>
 
-                    </section>
+                    </div>
 
                     <!-- NOTIFICACIONES -->
-                    <section class="rpc-section rpc-section-full">
-                        <h2 class="rpc-section-title"><span class="rpc-section-icon dashicons dashicons-bell"></span> Notificaciones</h2>
-
+                    <div class="rcp-card rcp-card-wide">
+                        <h2 class="rcp-card-h">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                            Notificaciones
+                        </h2>
                         <div style="display:grid;grid-template-columns:1fr 2fr;gap:24px;align-items:start;">
                             <div class="rpc-field">
                                 <label class="rpc-label" for="rpc-notif-email">Email de notificaciones</label>
                                 <input type="email" id="rpc-notif-email" name="rpcare_options[notification_email]"
                                        class="rpc-input" value="<?php echo $notif_email; ?>">
-                                <span class="rpc-hint">Recibirás los avisos del sistema en este email.</span>
+                                <span class="rpc-hint">Recibiras los avisos del sistema en este email.</span>
                             </div>
                             <div class="rpc-field">
                                 <label class="rpc-label">Tipos de notificaciones</label>
@@ -702,99 +652,111 @@ class RP_Care_Settings_Page {
                                 </div>
                             </div>
                         </div>
-                    </section>
+                    </div>
 
-                </div><!-- /.rpc-sections -->
+                </div><!-- /.rcp-cards -->
 
-                <div class="rpc-form-footer">
-                    <button type="submit" name="submit" class="rpc-btn rpc-btn-primary">
-                        <span class="dashicons dashicons-saved"></span> Guardar configuración
-                    </button>
-                    <button type="button" id="rpc-check-updates-btn" class="rpc-btn rpc-btn-ghost">
-                        <span class="dashicons dashicons-update"></span> Comprobar actualizaciones ahora
-                    </button>
+                <div class="rcp-save-row">
+                    <div>
+                        <button type="submit" name="submit" class="rpc-btn rpc-btn-primary">
+                            <span class="dashicons dashicons-saved"></span> Guardar configuracion
+                        </button>
+                        <button type="button" id="rpc-check-updates-btn" class="rpc-btn rpc-btn-ghost">
+                            <span class="dashicons dashicons-update"></span> Comprobar actualizaciones ahora
+                        </button>
+                    </div>
                     <?php if (isset($_GET['settings-updated'])): ?>
-                    <span class="rpc-hint ok" style="margin-left:auto;"><span class="dashicons dashicons-yes-alt"></span> Configuración guardada</span>
+                    <span class="rpc-hint ok"><span class="dashicons dashicons-yes-alt"></span> Configuracion guardada</span>
                     <?php endif; ?>
                 </div>
 
             </form>
 
-            <!-- ACCIONES RÁPIDAS -->
-            <section class="rpc-actions">
-                <h2 class="rpc-section-title"><span class="rpc-section-icon dashicons dashicons-controls-play"></span> Acciones inmediatas</h2>
+            <!-- ACCIONES RAPIDAS -->
+            <div class="rcp-card" style="margin-top:16px;">
+                <h2 class="rcp-card-h">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                    Acciones inmediatas
+                </h2>
                 <div class="rpc-action-grid">
                     <button class="rpc-action-card" data-task="updates" type="button" title="Aplica actualizaciones pendientes de WordPress, plugins y temas con backup previo">
                         <span class="rpc-action-icon dashicons dashicons-update"></span>
                         <span class="rpc-action-label">Actualizaciones</span>
-                        <span class="rpc-action-hint dashicons dashicons-info" style="font-size:11px;position:absolute;top:6px;right:6px;color:var(--rp-muted,#8fa99a);cursor:help;" aria-label="Aplica actualizaciones pendientes de WordPress, plugins y temas con backup previo"></span>
+                        <span class="rpc-action-hint dashicons dashicons-info" style="font-size:11px;position:absolute;top:6px;right:6px;color:var(--rp-muted,#8fa99a);cursor:help;"></span>
                     </button>
-                    <button class="rpc-action-card" data-task="backup" type="button" title="Crea una copia de seguridad completa del sitio via Backuply o WHM según la configuración">
+                    <button class="rpc-action-card" data-task="backup" type="button" title="Crea una copia de seguridad completa del sitio via Backuply o WHM segun la configuracion">
                         <span class="rpc-action-icon dashicons dashicons-backup"></span>
                         <span class="rpc-action-label">Crear backup</span>
-                        <span class="rpc-action-hint dashicons dashicons-info" style="font-size:11px;position:absolute;top:6px;right:6px;color:var(--rp-muted,#8fa99a);cursor:help;" aria-label="Crea una copia de seguridad completa del sitio via Backuply o WHM según la configuración"></span>
+                        <span class="rpc-action-hint dashicons dashicons-info" style="font-size:11px;position:absolute;top:6px;right:6px;color:var(--rp-muted,#8fa99a);cursor:help;"></span>
                     </button>
-                    <button class="rpc-action-card" data-task="cache" type="button" title="Purga el caché de página (LiteSpeed, WP Rocket, W3TC…) y el caché de objetos de PHP">
+                    <button class="rpc-action-card" data-task="cache" type="button" title="Purga el cache de pagina y el cache de objetos de PHP">
                         <span class="rpc-action-icon dashicons dashicons-trash"></span>
-                        <span class="rpc-action-label">Limpiar caché</span>
-                        <span class="rpc-action-hint dashicons dashicons-info" style="font-size:11px;position:absolute;top:6px;right:6px;color:var(--rp-muted,#8fa99a);cursor:help;" aria-label="Purga el caché de página (LiteSpeed, WP Rocket, W3TC…) y el caché de objetos de PHP"></span>
+                        <span class="rpc-action-label">Limpiar cache</span>
+                        <span class="rpc-action-hint dashicons dashicons-info" style="font-size:11px;position:absolute;top:6px;right:6px;color:var(--rp-muted,#8fa99a);cursor:help;"></span>
                     </button>
-                    <button class="rpc-action-card" data-task="security" type="button" title="Escanea el sitio en busca de archivos sospechosos, usuarios sin seguridad y configuraciones vulnerables">
+                    <button class="rpc-action-card" data-task="security" type="button" title="Escanea el sitio en busca de archivos sospechosos y configuraciones vulnerables">
                         <span class="rpc-action-icon dashicons dashicons-shield-alt"></span>
                         <span class="rpc-action-label">Seguridad</span>
-                        <span class="rpc-action-hint dashicons dashicons-info" style="font-size:11px;position:absolute;top:6px;right:6px;color:var(--rp-muted,#8fa99a);cursor:help;" aria-label="Escanea el sitio en busca de archivos sospechosos, usuarios sin seguridad y configuraciones vulnerables"></span>
+                        <span class="rpc-action-hint dashicons dashicons-info" style="font-size:11px;position:absolute;top:6px;right:6px;color:var(--rp-muted,#8fa99a);cursor:help;"></span>
                     </button>
-                    <button class="rpc-action-card" data-task="health" type="button" title="Comprueba el estado del servidor, espacio en disco, memoria, WP Cron y funcionalidad de email">
+                    <button class="rpc-action-card" data-task="health" type="button" title="Comprueba el estado del servidor, espacio en disco, memoria y WP Cron">
                         <span class="rpc-action-icon dashicons dashicons-heart"></span>
                         <span class="rpc-action-label">Salud del sitio</span>
-                        <span class="rpc-action-hint dashicons dashicons-info" style="font-size:11px;position:absolute;top:6px;right:6px;color:var(--rp-muted,#8fa99a);cursor:help;" aria-label="Comprueba el estado del servidor, espacio en disco, memoria, WP Cron y funcionalidad de email"></span>
+                        <span class="rpc-action-hint dashicons dashicons-info" style="font-size:11px;position:absolute;top:6px;right:6px;color:var(--rp-muted,#8fa99a);cursor:help;"></span>
                     </button>
-                    <button class="rpc-action-card" data-task="report" type="button" title="Genera el informe mensual del sitio y lo envía por email al administrador">
+                    <button class="rpc-action-card" data-task="report" type="button" title="Genera el informe mensual del sitio y lo envia por email al administrador">
                         <span class="rpc-action-icon dashicons dashicons-chart-bar"></span>
                         <span class="rpc-action-label">Generar informe</span>
-                        <span class="rpc-action-hint dashicons dashicons-info" style="font-size:11px;position:absolute;top:6px;right:6px;color:var(--rp-muted,#8fa99a);cursor:help;" aria-label="Genera el informe mensual del sitio y lo envía por email al administrador"></span>
+                        <span class="rpc-action-hint dashicons dashicons-info" style="font-size:11px;position:absolute;top:6px;right:6px;color:var(--rp-muted,#8fa99a);cursor:help;"></span>
                     </button>
-                    <button class="rpc-action-card" data-task="wpo" type="button" title="Optimiza la base de datos, limpia transients caducados, aplica ajustes de LiteSpeed y revisa imágenes grandes">
+                    <button class="rpc-action-card" data-task="wpo" type="button" title="Optimiza la base de datos, limpia transients caducados y revisa imagenes grandes">
                         <span class="rpc-action-icon dashicons dashicons-performance"></span>
                         <span class="rpc-action-label">Optimizar WPO</span>
-                        <span class="rpc-action-hint dashicons dashicons-info" style="font-size:11px;position:absolute;top:6px;right:6px;color:var(--rp-muted,#8fa99a);cursor:help;" aria-label="Optimiza la base de datos, limpia transients caducados, aplica ajustes de LiteSpeed y revisa imágenes grandes"></span>
+                        <span class="rpc-action-hint dashicons dashicons-info" style="font-size:11px;position:absolute;top:6px;right:6px;color:var(--rp-muted,#8fa99a);cursor:help;"></span>
                     </button>
-                    <button class="rpc-action-card" data-task="seo" type="button" title="Revisa meta títulos, meta descripciones, sitemap XML y robots.txt del sitio">
+                    <button class="rpc-action-card" data-task="seo" type="button" title="Revisa meta titulos, meta descripciones, sitemap XML y robots.txt del sitio">
                         <span class="rpc-action-icon dashicons dashicons-search"></span>
-                        <span class="rpc-action-label">Análisis SEO</span>
-                        <span class="rpc-action-hint dashicons dashicons-info" style="font-size:11px;position:absolute;top:6px;right:6px;color:var(--rp-muted,#8fa99a);cursor:help;" aria-label="Revisa meta títulos, meta descripciones, sitemap XML y robots.txt del sitio"></span>
+                        <span class="rpc-action-label">Analisis SEO</span>
+                        <span class="rpc-action-hint dashicons dashicons-info" style="font-size:11px;position:absolute;top:6px;right:6px;color:var(--rp-muted,#8fa99a);cursor:help;"></span>
                     </button>
                 </div>
                 <div class="rpc-results" id="rpcare-task-results"></div>
-            </section>
+            </div>
 
-            <!-- REPORTES DE REPLANTA -->
-            <section class="rpc-reports">
-                <h2 class="rpc-section-title"><span class="rpc-section-icon dashicons dashicons-media-document"></span> Informes de Replanta</h2>
-                <p class="rpc-hint" style="margin-bottom:14px;">Informes generados por Replanta para este sitio.</p>
-                <button type="button" class="rpc-btn rpc-btn-secondary rpc-btn-sm" id="rpcare-load-reports">
-                    <span id="rpc-reports-icon" class="dashicons dashicons-download"></span> Cargar informes
-                </button>
-                <div id="rpcare-reports-list" style="margin-top:14px;"></div>
-            </section>
-
-            <!-- HISTORIAL DE BACKUPS -->
-            <section class="rpc-backups">
-                <h2 class="rpc-section-title"><span class="rpc-section-icon dashicons dashicons-backup"></span> Historial de copias de seguridad</h2>
-                <p class="rpc-hint" style="margin-bottom:14px;">Últimas copias de seguridad realizadas en este sitio.</p>
-                <button type="button" class="rpc-btn rpc-btn-secondary rpc-btn-sm" id="rpcare-load-backups">
-                    <span id="rpc-backups-icon" class="dashicons dashicons-download"></span> Ver historial
-                </button>
-                <div id="rpcare-backups-list" style="margin-top:14px;"></div>
-            </section>
+            <!-- INFORMES + BACKUPS -->
+            <div class="rcp-cards" style="margin-top:16px;">
+                <div class="rcp-card">
+                    <h2 class="rcp-card-h">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                        Informes de Replanta
+                    </h2>
+                    <button type="button" class="rpc-btn rpc-btn-secondary rpc-btn-sm" id="rpcare-load-reports">
+                        <span id="rpc-reports-icon" class="dashicons dashicons-download"></span> Cargar informes
+                    </button>
+                    <div id="rpcare-reports-list" style="margin-top:14px;"></div>
+                </div>
+                <div class="rcp-card">
+                    <h2 class="rcp-card-h">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="21 15 21 21 3 21 3 15"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                        Historial de copias de seguridad
+                    </h2>
+                    <button type="button" class="rpc-btn rpc-btn-secondary rpc-btn-sm" id="rpcare-load-backups">
+                        <span id="rpc-backups-icon" class="dashicons dashicons-download"></span> Ver historial
+                    </button>
+                    <div id="rpcare-backups-list" style="margin-top:14px;"></div>
+                </div>
+            </div>
 
             <!-- ACTIVIDAD RECIENTE -->
-            <section class="rpc-logs">
-                <h2 class="rpc-section-title"><span class="rpc-section-icon dashicons dashicons-list-view"></span> Actividad reciente</h2>
+            <div class="rcp-card" style="margin-top:16px;">
+                <h2 class="rcp-card-h">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                    Actividad reciente
+                </h2>
                 <?php $this->display_recent_logs(); ?>
-            </section>
+            </div>
 
-        </div><!-- /.rpc-wrap -->
+        </div><!-- /.rcp-wrap -->
 
         <!-- TOAST CONTAINER -->
         <div id="rpc-toasts" aria-live="polite"></div>

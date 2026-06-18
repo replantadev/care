@@ -3,7 +3,7 @@
  * Plugin Name: Replanta Care
  * Plugin URI: https://replanta.dev
  * Description: Plugin de mantenimiento WordPress automático para clientes de Replanta con integración Hub
- * Version: 1.13.4
+ * Version: 1.13.5
  * Author: Replanta
  * Author URI: https://replanta.dev
  * License: GPL v2 or later
@@ -17,7 +17,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('RPCARE_VERSION', '1.13.4');
+define('RPCARE_VERSION', '1.13.5');
 define('RPCARE_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('RPCARE_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('RPCARE_PLUGIN_FILE', __FILE__);
@@ -396,19 +396,31 @@ class ReplantaCare {
     }
     
     public function activate() {
-        // Create necessary database tables if needed
-        $this->create_tables();
-        
-        // Set default options
-        add_option('rpcare_version', RPCARE_VERSION);
-        add_option('rpcare_activated', false);
-        add_option('rpcare_plan', '');
-        add_option('rpcare_token', '');
-        add_option('rpcare_hub_url', 'https://sitios.replanta.dev');
-        
-        // Schedule initial check via Action Scheduler (falls back to WP Cron)
-        $this->rpcare_maybe_schedule('rpcare_daily_check',       'daily',  3600);
-        $this->rpcare_maybe_schedule('rpcare_task_maintenance',  'daily',  7200);
+        // During activation, plugins_loaded has already fired so ActionScheduler
+        // may be owned by another plugin (wrong $plugin_file path). Never call
+        // as_schedule_* here — it triggers AS migration and causes a fatal when
+        // the autoloader resolves Config.php against the wrong plugin path.
+        // RP_Care_Scheduler::ensure() (hooked to 'init') handles AS scheduling
+        // on the next normal page load.
+        try {
+            $this->create_tables();
+
+            add_option('rpcare_version', RPCARE_VERSION);
+            add_option('rpcare_activated', false);
+            add_option('rpcare_plan', '');
+            add_option('rpcare_token', '');
+            add_option('rpcare_hub_url', 'https://sitios.replanta.dev');
+
+            // WP Cron only — safe at activation time
+            if (!wp_next_scheduled('rpcare_daily_check')) {
+                wp_schedule_event(time() + 3600, 'daily', 'rpcare_daily_check');
+            }
+            if (!wp_next_scheduled('rpcare_task_maintenance')) {
+                wp_schedule_event(time() + 7200, 'daily', 'rpcare_task_maintenance');
+            }
+        } catch (\Throwable $e) {
+            error_log('Replanta Care: activate() error - ' . $e->getMessage());
+        }
     }
     
     public function deactivate() {

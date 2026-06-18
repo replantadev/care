@@ -3,7 +3,7 @@
  * Plugin Name: Replanta Care
  * Plugin URI: https://replanta.dev
  * Description: Plugin de mantenimiento WordPress automático para clientes de Replanta con integración Hub
- * Version: 1.13.5
+ * Version: 1.13.6
  * Author: Replanta
  * Author URI: https://replanta.dev
  * License: GPL v2 or later
@@ -17,7 +17,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('RPCARE_VERSION', '1.13.5');
+define('RPCARE_VERSION', '1.13.6');
 define('RPCARE_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('RPCARE_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('RPCARE_PLUGIN_FILE', __FILE__);
@@ -48,6 +48,25 @@ if (file_exists($config_file)) {
 if (file_exists(RPCARE_PLUGIN_PATH . 'vendor/woocommerce/action-scheduler/action-scheduler.php')) {
     require_once RPCARE_PLUGIN_PATH . 'vendor/woocommerce/action-scheduler/action-scheduler.php';
 }
+
+// Fallback autoloader for Care's bundled AS namespace classes.
+// Problem: another plugin (e.g. Beaver Builder) may define the ActionScheduler
+// class first with an older autoload() that doesn't support the
+// Action_Scheduler\Migration\* namespace introduced in AS 3.0. When Care's AS
+// wins the version contest and calls ActionScheduler::init(), it registers the
+// already-loaded (older) autoload() method — which silently skips namespaced
+// classes. This appended fallback loads them from Care's own vendor path and
+// only fires when the primary autoloader fails to define the class.
+spl_autoload_register(static function ( string $class ): void {
+    if ( strncmp( $class, 'Action_Scheduler\\Migration\\', 27 ) !== 0 ) {
+        return;
+    }
+    $name = substr( $class, strrpos( $class, '\\' ) + 1 );
+    $file = RPCARE_PLUGIN_PATH . 'vendor/woocommerce/action-scheduler/classes/migration/' . $name . '.php';
+    if ( file_exists( $file ) ) {
+        require_once $file;
+    }
+}, false, false ); // append=false: fallback only, never overrides a working autoloader
 
 // Auto-updates via Hub (Hub fetches from GitHub and serves the zip — no token needed on client sites)
 if (file_exists(RPCARE_PLUGIN_PATH . 'vendor/autoload.php')) {

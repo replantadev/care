@@ -371,24 +371,24 @@ class ReplantaCare {
         $features = RP_Care_Plan::get_features($plan);
         $feature_list = [];
         
-        if ($features['automatic_updates']) {
-            $feature_list[] = 'Actualizaciones automÃ¡ticas';
+        if (!empty($features['automatic_updates'])) {
+            $feature_list[] = 'Actualizaciones automáticas';
         }
-        
-        if ($features['backup']) {
-            $frequency = ucfirst($features['backup_frequency']);
+
+        if (!empty($features['backup'])) {
+            $frequency = ucfirst($features['backup_frequency'] ?? 'semanal');
             $feature_list[] = "Backups {$frequency}";
         }
-        
-        if ($features['security_monitoring']) {
+
+        if (!empty($features['security_monitoring'])) {
             $feature_list[] = 'Monitoreo de seguridad';
         }
-        
-        if ($features['performance_optimization']) {
-            $feature_list[] = 'OptimizaciÃ³n de rendimiento';
+
+        if (!empty($features['performance_optimization'])) {
+            $feature_list[] = 'Optimización de rendimiento';
         }
-        
-        if ($features['priority_support']) {
+
+        if (!empty($features['priority_support'])) {
             $feature_list[] = 'Soporte prioritario';
         }
         

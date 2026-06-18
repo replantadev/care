@@ -426,6 +426,7 @@ class RP_Care_Settings_Page {
         $backup_on    = !isset($options['backup_enabled']) || $options['backup_enabled'];
         $cache_on     = !isset($options['cache_clearing']) || $options['cache_clearing'];
         $security_on  = !isset($options['security_monitoring']) || $options['security_monitoring'];
+        ?>
         <?php $this->renderCss(); ?>
         <div class="rcp-wrap">
 

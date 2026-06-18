@@ -8,9 +8,39 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  lint:
+    name: PHP Lint Gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+
+      - name: Lint all PHP files
+        run: |
+          ERRORS=0
+          while IFS= read -r file; do
+            if ! php -l "$file" > /dev/null 2>&1; then
+              php -l "$file"
+              ERRORS=$((ERRORS + 1))
+            fi
+          done < <(find . -name "*.php" -not -path "./.git/*" -not -path "./vendor/*")
+
+          if [ "$ERRORS" -gt 0 ]; then
+            echo "FAILED: $ERRORS PHP file(s) have syntax errors. Fix before releasing."
+            exit 1
+          fi
+
+          echo "All PHP files passed lint check."
+
   deploy:
     name: Release & Notify Hub
     runs-on: ubuntu-latest
+    needs: lint
 
     steps:
       - name: Checkout

@@ -3,7 +3,7 @@
  * Plugin Name: Replanta Care
  * Plugin URI: https://replanta.dev
  * Description: Plugin de mantenimiento WordPress automático para clientes de Replanta con integración Hub
- * Version: 1.13.3
+ * Version: 1.13.4
  * Author: Replanta
  * Author URI: https://replanta.dev
  * License: GPL v2 or later
@@ -17,7 +17,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('RPCARE_VERSION', '1.13.3');
+define('RPCARE_VERSION', '1.13.4');
 define('RPCARE_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('RPCARE_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('RPCARE_PLUGIN_FILE', __FILE__);
@@ -150,15 +150,23 @@ class ReplantaCare {
             
             // Admin pages (portal must load before settings-page registers its submenu)
             'inc/class-client-portal.php',
-            'inc/settings-page.php'
         ];
-        
+
         foreach ($required_files as $file) {
             $file_path = RPCARE_PLUGIN_PATH . $file;
             if (file_exists($file_path)) {
                 require_once $file_path;
             } else {
                 error_log("Replanta Care: Missing required file - {$file}");
+            }
+        }
+
+        // settings-page.php is admin-only: isolate it so a parse error there
+        // never kills cron, REST endpoints, or PUC auto-updates.
+        if ( is_admin() ) {
+            $sp = RPCARE_PLUGIN_PATH . 'inc/settings-page.php';
+            if ( file_exists( $sp ) ) {
+                require_once $sp;
             }
         }
         

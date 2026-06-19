@@ -398,6 +398,8 @@ class RP_Care_Settings_Page {
         $tasks_active = (bool) wp_next_scheduled('rpcare_daily_tasks');
         $pending_upd  = $this->get_pending_updates_count();
 
+        $update_schedule = $this->get_update_schedule_info($current_plan);
+
         $conn_class   = $hub_connected ? 'connected' : 'disconnected';
         $conn_label   = $hub_connected ? 'Tu sitio está protegido' : 'Sin conexión con el Hub';
         $plan_display = ($hub_connected && $current_plan)
@@ -474,6 +476,9 @@ class RP_Care_Settings_Page {
                     <span class="rcp-stat-big"><?php echo $pending_upd; ?></span>
                     <span class="rcp-stat-lbl">Actualizaciones</span>
                     <span class="rcp-stat-sub"><?php echo $pending_upd > 0 ? 'pendientes' : 'al dia'; ?></span>
+                    <?php if (!empty($update_schedule['next_run_human'])): ?>
+                    <span class="rcp-stat-sub" style="font-size:10px;margin-top:2px;" title="<?php echo esc_attr($update_schedule['next_run_date']); ?>">Ciclo: <?php echo esc_html($update_schedule['next_run_human']); ?></span>
+                    <?php endif; ?>
                 </div>
             </div>
 
@@ -723,6 +728,54 @@ class RP_Care_Settings_Page {
                 </div>
                 <div class="rpc-results" id="rpcare-task-results"></div>
             </div>
+
+            <!-- INFORMACION DE ACTUALIZACIONES -->
+            <?php if (!empty($update_schedule)): ?>
+            <div class="rcp-card" style="margin-top:16px;">
+                <h2 class="rcp-card-h">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                    Programacion de actualizaciones
+                </h2>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px 24px;font-size:13px;color:#3c434a;">
+                    <div>
+                        <span style="color:#646970;">Frecuencia:</span>
+                        <strong><?php echo esc_html($update_schedule['frequency_label']); ?></strong>
+                    </div>
+                    <div>
+                        <span style="color:#646970;">Proximo ciclo:</span>
+                        <strong><?php echo esc_html($update_schedule['next_run_human'] ?? 'No programado'); ?></strong>
+                        <?php if (!empty($update_schedule['next_run_date'])): ?>
+                        <small style="color:#646970;">(<?php echo esc_html($update_schedule['next_run_date']); ?>)</small>
+                        <?php endif; ?>
+                    </div>
+                </div>
+
+                <?php if (!empty($update_schedule['pending_plugins'])): ?>
+                <div style="margin-top:14px;">
+                    <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:#646970;margin:0 0 8px;">
+                        <?php echo count($update_schedule['pending_plugins']); ?> actualizaciones pendientes
+                    </h3>
+                    <table style="width:100%;border-collapse:collapse;font-size:12px;">
+                        <?php foreach ($update_schedule['pending_plugins'] as $pf => $pi): ?>
+                        <tr style="border-bottom:1px solid #f0f0f1;">
+                            <td style="padding:5px 8px 5px 0;"><?php echo esc_html($pi['name']); ?></td>
+                            <td style="padding:5px 4px;color:#646970;white-space:nowrap;"><?php echo esc_html($pi['from']); ?> &rarr; <?php echo esc_html($pi['to']); ?></td>
+                            <td style="padding:5px 0 5px 4px;text-align:right;">
+                                <?php if ($pi['will_update']): ?>
+                                <span style="color:#00a32a;font-weight:500;">Se actualizara</span>
+                                <?php else: ?>
+                                <span style="color:#d63638;" title="<?php echo esc_attr($pi['reason']); ?>"><?php echo esc_html($pi['reason']); ?></span>
+                                <?php endif; ?>
+                            </td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </table>
+                </div>
+                <?php elseif ($pending_upd === 0): ?>
+                <p style="margin:12px 0 0;color:#00a32a;font-size:13px;">Todos los plugins estan al dia.</p>
+                <?php endif; ?>
+            </div>
+            <?php endif; ?>
 
             <!-- INFORMES + BACKUPS -->
             <div class="rcp-cards" style="margin-top:16px;">
@@ -2137,6 +2190,67 @@ class RP_Care_Settings_Page {
         $theme_updates  = get_theme_updates();
 
         return count((array) $core_updates) + count((array) $plugin_updates) + count((array) $theme_updates);
+    }
+
+    private function get_update_schedule_info($plan) {
+        $freq_map = [
+            'weekly'    => 'Semanal',
+            'monthly'   => 'Mensual',
+            'daily'     => 'Diaria',
+            'quarterly' => 'Trimestral',
+        ];
+        $raw_freq = RP_Care_Plan::get_update_frequency($plan);
+        $info = [
+            'frequency'       => $raw_freq,
+            'frequency_label' => $freq_map[$raw_freq] ?? ucfirst($raw_freq),
+            'next_run_human'  => null,
+            'next_run_date'   => null,
+            'pending_plugins' => [],
+        ];
+
+        $as = function_exists('as_next_scheduled_action');
+        $ts = $as
+            ? as_next_scheduled_action('rpcare_task_updates', [], 'replanta-care')
+            : wp_next_scheduled('rpcare_task_updates');
+
+        if ($ts) {
+            $info['next_run_human'] = human_time_diff($ts, time());
+            $info['next_run_date']  = date_i18n('j M Y, H:i', $ts);
+            if ($ts > time()) {
+                $info['next_run_human'] = 'en ' . $info['next_run_human'];
+            }
+        }
+
+        if (!function_exists('get_plugin_updates')) {
+            require_once ABSPATH . 'wp-admin/includes/update.php';
+        }
+        RP_Care_Update_Control::$bypass_for_task = true;
+        $plugin_updates = get_plugin_updates();
+        RP_Care_Update_Control::$bypass_for_task = false;
+        if (!empty($plugin_updates)) {
+            $uc = class_exists('RP_Care_Update_Control') ? new RP_Care_Update_Control() : null;
+            $exclusions = RP_Care_Tasks::get_exclusions();
+            foreach ($plugin_updates as $file => $data) {
+                $allowed = true;
+                $reason  = '';
+                if (in_array($file, $exclusions['plugins'] ?? [])) {
+                    $allowed = false;
+                    $reason  = 'Excluido manualmente';
+                } elseif ($uc && !$uc->is_plugin_update_allowed($file)) {
+                    $allowed = false;
+                    $reason  = 'Gestionado por Replanta';
+                }
+                $info['pending_plugins'][$file] = [
+                    'name'        => $data->Name ?? $file,
+                    'from'        => $data->Version ?? '?',
+                    'to'          => $data->update->new_version ?? '?',
+                    'will_update' => $allowed,
+                    'reason'      => $reason,
+                ];
+            }
+        }
+
+        return $info;
     }
     
     private function check_two_factor_auth() {

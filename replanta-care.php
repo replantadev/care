@@ -49,24 +49,24 @@ if (file_exists(RPCARE_PLUGIN_PATH . 'vendor/woocommerce/action-scheduler/action
     require_once RPCARE_PLUGIN_PATH . 'vendor/woocommerce/action-scheduler/action-scheduler.php';
 }
 
-// Fallback autoloader for Care's bundled AS namespace classes.
-// Problem: another plugin (e.g. Beaver Builder) may define the ActionScheduler
-// class first with an older autoload() that doesn't support the
-// Action_Scheduler\Migration\* namespace introduced in AS 3.0. When Care's AS
-// wins the version contest and calls ActionScheduler::init(), it registers the
-// already-loaded (older) autoload() method â€” which silently skips namespaced
-// classes. This appended fallback loads them from Care's own vendor path and
-// only fires when the primary autoloader fails to define the class.
+// Autoloader for Care's bundled AS namespace classes.
+// Beaver Builder ships an older ActionScheduler class whose autoload() silently
+// skips namespaced classes (Action_Scheduler\Migration\*, Action_Scheduler\WP_CLI\*).
+// When Care's AS version wins the version contest, those classes must be loadable.
+// Prepend so it fires before BB's broken autoloader can interfere.
 spl_autoload_register(static function ( string $class ): void {
-    if ( strncmp( $class, 'Action_Scheduler\\Migration\\', 27 ) !== 0 ) {
+    if ( strncmp( $class, 'Action_Scheduler\\', 17 ) !== 0 ) {
         return;
     }
-    $name = substr( $class, strrpos( $class, '\\' ) + 1 );
-    $file = RPCARE_PLUGIN_PATH . 'vendor/woocommerce/action-scheduler/classes/migration/' . $name . '.php';
+    static $dir_map = [ 'Migration' => 'migration' ];
+    $parts    = explode( '\\', substr( $class, 17 ) );
+    $parts[0] = $dir_map[ $parts[0] ] ?? $parts[0];
+    $file     = RPCARE_PLUGIN_PATH . 'vendor/woocommerce/action-scheduler/classes/'
+              . implode( '/', $parts ) . '.php';
     if ( file_exists( $file ) ) {
         require_once $file;
     }
-}, false, false ); // append=false: fallback only, never overrides a working autoloader
+}, false, true ); // throw=false, prepend=true
 
 // Auto-updates via Hub (Hub fetches from GitHub and serves the zip â€” no token needed on client sites)
 if (file_exists(RPCARE_PLUGIN_PATH . 'vendor/autoload.php')) {
@@ -386,8 +386,7 @@ class ReplantaCare {
             return ['Mantenimiento bÃƒÂ¡sico'];
         }
         
-        // Use RP_Care_Plan to get features
-        $features = RP_Care_Plan::get_features($plan);
+        $features = RP_Care_Plan::get_plan_features($plan) + RP_Care_Plan::get_features($plan);
         $feature_list = [];
         
         if (!empty($features['automatic_updates'])) {

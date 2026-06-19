@@ -91,13 +91,20 @@ class RP_Care_Task_WPO {
      * Mide el tiempo de respuesta de la portada (ms). Warm-up + mejor de 2 mediciones.
      */
     private static function measure_response_time() {
-        $url = home_url('/');
-        wp_remote_get($url, ['timeout' => 30, 'sslverify' => false]);
+        $args = [
+            'timeout'   => 30,
+            'sslverify' => false,
+            'headers'   => ['Cache-Control' => 'no-cache, no-store', 'Pragma' => 'no-cache'],
+        ];
+        // Unique query param bypasses CDN and server page caches on every call
+        $url = add_query_arg('rpcare_measure', wp_generate_password(8, false), home_url('/'));
+        wp_remote_get($url, $args); // warm-up
 
         $times = [];
         for ($i = 0; $i < 2; $i++) {
+            $url   = add_query_arg('rpcare_measure', wp_generate_password(8, false), home_url('/'));
             $start = microtime(true);
-            $res = wp_remote_get($url, ['timeout' => 30, 'sslverify' => false]);
+            $res   = wp_remote_get($url, $args);
             if (!is_wp_error($res) && wp_remote_retrieve_response_code($res) < 500) {
                 $times[] = (microtime(true) - $start) * 1000;
             }

@@ -280,8 +280,11 @@ class RP_Care_Task_Report {
     }
     
     private static function generate_html_report($data, $plan) {
-        $branding_logo = get_option('rpcare_branding_logo', RPCARE_PLUGIN_URL . 'assets/replanta-logo.png');
+        $branding_logo  = get_option('rpcare_branding_logo', RPCARE_PLUGIN_URL . 'assets/img/ico.png');
         $branding_color = get_option('rpcare_branding_color', '#2c5530');
+        $icon_ok   = '<span style="display:inline-block;background:#28a745;color:#fff;border-radius:50%;width:20px;height:20px;text-align:center;font-weight:bold;font-size:13px;line-height:20px;">&#10003;</span>';
+        $icon_warn = '<span style="display:inline-block;background:#f0ad4e;color:#333;border-radius:50%;width:20px;height:20px;text-align:center;font-weight:bold;font-size:16px;line-height:20px;">!</span>';
+        $icon_err  = '<span style="display:inline-block;background:#dc3545;color:#fff;border-radius:50%;width:20px;height:20px;text-align:center;font-weight:bold;font-size:13px;line-height:20px;">&#10007;</span>';
         
         ob_start();
         ?>
@@ -387,19 +390,19 @@ class RP_Care_Task_Report {
                 <div>
                     <div class="metric">
                         <div class="metric-value <?php echo $data['security_status']['ssl_enabled'] ? 'status-good' : 'status-error'; ?>">
-                            <?php echo $data['security_status']['ssl_enabled'] ? '&#10004;' : '&#10006;'; ?>
+                            <?php echo $data['security_status']['ssl_enabled'] ? $icon_ok : $icon_err; ?>
                         </div>
                         <div class="metric-label">SSL</div>
                     </div>
                     <div class="metric">
                         <div class="metric-value <?php echo $data['security_status']['wp_version_current'] ? 'status-good' : 'status-warning'; ?>">
-                            <?php echo $data['security_status']['wp_version_current'] ? '&#10004;' : '&#9888;'; ?>
+                            <?php echo $data['security_status']['wp_version_current'] ? $icon_ok : $icon_warn; ?>
                         </div>
                         <div class="metric-label">WP Actualizado</div>
                     </div>
                     <div class="metric">
                         <div class="metric-value <?php echo $data['security_status']['admin_user_secure'] ? 'status-good' : 'status-warning'; ?>">
-                            <?php echo $data['security_status']['admin_user_secure'] ? '&#10004;' : '&#9888;'; ?>
+                            <?php echo $data['security_status']['admin_user_secure'] ? $icon_ok : $icon_warn; ?>
                         </div>
                         <div class="metric-label">Usuario Admin</div>
                     </div>
@@ -423,7 +426,7 @@ class RP_Care_Task_Report {
                     <?php endif; ?>
                     <div class="metric-card">
                         <div class="metric-value <?php echo $data['performance_metrics']['caching_enabled'] ? 'status-good' : 'status-warning'; ?>">
-                            <?php echo $data['performance_metrics']['caching_enabled'] ? '&#10004;' : '&#9888;'; ?>
+                            <?php echo $data['performance_metrics']['caching_enabled'] ? $icon_ok : $icon_warn; ?>
                         </div>
                         <div class="metric-label">Caché</div>
                     </div>
@@ -507,7 +510,7 @@ class RP_Care_Task_Report {
                 <div class="updates-list">
                     <strong><?php echo (int) $upd['actualizados']; ?> elemento(s) actualizado(s)</strong>
                     <?php if (!empty($upd['backup_previo'])): ?>
-                        <span class="status-good">&#10004; con backup previo</span>
+                        <span class="status-good"><?php echo $icon_ok; ?> con backup previo</span>
                     <?php endif; ?>
                     <?php if (!empty($upd['lista'])): ?>
                     <ul>

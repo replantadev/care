@@ -9,7 +9,11 @@ if (!defined('ABSPATH')) {
 }
 
 class RP_Care_Update_Control {
-    
+
+    // Set to true by task-updates.php before calling get_plugin_updates() so the
+    // read filter doesn't hide free plugins from Care's own update loop.
+    public static $bypass_for_task = false;
+
     public function __construct() {
         add_action('init', [$this, 'init']);
     }
@@ -29,9 +33,11 @@ class RP_Care_Update_Control {
             return;
         }
         
-        // Hook into update checks
+        // Hook into update checks — read filter only.
+        // Hooking pre_set_site_transient_update_plugins (the write filter) would
+        // permanently strip free plugins from the stored DB transient, which causes
+        // Care's own update task to see 0 pending updates via get_plugin_updates().
         add_filter('site_transient_update_plugins', [$this, 'filter_plugin_updates']);
-        add_filter('pre_set_site_transient_update_plugins', [$this, 'filter_plugin_updates']);
         
         // Hook into plugin actions
         add_filter('plugin_action_links', [$this, 'modify_plugin_action_links'], 10, 2);
@@ -54,6 +60,10 @@ class RP_Care_Update_Control {
      * Filter plugin updates to hide them for non-licensed plugins
      */
     public function filter_plugin_updates($transient) {
+        if (self::$bypass_for_task) {
+            return $transient;
+        }
+
         if (!isset($transient->response) || !is_array($transient->response)) {
             return $transient;
         }

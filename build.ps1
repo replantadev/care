@@ -202,7 +202,7 @@ if (-not $Deploy) {
 #  8. Git commit + push en plugin repo
 # ─────────────────────────────────────────────────────────────────────────────
 Step "Git commit en plugin repo"
-GitExec $PluginDir @("add", "replanta-care.php", "update-info.json", "CHANGELOG.md", "docs", "build.ps1", "inc")
+GitExec $PluginDir @("add", "replanta-care.php", "update-info.json", "CHANGELOG.md", "docs", "build.ps1", "inc", "assets")
 $status = & git -C $PluginDir status --porcelain
 if ($status) {
     GitExec $PluginDir @("commit", "-m", "v$Version")

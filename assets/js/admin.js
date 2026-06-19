@@ -133,6 +133,16 @@
     }
 
     function initManualTasks() {
+        // Info icon: stop click from reaching the parent button, show description instead.
+        $(document).on('click', '.rpc-action-hint', function(e) {
+            e.stopPropagation();
+            e.preventDefault();
+            var hint = $(this).closest('[title]').attr('title');
+            if (hint) {
+                showNotification(hint, 'info', 8000);
+            }
+        });
+
         $(document).on('click', '.rpc-action-card', function(e) {
             e.preventDefault();
             

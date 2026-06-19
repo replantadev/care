@@ -174,7 +174,16 @@ class RP_Care_Task_Updates {
             require_once ABSPATH . 'wp-admin/includes/update.php';
         }
 
+        // Force a fresh check from wp.org. The stored transient may be stale or
+        // was corrupted by the old pre_set_site_transient_update_plugins hook that
+        // stripped free plugins before saving to DB. Deleting it forces wp_update_plugins()
+        // to make a new request — typically <5s, acceptable for a background task.
+        delete_site_transient('update_plugins');
+        wp_update_plugins();
+
+        RP_Care_Update_Control::$bypass_for_task = true;
         $plugin_updates = get_plugin_updates();
+        RP_Care_Update_Control::$bypass_for_task = false;
         $results        = [];
 
         if (empty($plugin_updates)) {
@@ -679,7 +688,9 @@ class RP_Care_Task_Updates {
         
         // Plugin updates
         if (function_exists('get_plugin_updates')) {
+            RP_Care_Update_Control::$bypass_for_task = true;
             $plugin_updates = get_plugin_updates();
+            RP_Care_Update_Control::$bypass_for_task = false;
             foreach ($plugin_updates as $plugin_file => $plugin_data) {
                 $updates['plugins'][$plugin_file] = [
                     'name' => $plugin_data->Name ?? $plugin_file,

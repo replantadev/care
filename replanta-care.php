@@ -2,8 +2,8 @@
 /**
  * Plugin Name: Replanta Care
  * Plugin URI: https://replanta.dev
- * Description: Plugin de mantenimiento WordPress automÃ¡tico para clientes de Replanta con integraciÃ³n Hub
- * Version: 1.13.9
+ * Description: Plugin de mantenimiento WordPress automÃƒÂ¡tico para clientes de Replanta con integraciÃƒÂ³n Hub
+ * Version: 1.14.0
  * Author: Replanta
  * Author URI: https://replanta.dev
  * License: GPL v2 or later
@@ -17,7 +17,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('RPCARE_VERSION', '1.13.9');
+define('RPCARE_VERSION', '1.14.0');
 define('RPCARE_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('RPCARE_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('RPCARE_PLUGIN_FILE', __FILE__);
@@ -68,7 +68,7 @@ spl_autoload_register(static function ( string $class ): void {
     }
 }, false, true ); // throw=false, prepend=true
 
-// Auto-updates via Hub (Hub fetches from GitHub and serves the zip â€” no token needed on client sites)
+// Auto-updates via Hub (Hub fetches from GitHub and serves the zip Ã¢â‚¬â€ no token needed on client sites)
 if (file_exists(RPCARE_PLUGIN_PATH . 'vendor/autoload.php')) {
     require_once RPCARE_PLUGIN_PATH . 'vendor/autoload.php';
 
@@ -115,7 +115,7 @@ class ReplantaCare {
         add_action('wp_ajax_rpcare_force_backup', [$this, 'ajax_force_backup']);
         add_action('wp_ajax_rpcare_regenerate_token', [$this, 'ajax_regenerate_token']);
         
-        // Daily check hook Ã¢â€ â€™ also run maintenance cleanup
+        // Daily check hook ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ also run maintenance cleanup
         add_action('rpcare_daily_check', ['RP_Care_Utils', 'cleanup_all']);
         
         // Activation/Deactivation hooks
@@ -189,7 +189,7 @@ class ReplantaCare {
             }
         }
         
-        // Enqueue admin assets (dashboard widget only â€” settings page has its own enqueue)
+        // Enqueue admin assets (dashboard widget only Ã¢â‚¬â€ settings page has its own enqueue)
         // Note: do NOT re-add here; init() already registered this action above.
     }
     
@@ -325,7 +325,7 @@ class ReplantaCare {
         // Show hub connection status
         $status_text = $hub_connected ? 'Conectado al Hub' : 'Detectando...';
         
-        // Main menu item â€” logo + green/grey pilot dot reflecting Hub status
+        // Main menu item Ã¢â‚¬â€ logo + green/grey pilot dot reflecting Hub status
         $dot_color = $hub_connected ? '#34D399' : '#9CA3AF';
         $dot_shadow = $hub_connected ? '0 0 0 3px rgba(52,211,153,.25)' : '0 0 0 3px rgba(156,163,175,.18)';
         $wp_admin_bar->add_menu([
@@ -333,7 +333,7 @@ class ReplantaCare {
             'title' => '<span class="ab-icon" style="background: url(' . RPCARE_PLUGIN_URL . 'assets/img/ico.png) center/16px no-repeat; width: 20px; height: 20px; margin-top: 6px;"></span><span class="ab-label">Mantenimiento Activo</span><span class="rpc-ab-dot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' . $dot_color . ';box-shadow:' . $dot_shadow . ';margin-left:8px;vertical-align:middle;"></span>',
             'href' => admin_url('admin.php?page=replanta-care-portal'),
             'meta' => [
-                'title' => 'Replanta Care - Mantenimiento AutomÃ¡tico'
+                'title' => 'Replanta Care - Mantenimiento AutomÃƒÂ¡tico'
             ]
         ]);
         
@@ -355,7 +355,7 @@ class ReplantaCare {
         $wp_admin_bar->add_menu([
             'parent' => 'replanta-care',
             'id' => 'replanta-care-features',
-            'title' => 'CaracterÃ­sticas activas',
+            'title' => 'CaracterÃƒÂ­sticas activas',
             'href' => false
         ]);
         
@@ -365,7 +365,7 @@ class ReplantaCare {
             $wp_admin_bar->add_menu([
                 'parent' => 'replanta-care',
                 'id' => 'replanta-care-feature-' . sanitize_title($feature),
-                'title' => "Â· {$feature}",
+                'title' => "Ã‚Â· {$feature}",
                 'href' => false
             ]);
         }
@@ -383,14 +383,14 @@ class ReplantaCare {
     
     private function get_plan_features($plan) {
         if (empty($plan)) {
-            return ['Mantenimiento bÃƒÂ¡sico'];
+            return ['Mantenimiento bÃƒÆ’Ã‚Â¡sico'];
         }
         
         $features = RP_Care_Plan::get_plan_features($plan) + RP_Care_Plan::get_features($plan);
         $feature_list = [];
         
         if (!empty($features['automatic_updates'])) {
-            $feature_list[] = 'Actualizaciones automÃ¡ticas';
+            $feature_list[] = 'Actualizaciones automÃƒÂ¡ticas';
         }
 
         if (!empty($features['backup'])) {
@@ -403,20 +403,20 @@ class ReplantaCare {
         }
 
         if (!empty($features['performance_optimization'])) {
-            $feature_list[] = 'OptimizaciÃ³n de rendimiento';
+            $feature_list[] = 'OptimizaciÃƒÂ³n de rendimiento';
         }
 
         if (!empty($features['priority_support'])) {
             $feature_list[] = 'Soporte prioritario';
         }
         
-        return !empty($feature_list) ? $feature_list : ['Mantenimiento bÃƒÂ¡sico'];
+        return !empty($feature_list) ? $feature_list : ['Mantenimiento bÃƒÆ’Ã‚Â¡sico'];
     }
     
     public function activate() {
         // During activation, plugins_loaded has already fired so ActionScheduler
         // may be owned by another plugin (wrong $plugin_file path). Never call
-        // as_schedule_* here â€” it triggers AS migration and causes a fatal when
+        // as_schedule_* here Ã¢â‚¬â€ it triggers AS migration and causes a fatal when
         // the autoloader resolves Config.php against the wrong plugin path.
         // RP_Care_Scheduler::ensure() (hooked to 'init') handles AS scheduling
         // on the next normal page load.
@@ -429,7 +429,7 @@ class ReplantaCare {
             add_option('rpcare_token', '');
             add_option('rpcare_hub_url', 'https://sitios.replanta.dev');
 
-            // WP Cron only â€” safe at activation time
+            // WP Cron only Ã¢â‚¬â€ safe at activation time
             if (!wp_next_scheduled('rpcare_daily_check')) {
                 wp_schedule_event(time() + 3600, 'daily', 'rpcare_daily_check');
             }
@@ -575,7 +575,7 @@ class ReplantaCare {
     }
 
     /**
-     * AJAX handler â€” regenerate the Care REST API token and return it.
+     * AJAX handler Ã¢â‚¬â€ regenerate the Care REST API token and return it.
      * Used by the admin to obtain a fresh token to paste into Hub.
      */
     public function ajax_regenerate_token() {
@@ -590,7 +590,7 @@ class ReplantaCare {
 
         wp_send_json_success([
             'token' => $new_token,
-            'message' => 'Token regenerado correctamente. Copia este token y pÃ©galo en Replanta Hub para el sitio correspondiente.',
+            'message' => 'Token regenerado correctamente. Copia este token y pÃƒÂ©galo en Replanta Hub para el sitio correspondiente.',
         ]);
     }
 

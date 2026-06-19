@@ -7,7 +7,7 @@ layout: default
 
 Plugin de mantenimiento WordPress automatico para clientes de Replanta. Gestiona actualizaciones, backups, seguridad y reportes de forma invisible para el usuario final.
 
-**Version:** 1.14.1 | **Requiere:** WordPress 6.0+, PHP 7.4+ | **Licencia:** Privada (license key requerido)
+**Version:** 1.14.2 | **Requiere:** WordPress 6.0+, PHP 7.4+ | **Licencia:** Privada (license key requerido)
 
 ---
 

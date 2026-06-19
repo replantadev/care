@@ -2,8 +2,8 @@
 /**
  * Plugin Name: Replanta Care
  * Plugin URI: https://replanta.dev
- * Description: Plugin de mantenimiento WordPress automÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡tico para clientes de Replanta con integraciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n Hub
- * Version: 1.14.2
+ * Description: Plugin de mantenimiento WordPress automÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡tico para clientes de Replanta con integraciÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n Hub
+ * Version: 1.14.3
  * Author: Replanta
  * Author URI: https://replanta.dev
  * License: GPL v2 or later
@@ -17,7 +17,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('RPCARE_VERSION', '1.14.2');
+define('RPCARE_VERSION', '1.14.3');
 define('RPCARE_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('RPCARE_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('RPCARE_PLUGIN_FILE', __FILE__);
@@ -68,7 +68,7 @@ spl_autoload_register(static function ( string $class ): void {
     }
 }, false, true ); // throw=false, prepend=true
 
-// Auto-updates via Hub (Hub fetches from GitHub and serves the zip ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â no token needed on client sites)
+// Auto-updates via Hub (Hub fetches from GitHub and serves the zip ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â no token needed on client sites)
 if (file_exists(RPCARE_PLUGIN_PATH . 'vendor/autoload.php')) {
     require_once RPCARE_PLUGIN_PATH . 'vendor/autoload.php';
 
@@ -115,7 +115,7 @@ class ReplantaCare {
         add_action('wp_ajax_rpcare_force_backup', [$this, 'ajax_force_backup']);
         add_action('wp_ajax_rpcare_regenerate_token', [$this, 'ajax_regenerate_token']);
         
-        // Daily check hook ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ also run maintenance cleanup
+        // Daily check hook ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ also run maintenance cleanup
         add_action('rpcare_daily_check', ['RP_Care_Utils', 'cleanup_all']);
         
         // Activation/Deactivation hooks
@@ -189,7 +189,7 @@ class ReplantaCare {
             }
         }
         
-        // Enqueue admin assets (dashboard widget only ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â settings page has its own enqueue)
+        // Enqueue admin assets (dashboard widget only ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â settings page has its own enqueue)
         // Note: do NOT re-add here; init() already registered this action above.
     }
     
@@ -428,7 +428,7 @@ class ReplantaCare {
     public function activate() {
         // During activation, plugins_loaded has already fired so ActionScheduler
         // may be owned by another plugin (wrong $plugin_file path). Never call
-        // as_schedule_* here ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â it triggers AS migration and causes a fatal when
+        // as_schedule_* here ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â it triggers AS migration and causes a fatal when
         // the autoloader resolves Config.php against the wrong plugin path.
         // RP_Care_Scheduler::ensure() (hooked to 'init') handles AS scheduling
         // on the next normal page load.
@@ -441,7 +441,7 @@ class ReplantaCare {
             add_option('rpcare_token', '');
             add_option('rpcare_hub_url', 'https://sitios.replanta.dev');
 
-            // WP Cron only ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â safe at activation time
+            // WP Cron only ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â safe at activation time
             if (!wp_next_scheduled('rpcare_daily_check')) {
                 wp_schedule_event(time() + 3600, 'daily', 'rpcare_daily_check');
             }
@@ -587,7 +587,7 @@ class ReplantaCare {
     }
 
     /**
-     * AJAX handler ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â regenerate the Care REST API token and return it.
+     * AJAX handler ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â regenerate the Care REST API token and return it.
      * Used by the admin to obtain a fresh token to paste into Hub.
      */
     public function ajax_regenerate_token() {
@@ -602,7 +602,7 @@ class ReplantaCare {
 
         wp_send_json_success([
             'token' => $new_token,
-            'message' => 'Token regenerado correctamente. Copia este token y pÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©galo en Replanta Hub para el sitio correspondiente.',
+            'message' => 'Token regenerado correctamente. Copia este token y pÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©galo en Replanta Hub para el sitio correspondiente.',
         ]);
     }
 

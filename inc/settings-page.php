@@ -257,7 +257,7 @@ class RP_Care_Settings_Page {
             --rp-warn:     #fbbf24;
             --rp-fail:     #f87171;
             --rp-shadow:   0 4px 24px rgba(0,0,0,0.45);
-            max-width: 1180px;
+            max-width: none;
             margin: 0 -20px;
             padding: 24px 24px 60px;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;

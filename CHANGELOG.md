@@ -1,5 +1,11 @@
 # Changelog — Replanta Care
 
+## [1.14.5]
+
+- Admin bar: etiqueta principal "Mantenimiento activo" cuando Care esta conectado al Hub.
+- Admin bar: menu desplegable con filas flexibles, sin solapes entre texto y valores.
+- Encoding: cabecera del plugin saneada para evitar mojibake en WordPress Admin.
+
 ## [1.13.1]
 
 - Fix dark mode en pagina portal (body.toplevel_page_replanta-care-portal faltaba en admin.css)

@@ -2,8 +2,8 @@
 /**
  * Plugin Name: Replanta Care
  * Plugin URI: https://replanta.dev
- * Description: Plugin de mantenimiento WordPress automÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡tico para clientes de Replanta con integraciÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n Hub
- * Version: 1.14.4
+ * Description: Plugin de mantenimiento WordPress automatizado para clientes de Replanta con integracion Hub
+ * Version: 1.14.5
  * Author: Replanta
  * Author URI: https://replanta.dev
  * License: GPL v2 or later
@@ -17,7 +17,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('RPCARE_VERSION', '1.14.4');
+define('RPCARE_VERSION', '1.14.5');
 define('RPCARE_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('RPCARE_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('RPCARE_PLUGIN_FILE', __FILE__);
@@ -275,25 +275,58 @@ class ReplantaCare {
     public function enqueue_frontend_assets() {
         if (is_admin_bar_showing()) {
             wp_add_inline_style('admin-bar', '
-                #wp-admin-bar-replanta-care .ab-icon {
-                    float: left !important;
-                    margin-right: 8px !important;
+                #wpadminbar #wp-admin-bar-replanta-care > .ab-item {
+                    display: flex !important;
+                    align-items: center !important;
+                    gap: 6px !important;
+                    max-width: none !important;
                 }
-                #wp-admin-bar-replanta-care .ab-label {
+                #wpadminbar #wp-admin-bar-replanta-care .ab-icon {
+                    float: none !important;
+                    flex: 0 0 20px !important;
+                    margin: 0 !important;
+                }
+                #wpadminbar #wp-admin-bar-replanta-care .ab-label {
                     color: #4CAF50 !important;
                     font-weight: 600 !important;
+                    white-space: nowrap !important;
                 }
-                #wp-admin-bar-replanta-care:hover .ab-label {
+                #wpadminbar #wp-admin-bar-replanta-care:hover .ab-label {
                     color: #81C784 !important;
                 }
-                #wp-admin-bar-replanta-care-dashboard .ab-item {
-                    background: #4CAF50 !important;
-                    color: white !important;
-                    border-radius: 3px !important;
-                    margin: 2px !important;
+                #wpadminbar #wp-admin-bar-replanta-care-default {
+                    min-width: 290px !important;
                 }
-                #wp-admin-bar-replanta-care-dashboard:hover .ab-item {
+                #wpadminbar #wp-admin-bar-replanta-care-default .ab-item {
+                    min-width: 290px !important;
+                    height: auto !important;
+                    min-height: 34px !important;
+                    line-height: 1.35 !important;
+                    padding: 8px 12px !important;
+                    white-space: normal !important;
+                    box-sizing: border-box !important;
+                }
+                #wpadminbar #wp-admin-bar-replanta-care-default .rpcare-ab-row {
+                    display: flex !important;
+                    align-items: center !important;
+                    justify-content: space-between !important;
+                    gap: 16px !important;
+                    width: 100% !important;
+                }
+                #wpadminbar #wp-admin-bar-replanta-care-default .rpcare-ab-value {
+                    margin-left: auto !important;
+                    text-align: right !important;
+                    opacity: .78 !important;
+                    font-size: 12px !important;
+                    white-space: nowrap !important;
+                }
+                #wpadminbar #wp-admin-bar-rpcare-ab-panel .ab-item {
+                    background: #4CAF50 !important;
+                    color: #fff !important;
+                }
+                #wpadminbar #wp-admin-bar-rpcare-ab-panel:hover .ab-item {
                     background: #2E7D32 !important;
+                    color: #fff !important;
                 }
             ');
         }
@@ -328,10 +361,12 @@ class ReplantaCare {
         $dot = $hub_connected
             ? 'background:#34D399;box-shadow:0 0 0 3px rgba(52,211,153,.25)'
             : 'background:#9CA3AF;box-shadow:0 0 0 3px rgba(156,163,175,.18)';
+        $bar_label = $hub_connected ? 'Mantenimiento activo' : 'Mantenimiento';
+
         $wp_admin_bar->add_menu([
             'id'    => 'replanta-care',
             'title' => '<span class="ab-icon" style="background:url(' . RPCARE_PLUGIN_URL . 'assets/img/ico.png) center/16px no-repeat;width:20px;height:20px;margin-top:6px;"></span>'
-                     . '<span class="ab-label">Care</span>'
+                     . '<span class="ab-label">' . esc_html($bar_label) . '</span>'
                      . '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;' . $dot . ';margin-left:6px;vertical-align:middle;"></span>',
             'href'  => admin_url('admin.php?page=replanta-care-portal'),
             'meta'  => ['title' => 'Replanta Care v' . RPCARE_VERSION],
@@ -343,7 +378,7 @@ class ReplantaCare {
         $wp_admin_bar->add_menu([
             'parent' => 'replanta-care',
             'id'     => 'rpcare-ab-plan',
-            'title'  => '<strong>' . esc_html($plan_name) . '</strong><span style="float:right;opacity:.7;font-size:12px;">' . $conn_icon . '</span>',
+            'title'  => '<span class="rpcare-ab-row"><strong>' . esc_html($plan_name) . '</strong><span class="rpcare-ab-value">' . $conn_icon . '</span></span>',
             'href'   => false,
         ]);
 
@@ -352,7 +387,7 @@ class ReplantaCare {
             $wp_admin_bar->add_menu([
                 'parent' => 'replanta-care',
                 'id'     => 'rpcare-ab-health',
-                'title'  => 'Salud del sitio <span style="float:right;font-weight:600;color:' . $h_color . ';">' . intval($health_score) . '%</span>',
+                'title'  => '<span class="rpcare-ab-row">Salud del sitio <span class="rpcare-ab-value" style="font-weight:600;color:' . $h_color . ';">' . intval($health_score) . '%</span></span>',
                 'href'   => admin_url('admin.php?page=replanta-care-portal'),
             ]);
         }
@@ -362,7 +397,7 @@ class ReplantaCare {
         $wp_admin_bar->add_menu([
             'parent' => 'replanta-care',
             'id'     => 'rpcare-ab-updates',
-            'title'  => 'Actualizaciones <span style="float:right;font-weight:600;color:' . $upd_color . ';">' . $upd_text . '</span>',
+            'title'  => '<span class="rpcare-ab-row">Actualizaciones <span class="rpcare-ab-value" style="font-weight:600;color:' . $upd_color . ';">' . esc_html($upd_text) . '</span></span>',
             'href'   => admin_url('admin.php?page=replanta-care-portal'),
         ]);
 
@@ -372,7 +407,7 @@ class ReplantaCare {
             $wp_admin_bar->add_menu([
                 'parent' => 'replanta-care',
                 'id'     => 'rpcare-ab-next',
-                'title'  => 'Proximo ciclo <span style="float:right;opacity:.7;font-size:12px;">' . esc_html($next_label) . ($freq ? ' (' . $freq . ')' : '') . '</span>',
+                'title'  => '<span class="rpcare-ab-row">Proximo ciclo <span class="rpcare-ab-value">' . esc_html($next_label) . esc_html($freq ? ' (' . $freq . ')' : '') . '</span></span>',
                 'href'   => false,
             ]);
         }

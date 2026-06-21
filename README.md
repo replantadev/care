@@ -2,7 +2,7 @@
 
 Plugin de mantenimiento WordPress automático para clientes de Replanta. Gestiona actualizaciones, backups, seguridad y reportes en segundo plano sin afectar al rendimiento del sitio.
 
-**Versión:** 1.14.4 | **Requiere:** WordPress 6.0+, PHP 7.4+ | **Probado hasta:** WordPress 6.7
+**Versión:** 1.14.5 | **Requiere:** WordPress 6.0+, PHP 7.4+ | **Probado hasta:** WordPress 6.7
 
 ---
 
@@ -56,6 +56,12 @@ O bien: descarga el ZIP desde el último [GitHub Release](https://github.com/rep
 Documentación completa en: **[replantadev.github.io/care-docs](https://replantadev.github.io/care-docs/)**
 
 ## Changelog
+
+### v1.14.5
+
+- Admin bar: cambia la etiqueta a "Mantenimiento activo" cuando Care esta conectado al Hub.
+- Admin bar: despliegue remaquetado sin floats para evitar solapes entre filas y valores.
+- Encoding: cabecera del plugin en ASCII limpio para evitar mojibake en WordPress Admin.
 
 ### v1.14.4
 

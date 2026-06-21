@@ -149,12 +149,26 @@ class RP_Care_Security {
         if (!$payload) {
             return false;
         }
+
+        // Authenticated self-update must remain available even if a site's plan
+        // cache is broken or still being synced from the Hub.
+        if ($task === 'self_update') {
+            return true;
+        }
         
         $plan = $payload['plan'] ?? '';
         // Normalize old English names to canonical Spanish names
         $plan = RP_Care_Plan::normalize_plan($plan);
         if (!RP_Care_Plan::is_valid_plan($plan)) {
             return false;
+        }
+
+        if ($task === 'staging_clone' && class_exists('RP_Care_Addon_Manager')) {
+            $addons = RP_Care_Addon_Manager::get();
+            $ecom_cfg = $addons->get_config('ecommerce');
+            if ($addons->is_active('ecommerce') && !empty($ecom_cfg['staging_required'])) {
+                return true;
+            }
         }
         
         // Delegate to unified feature map
@@ -233,6 +247,7 @@ class RP_Care_Security {
             'rpcare_b2_app_key'       => 'sanitize_text_field',
             'rpcare_b2_bucket_id'     => 'sanitize_text_field',
             'rpcare_b2_bucket_name'   => 'sanitize_text_field',
+            'rpcare_b2_prefix'        => 'sanitize_text_field',
         ];
         
         foreach ($settings as $key => $value) {

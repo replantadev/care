@@ -150,6 +150,10 @@ class RP_Care_REST {
                     'required' => false,
                     'type'     => 'string',
                 ],
+                'b2_prefix' => [
+                    'required' => false,
+                    'type'     => 'string',
+                ],
                 'portal_cache' => [
                     'required' => false,
                     'type'     => 'object',
@@ -161,6 +165,21 @@ class RP_Care_REST {
                     'default'  => [],
                 ],
                 'ecommerce_config' => [
+                    'required' => false,
+                    'type'     => 'object',
+                ],
+                'backup_frequency' => [
+                    'required' => false,
+                    'type'     => 'string',
+                    'enum'     => ['hourly', 'twicedaily', 'daily', 'weekly', 'monthly', 'quarterly'],
+                ],
+                'backup_retention_days' => [
+                    'required' => false,
+                    'type'     => 'integer',
+                    'minimum'  => 1,
+                    'maximum'  => 365,
+                ],
+                'update_window' => [
                     'required' => false,
                     'type'     => 'object',
                 ],
@@ -195,6 +214,67 @@ class RP_Care_REST {
             'methods' => 'POST',
             'callback' => [$this, 'backuply_create'],
             'permission_callback' => [$this, 'check_permissions'],
+        ]);
+
+        register_rest_route($this->namespace, '/backup/list', [
+            'methods' => ['GET', 'POST'],
+            'callback' => [$this, 'backup_list'],
+            'permission_callback' => [$this, 'check_permissions'],
+            'args' => [
+                'limit' => [
+                    'required' => false,
+                    'type' => 'integer',
+                    'default' => 50,
+                    'minimum' => 1,
+                    'maximum' => 200,
+                ],
+            ],
+        ]);
+
+        register_rest_route($this->namespace, '/backup/create', [
+            'methods' => 'POST',
+            'callback' => [$this, 'backup_create'],
+            'permission_callback' => [$this, 'check_permissions'],
+            'args' => [
+                'scopes' => [
+                    'required' => false,
+                    'type' => 'array',
+                    'items' => ['type' => 'string'],
+                ],
+                'type' => [
+                    'required' => false,
+                    'type' => 'string',
+                ],
+            ],
+        ]);
+
+        register_rest_route($this->namespace, '/backup/verify', [
+            'methods' => ['GET', 'POST'],
+            'callback' => [$this, 'backup_verify'],
+            'permission_callback' => [$this, 'check_permissions'],
+            'args' => [
+                'backup_id' => [
+                    'required' => true,
+                    'type' => 'string',
+                ],
+            ],
+        ]);
+
+        register_rest_route($this->namespace, '/backup/restore', [
+            'methods' => 'POST',
+            'callback' => [$this, 'backup_restore'],
+            'permission_callback' => [$this, 'check_permissions'],
+            'args' => [
+                'backup_id' => [
+                    'required' => true,
+                    'type' => 'string',
+                ],
+                'scopes' => [
+                    'required' => false,
+                    'type' => 'array',
+                    'items' => ['type' => 'string'],
+                ],
+            ],
         ]);
 
         // Hub-triggered self-update
@@ -545,17 +625,14 @@ class RP_Care_REST {
         $plan = $request->get_param('plan');
         $settings = $request->get_param('settings');
         $updated = [];
+        $needs_reschedule = false;
         
         // Update plan if provided
         if ($plan && RP_Care_Plan::is_valid_plan($plan)) {
             $old_plan = RP_Care_Plan::get_current();
             if (RP_Care_Plan::set_current($plan)) {
                 $updated['plan'] = ['old' => $old_plan, 'new' => $plan];
-                
-                // Reschedule tasks for new plan
-                $scheduler = new RP_Care_Scheduler($plan);
-                $scheduler->clear_all();
-                $scheduler->ensure();
+                $needs_reschedule = true;
             }
         }
         
@@ -575,6 +652,49 @@ class RP_Care_REST {
         if (!is_null($update_managed)) {
             update_option('rpcare_update_managed', (bool) $update_managed);
             $updated['update_managed'] = (bool) $update_managed;
+        }
+
+        $backup_frequency = $request->get_param('backup_frequency');
+        if ($backup_frequency !== null) {
+            $allowed = ['hourly', 'twicedaily', 'daily', 'weekly', 'monthly', 'quarterly'];
+            if (in_array($backup_frequency, $allowed, true)) {
+                update_option('rpcare_backup_frequency_override', $backup_frequency);
+                $updated['backup_frequency'] = $backup_frequency;
+                $needs_reschedule = true;
+            }
+        }
+
+        $backup_retention_days = $request->get_param('backup_retention_days');
+        if ($backup_retention_days !== null) {
+            $backup_retention_days = max(1, min(365, (int) $backup_retention_days));
+            update_option('rpcare_backup_retention_days', $backup_retention_days);
+            $updated['backup_retention_days'] = $backup_retention_days;
+        }
+
+        $update_window = $request->get_param('update_window');
+        if (is_array($update_window)) {
+            if (array_key_exists('day', $update_window)) {
+                $day = $update_window['day'];
+                if ($day === null || $day === '') {
+                    update_option('rpcare_update_window_day', '');
+                    $updated['update_window']['day'] = null;
+                } else {
+                    $day = max(0, min(6, (int) $day));
+                    update_option('rpcare_update_window_day', $day);
+                    $updated['update_window']['day'] = $day;
+                }
+            }
+            if (array_key_exists('start_hour', $update_window)) {
+                $start_hour = max(0, min(23, (int) $update_window['start_hour']));
+                update_option('rpcare_update_window_start_hour', $start_hour);
+                $updated['update_window']['start_hour'] = $start_hour;
+            }
+            if (array_key_exists('end_hour', $update_window)) {
+                $end_hour = max(0, min(23, (int) $update_window['end_hour']));
+                update_option('rpcare_update_window_end_hour', $end_hour);
+                $updated['update_window']['end_hour'] = $end_hour;
+            }
+            $needs_reschedule = true;
         }
 
         // Vulnerability scan results pushed by Hub (from WP Toolkit Pro)
@@ -641,6 +761,16 @@ class RP_Care_REST {
             }
         }
 
+        if ($needs_reschedule && class_exists('RP_Care_Scheduler')) {
+            $current_plan = RP_Care_Plan::get_current();
+            if ($current_plan) {
+                $scheduler = new RP_Care_Scheduler($current_plan);
+                $scheduler->clear_all();
+                $scheduler->ensure();
+                $updated['schedule'] = 'rescheduled';
+            }
+        }
+
         RP_Care_Utils::log('config_update', 'info', 'Configuration updated via API', $updated);
 
         return [
@@ -652,7 +782,7 @@ class RP_Care_REST {
     
     private function saveB2Config($request) {
         $saved = [];
-        foreach (['b2_key_id', 'b2_app_key', 'b2_bucket_id', 'b2_bucket_name'] as $field) {
+        foreach (['b2_key_id', 'b2_app_key', 'b2_bucket_id', 'b2_bucket_name', 'b2_prefix'] as $field) {
             $value = $request->get_param($field);
             if ($value !== null && $value !== '') {
                 update_option('rpcare_' . $field, sanitize_text_field($value));
@@ -845,7 +975,8 @@ class RP_Care_REST {
                 'size'         => $b['size'] ?? 0,
                 'created_at'   => $ts ? date('Y-m-d H:i:s', $ts) : '',
                 'completed_at' => $ts ? date('Y-m-d H:i:s', $ts) : '',
-                'is_restorable' => true,
+                'is_restorable' => false,
+                'restore_note'  => 'Backuply queda como copia auxiliar; restore remoto se gestiona via B2.',
             ];
         }
 
@@ -877,6 +1008,44 @@ class RP_Care_REST {
             'message'    => 'Backup iniciado con Backuply',
             'started_at' => current_time('mysql'),
         ]);
+    }
+
+    public function backup_list($request) {
+        $result = RP_Care_Task_Backup::list_b2_backups((int) $request->get_param('limit'));
+        if (is_wp_error($result)) {
+            return $result;
+        }
+        return rest_ensure_response($result);
+    }
+
+    public function backup_create($request) {
+        $args = [
+            'type' => $request->get_param('type') ?: 'full',
+            'scopes' => $request->get_param('scopes') ?: null,
+            'reason' => 'hub_request',
+        ];
+        $result = RP_Care_Task_Backup::create_b2_backup($args);
+        if (empty($result['success'])) {
+            return new WP_Error('backup_create_failed', $result['message'] ?? 'Backup B2 fallido', ['status' => 500, 'data' => $result]);
+        }
+        return rest_ensure_response($result);
+    }
+
+    public function backup_verify($request) {
+        $result = RP_Care_Task_Backup::verify_b2_backup((string) $request->get_param('backup_id'));
+        if (is_wp_error($result)) {
+            return $result;
+        }
+        return rest_ensure_response($result);
+    }
+
+    public function backup_restore($request) {
+        $scopes = $request->get_param('scopes') ?: ['database'];
+        $result = RP_Care_Task_Backup::restore_b2_backup((string) $request->get_param('backup_id'), $scopes);
+        if (is_wp_error($result)) {
+            return $result;
+        }
+        return rest_ensure_response($result);
     }
 
     /**

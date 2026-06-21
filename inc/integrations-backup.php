@@ -13,6 +13,18 @@ class RP_Care_Task_Backup {
     public static function run($args = []) {
         $environment = RP_Care_Scheduler::get_environment_type();
         $results = [];
+
+        if (self::is_b2_configured()) {
+            $results = self::create_b2_backup($args);
+            if (!empty($results['success'])) {
+                update_option('rpcare_last_backup', current_time('mysql'));
+                RP_Care_Utils::log('backup', 'success', $results['message'], $results);
+                return $results;
+            }
+
+            RP_Care_Utils::log('backup', 'error', $results['message'] ?? 'B2 backup failed', $results);
+            return $results;
+        }
         
         switch ($environment) {
             case 'whm':
@@ -438,6 +450,7 @@ class RP_Care_Task_Backup {
             'app_key'     => get_option('rpcare_b2_app_key', ''),
             'bucket_id'   => get_option('rpcare_b2_bucket_id', ''),
             'bucket_name' => get_option('rpcare_b2_bucket_name', ''),
+            'prefix'      => get_option('rpcare_b2_prefix', ''),
         ];
     }
 
@@ -447,7 +460,7 @@ class RP_Care_Task_Backup {
      */
     private static function b2_authorize() {
         $cached = get_transient('rpcare_b2_auth');
-        if ($cached && !empty($cached['auth_token'])) {
+        if ($cached && !empty($cached['auth_token']) && !empty($cached['download_url'])) {
             return $cached;
         }
 
@@ -471,9 +484,14 @@ class RP_Care_Task_Backup {
         }
 
         $auth = [
-            'api_url'    => rtrim($body['apiInfo']['storageApi']['apiUrl'] ?? $body['apiUrl'], '/'),
-            'auth_token' => $body['authorizationToken'],
+            'api_url'      => rtrim($body['apiInfo']['storageApi']['apiUrl'] ?? $body['apiUrl'] ?? '', '/'),
+            'download_url' => rtrim($body['apiInfo']['storageApi']['downloadUrl'] ?? $body['downloadUrl'] ?? '', '/'),
+            'auth_token'   => $body['authorizationToken'],
         ];
+
+        if (empty($auth['api_url']) || empty($auth['download_url'])) {
+            return new WP_Error('b2_auth_failed', 'B2 auth response missing apiUrl/downloadUrl');
+        }
 
         set_transient('rpcare_b2_auth', $auth, 23 * HOUR_IN_SECONDS);
         return $auth;
@@ -579,32 +597,60 @@ class RP_Care_Task_Backup {
 
         $upload_url   = $url_body['uploadUrl'];
         $upload_token = $url_body['authorizationToken'];
-        $file_content = file_get_contents($local_path);
-        $sha1         = sha1($file_content);
-        $file_size    = strlen($file_content);
+        $file_size    = filesize($local_path);
+        $sha1         = hash_file('sha1', $local_path);
+        $timeout      = max(60, intval($file_size / (1024 * 50))); // ~50 KB/s min
 
-        // Step 2: upload
-        $up_response = wp_remote_post($upload_url, [
-            'timeout' => max(60, intval($file_size / (1024 * 50))), // ~50 KB/s min
-            'headers' => [
-                'Authorization'     => $upload_token,
-                'X-Bz-File-Name'    => rawurlencode($remote_name),
-                'Content-Type'      => 'b2/x-auto',
-                'Content-Length'    => $file_size,
-                'X-Bz-Content-Sha1' => $sha1,
-            ],
-            'body' => $file_content,
-        ]);
-
-        // Free memory
-        unset($file_content);
-
-        if (is_wp_error($up_response)) {
-            return ['success' => false, 'message' => $up_response->get_error_message()];
+        if (function_exists('curl_init')) {
+            $fh = fopen($local_path, 'rb');
+            if (!$fh) {
+                return ['success' => false, 'message' => 'Could not open file for B2 upload'];
+            }
+            $ch = curl_init($upload_url);
+            curl_setopt_array($ch, [
+                CURLOPT_CUSTOMREQUEST  => 'POST',
+                CURLOPT_UPLOAD         => true,
+                CURLOPT_INFILE         => $fh,
+                CURLOPT_INFILESIZE     => $file_size,
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_TIMEOUT        => $timeout,
+                CURLOPT_HTTPHEADER     => [
+                    'Authorization: ' . $upload_token,
+                    'X-Bz-File-Name: ' . rawurlencode($remote_name),
+                    'Content-Type: b2/x-auto',
+                    'Content-Length: ' . $file_size,
+                    'X-Bz-Content-Sha1: ' . $sha1,
+                ],
+            ]);
+            $raw_body = curl_exec($ch);
+            $curl_error = curl_error($ch);
+            $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+            fclose($fh);
+            if ($raw_body === false) {
+                return ['success' => false, 'message' => $curl_error ?: 'cURL upload failed'];
+            }
+            $up_body = json_decode($raw_body, true);
+        } else {
+            $file_content = file_get_contents($local_path);
+            $up_response = wp_remote_post($upload_url, [
+                'timeout' => $timeout,
+                'headers' => [
+                    'Authorization'     => $upload_token,
+                    'X-Bz-File-Name'    => rawurlencode($remote_name),
+                    'Content-Type'      => 'b2/x-auto',
+                    'Content-Length'    => $file_size,
+                    'X-Bz-Content-Sha1' => $sha1,
+                ],
+                'body' => $file_content,
+            ]);
+            unset($file_content);
+            if (is_wp_error($up_response)) {
+                return ['success' => false, 'message' => $up_response->get_error_message()];
+            }
+            $code    = wp_remote_retrieve_response_code($up_response);
+            $up_body = json_decode(wp_remote_retrieve_body($up_response), true);
         }
-
-        $code    = wp_remote_retrieve_response_code($up_response);
-        $up_body = json_decode(wp_remote_retrieve_body($up_response), true);
 
         if ($code === 200 && !empty($up_body['fileId'])) {
             return ['success' => true, 'file_id' => $up_body['fileId'], 'size' => $file_size];
@@ -642,6 +688,578 @@ class RP_Care_Task_Backup {
             'age_hours' => round((time() - $data['timestamp']) / 3600, 1),
             'domain'    => $data['domain'] ?? '',
         ];
+    }
+
+    public static function create_b2_backup($args = []) {
+        if (!self::is_b2_configured()) {
+            return ['success' => false, 'method' => 'b2', 'message' => 'B2 no configurado'];
+        }
+
+        $backup_dir = self::create_backup_directory();
+        if (!$backup_dir) {
+            return ['success' => false, 'method' => 'b2', 'message' => 'No se pudo crear directorio temporal de backup'];
+        }
+
+        $backup_id = 'backup_' . gmdate('Y-m-d_H-i-s');
+        $prefix = self::get_b2_backup_prefix($backup_id);
+        $scopes = self::normalize_b2_scopes($args['scopes'] ?? ($args['type'] ?? 'full'));
+        $artifacts = [];
+        $errors = [];
+
+        $manifest = [
+            'backup_id' => $backup_id,
+            'provider' => 'b2',
+            'version' => 1,
+            'created_at' => current_time('mysql'),
+            'created_at_gmt' => gmdate('c'),
+            'site_url' => home_url(),
+            'domain' => wp_parse_url(home_url(), PHP_URL_HOST),
+            'wp_version' => get_bloginfo('version'),
+            'php_version' => PHP_VERSION,
+            'care_version' => defined('RPCARE_VERSION') ? RPCARE_VERSION : '',
+            'plan' => get_option('rpcare_plan', 'unknown'),
+            'scopes' => $scopes,
+            'artifacts' => [],
+            'errors' => [],
+        ];
+
+        if (in_array('database', $scopes, true)) {
+            $db_backup = self::backup_database($backup_dir);
+            if (!empty($db_backup['success']) && !empty($db_backup['file']) && file_exists($db_backup['file'])) {
+                $gz_path = $db_backup['file'] . '.gz';
+                if (self::gzip_file($db_backup['file'], $gz_path)) {
+                    $artifact = self::upload_b2_artifact($gz_path, $prefix . 'database.sql.gz', 'database');
+                    is_wp_error($artifact) ? $errors[] = $artifact->get_error_message() : $artifacts[] = $artifact;
+                    @unlink($gz_path);
+                } else {
+                    $errors[] = 'No se pudo comprimir database.sql';
+                }
+            } else {
+                $errors[] = 'Database backup failed: ' . ($db_backup['message'] ?? 'unknown');
+            }
+        }
+
+        $zip_specs = self::get_b2_zip_specs($backup_dir);
+        foreach ($zip_specs as $scope => $spec) {
+            if (!in_array($scope, $scopes, true)) {
+                continue;
+            }
+
+            $zip_path = $backup_dir . '/' . $scope . '.zip';
+            $zip_result = !empty($spec['files'])
+                ? self::create_zip_from_files($spec['files'], $zip_path)
+                : self::create_zip_from_directory($spec['source'], $zip_path, $spec['root'], $spec['exclude'] ?? []);
+
+            if (is_wp_error($zip_result)) {
+                $errors[] = $scope . ': ' . $zip_result->get_error_message();
+                continue;
+            }
+
+            $artifact = self::upload_b2_artifact($zip_path, $prefix . $scope . '.zip', $scope);
+            is_wp_error($artifact) ? $errors[] = $artifact->get_error_message() : $artifacts[] = $artifact;
+            @unlink($zip_path);
+        }
+
+        $manifest['artifacts'] = $artifacts;
+        $manifest['errors'] = $errors;
+        $manifest['status'] = empty($errors) ? 'completed' : 'partial';
+        $manifest_path = $backup_dir . '/manifest.json';
+        file_put_contents($manifest_path, wp_json_encode($manifest, JSON_PRETTY_PRINT));
+        $manifest_artifact = self::upload_b2_artifact($manifest_path, $prefix . 'manifest.json', 'manifest');
+        if (is_wp_error($manifest_artifact)) {
+            $errors[] = $manifest_artifact->get_error_message();
+        } else {
+            $artifacts[] = $manifest_artifact;
+        }
+
+        update_option('rpcare_last_b2_backup', [
+            'backup_id' => $backup_id,
+            'prefix' => $prefix,
+            'timestamp' => time(),
+            'files' => array_map(function($artifact) {
+                return $artifact['file_name'] ?? '';
+            }, $artifacts),
+            'artifacts' => $artifacts,
+            'domain' => $manifest['domain'],
+            'status' => empty($errors) ? 'completed' : 'partial',
+        ], false);
+
+        self::cleanup_old_backups();
+        self::remove_directory($backup_dir);
+
+        $has_database = (bool) array_filter($artifacts, function($artifact) {
+            return ($artifact['scope'] ?? '') === 'database';
+        });
+
+        return [
+            'success' => $has_database && !empty($artifacts),
+            'method' => 'b2',
+            'provider' => 'b2',
+            'message' => empty($errors) ? 'Backup B2 completado' : 'Backup B2 parcial: ' . implode('; ', $errors),
+            'backup_id' => $backup_id,
+            'prefix' => $prefix,
+            'status' => empty($errors) ? 'completed' : 'partial',
+            'scopes' => $scopes,
+            'artifacts' => $artifacts,
+            'errors' => $errors,
+        ];
+    }
+
+    public static function list_b2_backups($limit = 50) {
+        if (!self::is_b2_configured()) {
+            return new WP_Error('b2_not_configured', 'B2 no configurado');
+        }
+
+        $auth = self::b2_authorize();
+        if (is_wp_error($auth)) {
+            return $auth;
+        }
+
+        $cfg = self::get_b2_config();
+        $files = self::b2_list_files($auth, $cfg['bucket_id'], self::get_b2_prefix_root() . 'backup_', max(100, (int) $limit * 8));
+        if (is_wp_error($files)) {
+            return $files;
+        }
+
+        $groups = [];
+        foreach ($files as $file) {
+            $file_name = $file['fileName'] ?? '';
+            if (!preg_match('#(.+/)?(backup_[^/]+)/([^/]+)$#', $file_name, $m)) {
+                continue;
+            }
+            $backup_id = $m[2];
+            if (!isset($groups[$backup_id])) {
+                $groups[$backup_id] = [
+                    'id' => $backup_id,
+                    'provider' => 'b2',
+                    'status' => 'partial',
+                    'size' => 0,
+                    'created_at' => '',
+                    'completed_at' => '',
+                    'artifacts' => [],
+                    'is_restorable' => false,
+                ];
+            }
+
+            $ts = !empty($file['uploadTimestamp']) ? (int) ($file['uploadTimestamp'] / 1000) : 0;
+            $groups[$backup_id]['size'] += (int) ($file['contentLength'] ?? 0);
+            if ($ts && (empty($groups[$backup_id]['created_at']) || strtotime($groups[$backup_id]['created_at']) < $ts)) {
+                $groups[$backup_id]['created_at'] = date('Y-m-d H:i:s', $ts);
+                $groups[$backup_id]['completed_at'] = date('Y-m-d H:i:s', $ts);
+            }
+
+            $scope = self::scope_from_b2_file_name($file_name);
+            $groups[$backup_id]['artifacts'][] = [
+                'scope' => $scope,
+                'file_name' => $file_name,
+                'file_id' => $file['fileId'] ?? '',
+                'size' => (int) ($file['contentLength'] ?? 0),
+                'sha1' => $file['contentSha1'] ?? '',
+            ];
+
+            if ($scope === 'manifest') {
+                $groups[$backup_id]['status'] = 'completed';
+            }
+            if ($scope === 'database') {
+                $groups[$backup_id]['is_restorable'] = true;
+            }
+        }
+
+        $backups = array_values($groups);
+        usort($backups, function($a, $b) {
+            return strcmp($b['created_at'], $a['created_at']);
+        });
+
+        return [
+            'success' => true,
+            'provider' => 'b2',
+            'backups' => array_slice($backups, 0, max(1, (int) $limit)),
+            'total' => count($backups),
+            'plugin_active' => true,
+        ];
+    }
+
+    public static function verify_b2_backup($backup_id) {
+        $files = self::get_b2_backup_files($backup_id);
+        if (is_wp_error($files)) {
+            return $files;
+        }
+
+        $scopes = array_map(function($file) {
+            return self::scope_from_b2_file_name($file['fileName'] ?? '');
+        }, $files);
+
+        return [
+            'success' => in_array('database', $scopes, true) && in_array('manifest', $scopes, true),
+            'backup_id' => $backup_id,
+            'provider' => 'b2',
+            'scopes' => array_values(array_unique($scopes)),
+            'file_count' => count($files),
+            'has_database' => in_array('database', $scopes, true),
+            'has_manifest' => in_array('manifest', $scopes, true),
+        ];
+    }
+
+    public static function restore_b2_backup($backup_id, $scopes = ['database']) {
+        $scopes = self::normalize_b2_scopes($scopes);
+        if (in_array('full', $scopes, true)) {
+            $scopes = ['database', 'config', 'uploads', 'plugins', 'themes'];
+        }
+
+        $auth = self::b2_authorize();
+        if (is_wp_error($auth)) {
+            return $auth;
+        }
+
+        $files = self::get_b2_backup_files($backup_id);
+        if (is_wp_error($files)) {
+            return $files;
+        }
+
+        $by_scope = [];
+        foreach ($files as $file) {
+            $by_scope[self::scope_from_b2_file_name($file['fileName'] ?? '')] = $file;
+        }
+
+        if (empty($by_scope['database']) && in_array('database', $scopes, true)) {
+            return new WP_Error('b2_restore_no_database', 'El backup no contiene database.sql.gz');
+        }
+
+        $pre_restore = self::create_b2_backup(['reason' => 'pre_restore', 'scopes' => ['database', 'config']]);
+        if (empty($pre_restore['success'])) {
+            return new WP_Error('pre_restore_backup_failed', 'No se pudo crear backup pre-restore: ' . ($pre_restore['message'] ?? 'unknown'));
+        }
+
+        $restore_dir = self::create_backup_directory();
+        if (!$restore_dir) {
+            return new WP_Error('restore_tmp_failed', 'No se pudo crear directorio temporal de restore');
+        }
+
+        $restored = [];
+        $errors = [];
+
+        foreach ($scopes as $scope) {
+            if (empty($by_scope[$scope])) {
+                $errors[] = "Scope no disponible en backup: $scope";
+                continue;
+            }
+
+            $local_file = $restore_dir . '/' . basename($by_scope[$scope]['fileName']);
+            $download = self::b2_download_file($auth, $by_scope[$scope]['fileId'], $local_file);
+            if (is_wp_error($download)) {
+                $errors[] = $scope . ': ' . $download->get_error_message();
+                continue;
+            }
+
+            if ($scope === 'database') {
+                $sql_file = $restore_dir . '/database.sql';
+                if (!self::gunzip_file($local_file, $sql_file)) {
+                    $errors[] = 'database: no se pudo descomprimir';
+                    continue;
+                }
+                $import = self::import_sql_file($sql_file);
+                is_wp_error($import) ? $errors[] = 'database: ' . $import->get_error_message() : $restored[] = 'database';
+                continue;
+            }
+
+            $target = ($scope === 'config') ? ABSPATH : WP_CONTENT_DIR;
+            $extract = self::extract_zip_to_path($local_file, $target);
+            is_wp_error($extract) ? $errors[] = $scope . ': ' . $extract->get_error_message() : $restored[] = $scope;
+        }
+
+        self::remove_directory($restore_dir);
+
+        RP_Care_Utils::log('backup_restore', empty($errors) ? 'success' : 'warning', 'Restore B2 ejecutado', [
+            'backup_id' => $backup_id,
+            'scopes' => $scopes,
+            'restored' => $restored,
+            'errors' => $errors,
+            'pre_restore_backup' => $pre_restore['backup_id'] ?? '',
+        ]);
+
+        return [
+            'success' => empty($errors),
+            'provider' => 'b2',
+            'backup_id' => $backup_id,
+            'restored' => $restored,
+            'errors' => $errors,
+            'pre_restore_backup_id' => $pre_restore['backup_id'] ?? '',
+        ];
+    }
+
+    private static function get_b2_prefix_root() {
+        $cfg = self::get_b2_config();
+        $prefix = trim((string) ($cfg['prefix'] ?? ''), '/');
+        if ($prefix === '') {
+            $prefix = wp_parse_url(home_url(), PHP_URL_HOST);
+        }
+        $prefix = preg_replace('#[^a-zA-Z0-9._/-]+#', '-', $prefix);
+        return trim($prefix, '/') . '/';
+    }
+
+    private static function get_b2_backup_prefix($backup_id) {
+        return self::get_b2_prefix_root() . sanitize_file_name($backup_id) . '/';
+    }
+
+    private static function normalize_b2_scopes($scopes) {
+        if (is_string($scopes)) {
+            $scopes = [$scopes];
+        }
+        if (!is_array($scopes) || empty($scopes)) {
+            $scopes = ['full'];
+        }
+        if (in_array('full', $scopes, true)) {
+            return ['database', 'config', 'uploads', 'plugins', 'themes'];
+        }
+        if (in_array('files', $scopes, true)) {
+            $scopes = array_merge($scopes, ['config', 'uploads', 'plugins', 'themes']);
+        }
+        $allowed = ['database', 'config', 'uploads', 'plugins', 'themes'];
+        return array_values(array_intersect($allowed, array_map('sanitize_key', $scopes))) ?: ['database'];
+    }
+
+    private static function get_b2_zip_specs($backup_dir) {
+        $upload_dir = wp_upload_dir();
+        return [
+            'config' => [
+                'files' => [
+                    ABSPATH . 'wp-config.php' => 'wp-config.php',
+                    ABSPATH . '.htaccess' => '.htaccess',
+                ],
+            ],
+            'uploads' => [
+                'source' => $upload_dir['basedir'],
+                'root' => 'uploads',
+                'exclude' => [self::get_backup_base_dir(), $backup_dir],
+            ],
+            'plugins' => [
+                'source' => WP_PLUGIN_DIR,
+                'root' => 'plugins',
+                'exclude' => [self::get_backup_base_dir(), $backup_dir],
+            ],
+            'themes' => [
+                'source' => get_theme_root(),
+                'root' => 'themes',
+                'exclude' => [self::get_backup_base_dir(), $backup_dir],
+            ],
+        ];
+    }
+
+    private static function upload_b2_artifact($local_path, $remote_name, $scope) {
+        $auth = self::b2_authorize();
+        if (is_wp_error($auth)) {
+            return $auth;
+        }
+        $cfg = self::get_b2_config();
+        $upload = self::b2_upload_file($auth, $cfg['bucket_id'], $local_path, $remote_name);
+        if (empty($upload['success'])) {
+            return new WP_Error('b2_upload_failed', $scope . ': ' . ($upload['message'] ?? 'unknown'));
+        }
+        return [
+            'scope' => $scope,
+            'file_name' => $remote_name,
+            'file_id' => $upload['file_id'] ?? '',
+            'size' => $upload['size'] ?? filesize($local_path),
+            'sha256' => file_exists($local_path) ? hash_file('sha256', $local_path) : '',
+        ];
+    }
+
+    private static function b2_list_files($auth, $bucket_id, $prefix, $max_files = 1000) {
+        $response = wp_remote_post($auth['api_url'] . '/b2api/v3/b2_list_file_names', [
+            'timeout' => 30,
+            'headers' => [
+                'Authorization' => $auth['auth_token'],
+                'Content-Type'  => 'application/json',
+            ],
+            'body' => wp_json_encode([
+                'bucketId' => $bucket_id,
+                'prefix' => $prefix,
+                'maxFileCount' => min(1000, max(1, (int) $max_files)),
+            ]),
+        ]);
+
+        if (is_wp_error($response)) {
+            return $response;
+        }
+        $code = wp_remote_retrieve_response_code($response);
+        $body = json_decode(wp_remote_retrieve_body($response), true);
+        if ($code !== 200) {
+            return new WP_Error('b2_list_failed', 'B2 list HTTP ' . $code . ': ' . ($body['message'] ?? 'unknown'));
+        }
+        return $body['files'] ?? [];
+    }
+
+    private static function get_b2_backup_files($backup_id) {
+        if (!preg_match('/^backup_[A-Za-z0-9_-]+$/', $backup_id)) {
+            return new WP_Error('invalid_backup_id', 'backup_id invalido');
+        }
+        $auth = self::b2_authorize();
+        if (is_wp_error($auth)) {
+            return $auth;
+        }
+        $cfg = self::get_b2_config();
+        $files = self::b2_list_files($auth, $cfg['bucket_id'], self::get_b2_backup_prefix($backup_id), 1000);
+        if (is_wp_error($files)) {
+            return $files;
+        }
+        if (empty($files)) {
+            return new WP_Error('b2_backup_not_found', 'Backup B2 no encontrado');
+        }
+        return $files;
+    }
+
+    private static function scope_from_b2_file_name($file_name) {
+        $base = basename($file_name);
+        if ($base === 'manifest.json') {
+            return 'manifest';
+        }
+        if ($base === 'database.sql.gz') {
+            return 'database';
+        }
+        return sanitize_key(preg_replace('/\.zip$/', '', $base));
+    }
+
+    private static function b2_download_file($auth, $file_id, $local_path) {
+        if (empty($auth['download_url'])) {
+            return new WP_Error('b2_no_download_url', 'B2 no devolvio downloadUrl');
+        }
+        wp_mkdir_p(dirname($local_path));
+        $response = wp_remote_get(add_query_arg(['fileId' => $file_id], $auth['download_url'] . '/b2api/v3/b2_download_file_by_id'), [
+            'timeout' => 300,
+            'headers' => ['Authorization' => $auth['auth_token']],
+            'stream' => true,
+            'filename' => $local_path,
+        ]);
+        if (is_wp_error($response)) {
+            return $response;
+        }
+        $code = wp_remote_retrieve_response_code($response);
+        if ($code !== 200 || !file_exists($local_path)) {
+            return new WP_Error('b2_download_failed', 'B2 download HTTP ' . $code);
+        }
+        return true;
+    }
+
+    private static function create_zip_from_files($files, $zip_path) {
+        if (!class_exists('ZipArchive')) {
+            return new WP_Error('zip_missing', 'ZipArchive no disponible');
+        }
+        $zip = new ZipArchive();
+        if ($zip->open($zip_path, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
+            return new WP_Error('zip_open_failed', 'No se pudo crear ZIP');
+        }
+        $count = 0;
+        foreach ($files as $source => $local_name) {
+            if (is_file($source) && is_readable($source)) {
+                $zip->addFile($source, $local_name);
+                $count++;
+            }
+        }
+        $zip->close();
+        return $count > 0 ? ['files' => $count] : new WP_Error('zip_empty', 'Sin archivos para comprimir');
+    }
+
+    private static function create_zip_from_directory($source, $zip_path, $root_name, $exclude_paths = []) {
+        if (!class_exists('ZipArchive')) {
+            return new WP_Error('zip_missing', 'ZipArchive no disponible');
+        }
+        $source = realpath($source);
+        if (!$source || !is_dir($source)) {
+            return new WP_Error('zip_source_missing', 'Directorio no disponible');
+        }
+        $excludes = array_filter(array_map('realpath', $exclude_paths));
+        $zip = new ZipArchive();
+        if ($zip->open($zip_path, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
+            return new WP_Error('zip_open_failed', 'No se pudo crear ZIP');
+        }
+        $count = 0;
+        $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($source, RecursiveDirectoryIterator::SKIP_DOTS));
+        foreach ($iterator as $file) {
+            if (!$file->isFile() || !$file->isReadable()) {
+                continue;
+            }
+            $path = $file->getRealPath();
+            foreach ($excludes as $exclude) {
+                if ($exclude && strpos($path, $exclude) === 0) {
+                    continue 2;
+                }
+            }
+            $relative = ltrim(str_replace($source, '', $path), DIRECTORY_SEPARATOR);
+            $zip->addFile($path, trim($root_name, '/') . '/' . str_replace(DIRECTORY_SEPARATOR, '/', $relative));
+            $count++;
+        }
+        $zip->close();
+        return $count > 0 ? ['files' => $count] : new WP_Error('zip_empty', 'Directorio vacio');
+    }
+
+    private static function gunzip_file($source, $destination) {
+        $in = gzopen($source, 'rb');
+        $out = fopen($destination, 'wb');
+        if (!$in || !$out) {
+            return false;
+        }
+        while (!gzeof($in)) {
+            fwrite($out, gzread($in, 524288));
+        }
+        gzclose($in);
+        fclose($out);
+        return true;
+    }
+
+    private static function import_sql_file($sql_file) {
+        global $wpdb;
+        if (!is_readable($sql_file)) {
+            return new WP_Error('sql_unreadable', 'SQL no legible');
+        }
+        $fh = fopen($sql_file, 'r');
+        if (!$fh) {
+            return new WP_Error('sql_open_failed', 'No se pudo abrir SQL');
+        }
+        $wpdb->query('SET FOREIGN_KEY_CHECKS=0');
+        $query = '';
+        while (($line = fgets($fh)) !== false) {
+            $trim = trim($line);
+            if ($trim === '' || strpos($trim, '--') === 0) {
+                continue;
+            }
+            $query .= $line;
+            if (substr(rtrim($line), -1) === ';') {
+                $result = $wpdb->query($query);
+                if ($result === false) {
+                    fclose($fh);
+                    $wpdb->query('SET FOREIGN_KEY_CHECKS=1');
+                    return new WP_Error('sql_import_failed', $wpdb->last_error ?: 'SQL import failed');
+                }
+                $query = '';
+            }
+        }
+        fclose($fh);
+        $wpdb->query('SET FOREIGN_KEY_CHECKS=1');
+        return true;
+    }
+
+    private static function extract_zip_to_path($zip_path, $target_dir) {
+        if (!class_exists('ZipArchive')) {
+            return new WP_Error('zip_missing', 'ZipArchive no disponible');
+        }
+        $target_dir = realpath($target_dir);
+        if (!$target_dir || !is_dir($target_dir)) {
+            return new WP_Error('restore_target_missing', 'Destino de restore no disponible');
+        }
+        $zip = new ZipArchive();
+        if ($zip->open($zip_path) !== true) {
+            return new WP_Error('zip_open_failed', 'No se pudo abrir ZIP');
+        }
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+            $name = $zip->getNameIndex($i);
+            if (strpos($name, '..') !== false || strpos($name, ':') !== false) {
+                $zip->close();
+                return new WP_Error('zip_unsafe_path', 'Ruta insegura en ZIP: ' . $name);
+            }
+        }
+        $ok = $zip->extractTo($target_dir);
+        $zip->close();
+        return $ok ? true : new WP_Error('zip_extract_failed', 'No se pudo extraer ZIP');
     }
     
     private static function get_backup_base_dir() {
@@ -907,17 +1525,24 @@ class RP_Care_Task_Backup {
         
         $backup_dirs = glob($backup_base_dir . '/*', GLOB_ONLYDIR);
         
-        // Keep only the 5 most recent backups
-        if (count($backup_dirs) > 5) {
-            // Sort by modification time
-            usort($backup_dirs, function($a, $b) {
-                return filemtime($b) - filemtime($a);
-            });
-            
-            // Remove old backups
-            $to_remove = array_slice($backup_dirs, 5);
-            
-            foreach ($to_remove as $dir) {
+        usort($backup_dirs, function($a, $b) {
+            return filemtime($b) - filemtime($a);
+        });
+
+        $retention_days = (int) get_option('rpcare_backup_retention_days', 0);
+        if ($retention_days <= 0 && class_exists('RP_Care_Plan')) {
+            $config = RP_Care_Plan::get_plan_config();
+            $retention_days = (int) ($config['backup_retention_days'] ?? 30);
+        }
+        $retention_days = max(1, $retention_days ?: 30);
+        $cutoff = time() - ($retention_days * DAY_IN_SECONDS);
+
+        // Always keep a few recent restore points even if mtimes are unreliable.
+        foreach ($backup_dirs as $index => $dir) {
+            if ($index < 3) {
+                continue;
+            }
+            if (filemtime($dir) < $cutoff) {
                 self::remove_directory($dir);
             }
         }
@@ -947,11 +1572,20 @@ class RP_Care_Task_Backup {
     public static function get_backup_status() {
         $last_backup = get_option('rpcare_last_backup', '');
         $backup_frequency = RP_Care_Plan::get_backup_frequency();
+        $backup_retention_days = (int) get_option('rpcare_backup_retention_days', 0);
+        if ($backup_retention_days <= 0 && class_exists('RP_Care_Plan')) {
+            $config = RP_Care_Plan::get_plan_config();
+            $backup_retention_days = (int) ($config['backup_retention_days'] ?? 30);
+        }
+        $next_scheduled = function_exists('as_next_scheduled_action')
+            ? as_next_scheduled_action('rpcare_task_backup', [], 'replanta-care')
+            : wp_next_scheduled('rpcare_task_backup');
         
         $status = [
             'last_backup' => $last_backup,
             'frequency' => $backup_frequency,
-            'next_scheduled' => wp_next_scheduled('rpcare_task_backup'),
+            'retention_days' => max(1, $backup_retention_days ?: 30),
+            'next_scheduled' => $next_scheduled,
             'method' => 'unknown'
         ];
         

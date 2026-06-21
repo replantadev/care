@@ -16,6 +16,20 @@ class RP_Care_Task_Staging {
 
     const OPT_LAST = 'rpcare_staging_last_clone';
 
+    private static function is_allowed() {
+        if (RP_Care_Plan::can_access_feature('staging')) {
+            return true;
+        }
+
+        if (class_exists('RP_Care_Addon_Manager')) {
+            $addons = RP_Care_Addon_Manager::get();
+            $ecom_cfg = $addons->get_config('ecommerce');
+            return $addons->is_active('ecommerce') && !empty($ecom_cfg['staging_required']);
+        }
+
+        return false;
+    }
+
     public static function detect() {
         if (!function_exists('get_plugins')) {
             require_once ABSPATH . 'wp-admin/includes/plugin.php';
@@ -41,7 +55,7 @@ class RP_Care_Task_Staging {
     }
 
     public static function create_clone($label = null) {
-        if (!RP_Care_Plan::can_access_feature('staging')) {
+        if (!self::is_allowed()) {
             return ['skipped' => 'plan_excluded'];
         }
 

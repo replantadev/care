@@ -119,7 +119,8 @@ class RP_Care_Plan {
             'name' => 'Plan Raíz',
             'price' => '89€/mes',
             'updates' => 'weekly',
-            'backups' => 'weekly',
+            'backups' => 'daily',
+            'backup_retention_days' => 30,
             'wpo' => 'advanced',
             'reviews' => 'monthly',
             'monitoring' => true,
@@ -137,9 +138,10 @@ class RP_Care_Plan {
             'name' => 'Plan Ecosistema',
             'price' => '149€/mes',
             'updates' => 'weekly',
-            'backups' => 'weekly',
+            'backups' => 'daily',
+            'backup_retention_days' => 60,
             'wpo' => 'premium',
-            'reviews' => 'quarterly',
+            'reviews' => 'quarterly_audit',
             'monitoring' => true,
             'priority_support' => true,
             'hosting_included' => true,
@@ -196,6 +198,7 @@ class RP_Care_Plan {
     }
     
     public static function set_current($plan) {
+        $plan = self::normalize_plan($plan);
         if (self::is_valid_plan($plan)) {
             update_option('rpcare_plan', $plan);
             update_option('rpcare_detected_plan', $plan);
@@ -318,6 +321,7 @@ class RP_Care_Plan {
         if ($plan === null) {
             $plan = self::get_current();
         }
+        $plan = self::normalize_plan($plan);
         
         return self::$plan_configs[$plan] ?? null;
     }
@@ -409,8 +413,41 @@ class RP_Care_Plan {
         $config = self::get_plan_config($plan);
         return $config['updates'] ?? 'monthly';
     }
+
+    public static function get_update_window($plan = null) {
+        $plan = self::normalize_plan($plan ?: self::get_current());
+
+        $default = [
+            'day' => null,
+            'start_hour' => 2,
+            'end_hour' => 6,
+        ];
+
+        if (in_array($plan, [self::PLAN_RAIZ, self::PLAN_ECOSISTEMA], true)) {
+            $default = [
+                'day' => 3, // Wednesday, PHP date('w') format.
+                'start_hour' => 23,
+                'end_hour' => 2,
+            ];
+        }
+
+        $saved_day = get_option('rpcare_update_window_day', null);
+        $saved_start = get_option('rpcare_update_window_start_hour', null);
+        $saved_end = get_option('rpcare_update_window_end_hour', null);
+
+        return [
+            'day' => ($saved_day === '' || $saved_day === null) ? $default['day'] : max(0, min(6, (int) $saved_day)),
+            'start_hour' => ($saved_start === '' || $saved_start === null) ? $default['start_hour'] : max(0, min(23, (int) $saved_start)),
+            'end_hour' => ($saved_end === '' || $saved_end === null) ? $default['end_hour'] : max(0, min(23, (int) $saved_end)),
+        ];
+    }
     
     public static function get_backup_frequency($plan = null) {
+        $override = get_option('rpcare_backup_frequency_override', '');
+        if (in_array($override, ['hourly', 'twicedaily', 'daily', 'weekly', 'monthly', 'quarterly'], true)) {
+            return $override;
+        }
+
         $config = self::get_plan_config($plan);
         return $config['backups'] ?? 'weekly';
     }
@@ -461,7 +498,9 @@ class RP_Care_Plan {
             'priority_support' => $config['priority_support'] ?? false,
             'hosting_included' => $config['hosting_included'] ?? false,
             'updates_frequency' => $config['updates'] ?? 'monthly',
-            'backup_frequency' => $config['backups'] ?? 'weekly',
+            'update_window' => self::get_update_window($plan),
+            'backup_frequency' => self::get_backup_frequency($plan),
+            'backup_retention_days' => $config['backup_retention_days'] ?? null,
             'wpo_level' => $config['wpo'] ?? 'basic',
             'review_frequency' => $config['reviews'] ?? 'quarterly'
         ];
@@ -485,20 +524,33 @@ class RP_Care_Plan {
             'updates'              => [self::PLAN_SEMILLA, self::PLAN_RAIZ, self::PLAN_ECOSISTEMA],
             'backups'              => [self::PLAN_SEMILLA, self::PLAN_RAIZ, self::PLAN_ECOSISTEMA],
             'backup'               => [self::PLAN_SEMILLA, self::PLAN_RAIZ, self::PLAN_ECOSISTEMA], // alias
+            'health'               => [self::PLAN_SEMILLA, self::PLAN_RAIZ, self::PLAN_ECOSISTEMA],
+            'report'               => [self::PLAN_SEMILLA, self::PLAN_RAIZ, self::PLAN_ECOSISTEMA],
+            '404_cleanup'          => [self::PLAN_SEMILLA, self::PLAN_RAIZ, self::PLAN_ECOSISTEMA],
+            'orphan_media_scan'    => [self::PLAN_SEMILLA, self::PLAN_RAIZ, self::PLAN_ECOSISTEMA],
+            'self_update'          => [self::PLAN_SEMILLA, self::PLAN_RAIZ, self::PLAN_ECOSISTEMA],
+            'wpo'                  => [self::PLAN_SEMILLA, self::PLAN_RAIZ, self::PLAN_ECOSISTEMA],
             'wpo_basic'            => [self::PLAN_SEMILLA, self::PLAN_RAIZ, self::PLAN_ECOSISTEMA],
             'wpo_advanced'         => [self::PLAN_RAIZ, self::PLAN_ECOSISTEMA],
             'wpo_premium'          => [self::PLAN_ECOSISTEMA],
+            'monitor'              => [self::PLAN_RAIZ, self::PLAN_ECOSISTEMA],
             'monitoring'           => [self::PLAN_RAIZ, self::PLAN_ECOSISTEMA],
             'priority_support'     => [self::PLAN_RAIZ, self::PLAN_ECOSISTEMA],
+            'seo_review'           => [self::PLAN_RAIZ, self::PLAN_ECOSISTEMA],
             'seo_reviews'          => [self::PLAN_RAIZ, self::PLAN_ECOSISTEMA],
+            'seo_audit'            => [self::PLAN_ECOSISTEMA],
             'seo_basic'            => [self::PLAN_SEMILLA, self::PLAN_RAIZ, self::PLAN_ECOSISTEMA],
             'seo_advanced'         => [self::PLAN_RAIZ, self::PLAN_ECOSISTEMA],
             'quarterly_audit'      => [self::PLAN_ECOSISTEMA],
             'audit'                => [self::PLAN_ECOSISTEMA], // alias
             'cdn_optimization'     => [self::PLAN_ECOSISTEMA],
+            'cloudflare_configure' => [self::PLAN_RAIZ, self::PLAN_ECOSISTEMA],
             'cdn_config'           => [self::PLAN_RAIZ, self::PLAN_ECOSISTEMA],
+            'anomaly'              => [self::PLAN_RAIZ, self::PLAN_ECOSISTEMA],
             'anomaly_detection'    => [self::PLAN_RAIZ, self::PLAN_ECOSISTEMA],
-            'staging'              => [self::PLAN_RAIZ, self::PLAN_ECOSISTEMA],
+            'staging'              => [self::PLAN_ECOSISTEMA],
+            'staging_clone'        => [self::PLAN_ECOSISTEMA],
+            'cwv'                  => [self::PLAN_SEMILLA, self::PLAN_RAIZ, self::PLAN_ECOSISTEMA],
             'cwv_reports'          => [self::PLAN_SEMILLA, self::PLAN_RAIZ, self::PLAN_ECOSISTEMA],
             'technical_consulting' => [self::PLAN_ECOSISTEMA],
         ];
@@ -508,6 +560,10 @@ class RP_Care_Plan {
     
     public static function get_schedule_intervals() {
         return [
+            'one_minute' => MINUTE_IN_SECONDS,
+            'fifteen_minutes' => 15 * MINUTE_IN_SECONDS,
+            'hourly' => HOUR_IN_SECONDS,
+            'twicedaily' => 12 * HOUR_IN_SECONDS,
             'daily' => DAY_IN_SECONDS,
             'weekly' => 7 * DAY_IN_SECONDS,
             'monthly' => 30 * DAY_IN_SECONDS,

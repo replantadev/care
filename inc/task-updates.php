@@ -25,6 +25,16 @@ class RP_Care_Task_Updates {
 
         $plan       = RP_Care_Plan::get_current();
         $exclusions = RP_Care_Tasks::get_exclusions();
+        $staging_gate = self::check_staging_gate($plan, $args);
+        if (empty($staging_gate['success'])) {
+            RP_Care_Utils::log('updates', 'warning', $staging_gate['message'], $staging_gate);
+            RP_Care_Utils::send_notification(
+                'updates_waiting_for_staging',
+                'Actualizaciones pendientes de staging',
+                $staging_gate['message']
+            );
+            return $staging_gate;
+        }
 
         // Si un fatal interrumpe un upgrade, WP dejaría el sitio bloqueado
         // en modo mantenimiento (.maintenance). Lo retiramos al apagar.
@@ -107,6 +117,53 @@ class RP_Care_Task_Updates {
         return $results;
     }
     
+    private static function check_staging_gate($plan, $args = []) {
+        if (!self::requires_staging($plan)) {
+            return ['success' => true, 'required' => false];
+        }
+
+        if (!empty($args['staging_validated'])) {
+            return ['success' => true, 'required' => true, 'validated' => true];
+        }
+
+        if (!class_exists('RP_Care_Task_Staging')) {
+            return [
+                'success' => false,
+                'skipped' => true,
+                'staging_required' => true,
+                'message' => 'El plan requiere staging antes de actualizar, pero el modulo staging no esta disponible.',
+            ];
+        }
+
+        $clone = RP_Care_Task_Staging::create_clone('pre-update-' . gmdate('Ymd-His'));
+        $triggered = is_array($clone) && !empty($clone['triggered']);
+
+        return [
+            'success' => false,
+            'skipped' => true,
+            'staging_required' => true,
+            'staging_clone' => $clone,
+            'message' => $triggered
+                ? 'Staging solicitado. Valida el clon y vuelve a lanzar updates con args.staging_validated=true.'
+                : 'El plan requiere staging antes de actualizar, pero no se pudo crear un clon automatico.',
+        ];
+    }
+
+    private static function requires_staging($plan) {
+        $plan = RP_Care_Plan::normalize_plan($plan);
+        if ($plan === RP_Care_Plan::PLAN_ECOSISTEMA) {
+            return true;
+        }
+
+        if (class_exists('RP_Care_Addon_Manager')) {
+            $addons = RP_Care_Addon_Manager::get();
+            $ecom_cfg = $addons->get_config('ecommerce');
+            return $addons->is_active('ecommerce') && !empty($ecom_cfg['staging_required']);
+        }
+
+        return false;
+    }
+
     private static function update_core() {
         if (!function_exists('get_core_updates')) {
             require_once ABSPATH . 'wp-admin/includes/update.php';

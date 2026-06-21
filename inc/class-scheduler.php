@@ -22,6 +22,11 @@ class RP_Care_Scheduler {
     }
     
     public function add_custom_intervals($schedules) {
+        $schedules['one_minute'] = [
+            'interval' => MINUTE_IN_SECONDS,
+            'display' => __('Cada minuto', 'replanta-care')
+        ];
+
         $schedules['fifteen_minutes'] = [
             'interval' => 15 * MINUTE_IN_SECONDS,
             'display' => __('Cada 15 minutos', 'replanta-care')
@@ -73,7 +78,7 @@ class RP_Care_Scheduler {
         
         // Schedule monitoring (Raíz and Ecosistema only)
         if (RP_Care_Plan::has_monitoring($this->plan)) {
-            $this->maybe_schedule('rpcare_task_monitor', 'daily');
+            $this->maybe_schedule('rpcare_task_monitor', 'one_minute');
         }
 
         // Anomaly detection — Raíz+: poll every 15 min to approximate 24/7 monitoring
@@ -119,15 +124,15 @@ class RP_Care_Scheduler {
         if ($as_available) {
             if (!as_next_scheduled_action($hook, [], 'replanta-care')) {
                 $interval = $this->interval_to_seconds($recurrence);
-                $delay = rand(300, 3600); // spread load across sites
-                as_schedule_recurring_action(time() + $delay, $interval, $hook, [], 'replanta-care');
+                $first_run = $this->first_run_timestamp($hook);
+                as_schedule_recurring_action($first_run, $interval, $hook, [], 'replanta-care');
                 RP_Care_Utils::log('scheduler', 'success', "Scheduled $hook with $recurrence via Action Scheduler");
             }
         } else {
             // Fallback: WP Cron
             if (!wp_next_scheduled($hook)) {
-                $delay = rand(300, 3600);
-                $result = wp_schedule_event(time() + $delay, $recurrence, $hook);
+                $first_run = $this->first_run_timestamp($hook);
+                $result = wp_schedule_event($first_run, $recurrence, $hook);
                 if ($result === false) {
                     RP_Care_Utils::log('scheduler', 'error', "Failed to schedule $hook with $recurrence frequency");
                 } else {
@@ -137,11 +142,57 @@ class RP_Care_Scheduler {
         }
     }
 
+    private function first_run_timestamp($hook) {
+        if ($hook === 'rpcare_task_updates') {
+            return $this->next_update_window_timestamp();
+        }
+
+        if ($hook === 'rpcare_task_monitor') {
+            return time() + rand(15, 60);
+        }
+
+        return time() + rand(300, 3600); // spread load across sites
+    }
+
+    private function next_update_window_timestamp() {
+        $window = RP_Care_Plan::get_update_window($this->plan);
+        $timezone = function_exists('wp_timezone') ? wp_timezone() : new DateTimeZone('UTC');
+        $now = new DateTimeImmutable('now', $timezone);
+
+        $start_hour = max(0, min(23, (int) ($window['start_hour'] ?? 2)));
+        $end_hour = max(0, min(23, (int) ($window['end_hour'] ?? 6)));
+        $day = $window['day'] ?? null;
+
+        if ($day !== null && $day !== '') {
+            $day = max(0, min(6, (int) $day));
+            $days_ahead = ($day - (int) $now->format('w') + 7) % 7;
+            $target = $now->modify('+' . $days_ahead . ' days')->setTime($start_hour, 0, 0);
+            if ($target <= $now) {
+                $target = $target->modify('+7 days');
+            }
+        } else {
+            $target = $now->setTime($start_hour, 0, 0);
+            if ($target <= $now) {
+                $target = $target->modify('+1 day');
+            }
+        }
+
+        $duration_hours = ($end_hour - $start_hour + 24) % 24;
+        if ($duration_hours === 0) {
+            $duration_hours = 1;
+        }
+        $jitter = rand(0, max(0, ($duration_hours * HOUR_IN_SECONDS) - MINUTE_IN_SECONDS));
+
+        return $target->modify('+' . $jitter . ' seconds')->getTimestamp();
+    }
+
     /**
      * Convert WP Cron interval name to seconds.
      */
     private function interval_to_seconds(string $name): int {
         $map = [
+            'one_minute' => MINUTE_IN_SECONDS,
+            'fifteen_minutes' => 15 * MINUTE_IN_SECONDS,
             'hourly'     => HOUR_IN_SECONDS,
             'twicedaily' => 12 * HOUR_IN_SECONDS,
             'daily'      => DAY_IN_SECONDS,

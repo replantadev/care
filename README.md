@@ -2,7 +2,7 @@
 
 Plugin de mantenimiento WordPress automático para clientes de Replanta. Gestiona actualizaciones, backups, seguridad y reportes en segundo plano sin afectar al rendimiento del sitio.
 
-**Versión:** 1.10.0 | **Requiere:** WordPress 6.0+, PHP 7.4+ | **Probado hasta:** WordPress 6.7
+**Versión:** 1.14.4 | **Requiere:** WordPress 6.0+, PHP 7.4+ | **Probado hasta:** WordPress 6.7
 
 ---
 
@@ -56,6 +56,14 @@ O bien: descarga el ZIP desde el último [GitHub Release](https://github.com/rep
 Documentación completa en: **[replantadev.github.io/care-docs](https://replantadev.github.io/care-docs/)**
 
 ## Changelog
+
+### v1.14.4
+
+- Backups canónicos en Backblaze B2 por sitio, con prefijo aislado por cliente.
+- Nuevos endpoints REST para crear, listar, verificar y restaurar backups B2 desde Hub.
+- Restauración selectiva de base de datos, configuración, uploads, plugins y temas.
+- Ventanas de actualización, retención y frecuencias alineadas con los planes comerciales.
+- Staging obligatorio antes de actualizar en Ecosistema y en ecommerce cuando lo requiere el addon.
 
 ### v1.10.0
 

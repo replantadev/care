@@ -243,16 +243,27 @@ class RP_Care_Plan {
         // Remove common incorrect paths that users might add
         $hub_url = preg_replace('#/(api/test-connection|wp-admin/admin-ajax\.php)$#', '', $hub_url);
         
-        $response = wp_remote_post($hub_url . '/wp-admin/admin-ajax.php', [
-            'body' => [
-                'action'      => 'rphub_get_site_plan',
-                'site_token'  => $site_token,
-                'site_url'    => $site_url,
-                'plugin_ver'  => RPCARE_VERSION,
-                'server_type' => class_exists('RP_Care_Environment') ? RP_Care_Environment::detect() : '',
-            ],
-            'timeout' => 5
+        $payload = [
+            'site_token'  => $site_token,
+            'site_url'    => $site_url,
+            'plugin_ver'  => RPCARE_VERSION,
+            'server_type' => class_exists('RP_Care_Environment') ? RP_Care_Environment::detect() : '',
+        ];
+
+        // Prefer REST endpoint (Hub ≥ v1.0.7) — not blocked by CF WAF challenge.
+        $response = wp_remote_post($hub_url . '/wp-json/rphub/v1/get-site-plan', [
+            'headers' => ['Content-Type' => 'application/json'],
+            'body'    => wp_json_encode($payload),
+            'timeout' => 5,
         ]);
+
+        // Fall back to legacy admin-ajax for Hub < v1.0.7.
+        if (is_wp_error($response) || 404 === (int) wp_remote_retrieve_response_code($response)) {
+            $response = wp_remote_post($hub_url . '/wp-admin/admin-ajax.php', [
+                'body'    => array_merge($payload, ['action' => 'rphub_get_site_plan']),
+                'timeout' => 5,
+            ]);
+        }
         
         if (is_wp_error($response)) {
             error_log('Care Plugin: Error detecting plan from hub: ' . $response->get_error_message());

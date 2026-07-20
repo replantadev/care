@@ -43,6 +43,12 @@ class RP_Care_REST {
             'permission_callback' => '__return_true',
         ]);
 
+        register_rest_route($this->control_ns, '/config', [
+            'methods'             => 'POST',
+            'callback'            => [$this, 'hub_config'],
+            'permission_callback' => '__return_true',
+        ]);
+
         // Main task execution endpoint
         register_rest_route($this->namespace, '/run', [
             'methods' => 'POST',
@@ -1447,6 +1453,46 @@ class RP_Care_REST {
             'plan'       => $plan,
             'wp_version' => get_bloginfo('version'),
             'site_url'   => get_site_url(),
+        ], 200);
+    }
+
+    /**
+     * POST /wp-json/replanta-care/v1/config
+     * Hub pushes configuration to this site (B2 credentials, plan, update window…).
+     * Permissive token validation — allows pre-bootstrap calls.
+     */
+    public function hub_config(WP_REST_Request $request) {
+        if (!$this->validate_hub_token($request, false)) {
+            return new WP_REST_Response(['error' => 'Unauthorized'], 403);
+        }
+
+        $updated = [];
+
+        // B2 credentials
+        $b2_saved = $this->saveB2Config($request);
+        if (!empty($b2_saved)) {
+            $updated['b2_config'] = $b2_saved;
+        }
+
+        // Plan override
+        $plan = $request->get_param('plan');
+        if ($plan && class_exists('RP_Care_Plan') && RP_Care_Plan::is_valid_plan($plan)) {
+            $old = RP_Care_Plan::get_current();
+            RP_Care_Plan::set_current($plan);
+            $updated['plan'] = ['old' => $old, 'new' => $plan];
+        }
+
+        // Update window
+        $window_day   = $request->get_param('update_window_day');
+        $window_start = $request->get_param('update_window_start');
+        $window_end   = $request->get_param('update_window_end');
+        if ($window_day !== null)   { update_option('rpcare_update_window_day', (int) $window_day);        $updated['update_window_day']   = (int) $window_day; }
+        if ($window_start !== null) { update_option('rpcare_update_window_start_hour', (int) $window_start); $updated['update_window_start'] = (int) $window_start; }
+        if ($window_end !== null)   { update_option('rpcare_update_window_end_hour', (int) $window_end);   $updated['update_window_end']   = (int) $window_end; }
+
+        return new WP_REST_Response([
+            'status'  => 'ok',
+            'updated' => $updated,
         ], 200);
     }
 

@@ -502,11 +502,22 @@ class RP_Care_Settings_Page {
                         </div>
 
                         <div class="rpc-field">
-                            <label class="rpc-label" for="rpc-site-token">Token del sitio <small style="text-transform:none;font-weight:400;color:var(--rp-muted)">(proporcionado por Replanta Hub al anadir el sitio)</small></label>
+                            <label class="rpc-label" for="rpc-license-key">License key <small style="text-transform:none;font-weight:400;color:var(--rp-muted)">(CARE-XXXX… — autentica el bootstrap desde Plugin Center)</small></label>
+                            <input type="text" id="rpc-license-key" name="rpcare_options[license_key]"
+                                   class="rpc-input rpc-input-mono"
+                                   value="<?php echo esc_attr($options['license_key'] ?? ''); ?>"
+                                   placeholder="CARE-XXXX-XXXX-XXXX" autocomplete="off">
+                            <span class="rpc-hint <?php echo !empty($options['license_key']) ? 'ok' : 'warn'; ?>">
+                                <?php echo !empty($options['license_key']) ? 'License key configurada' : 'Introduce tu license key para habilitar el bootstrap automático desde Plugin Center'; ?>
+                            </span>
+                        </div>
+
+                        <div class="rpc-field">
+                            <label class="rpc-label" for="rpc-site-token">Token del sitio <small style="text-transform:none;font-weight:400;color:var(--rp-muted)">(generado automáticamente por Plugin Center)</small></label>
                             <div class="rpc-input-row">
                                 <input type="text" id="rpc-site-token" name="rpcare_options[site_token]"
                                        class="rpc-input rpc-input-mono" value="<?php echo $token; ?>"
-                                       placeholder="Pega aqui el token que genero Replanta Hub" autocomplete="off">
+                                       placeholder="Se genera automáticamente desde Plugin Center" autocomplete="off">
                                 <?php if ($has_token): ?>
                                 <button type="button" class="rpc-btn rpc-btn-secondary rpc-btn-sm"
                                         onclick="rpcare_copy_token()" title="Copiar token">
@@ -1246,6 +1257,10 @@ class RP_Care_Settings_Page {
 
         if (isset($input['site_token'])) {
             $sanitized['site_token'] = sanitize_text_field($input['site_token']);
+        }
+
+        if (isset($input['license_key'])) {
+            $sanitized['license_key'] = sanitize_text_field($input['license_key']);
         }
 
         // Invalidate plan cache whenever Hub creds are touched so next request re-detects from Hub

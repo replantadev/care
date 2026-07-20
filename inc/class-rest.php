@@ -11,12 +11,22 @@ if (!defined('ABSPATH')) {
 class RP_Care_REST {
     
     private $namespace = 'replanta/v1';
-    
+
+    private string $control_ns = 'replanta-care/v1';
+
     public function __construct() {
         add_action('rest_api_init', [$this, 'register_routes']);
     }
-    
+
     public function register_routes() {
+        // ── Bootstrap: Plugin Center → set Hub token ──────────────────────
+        // Public endpoint authenticated by license_key in request body.
+        register_rest_route($this->control_ns, '/set-token', [
+            'methods'             => 'POST',
+            'callback'            => [$this, 'set_hub_token'],
+            'permission_callback' => '__return_true',
+        ]);
+
         // Main task execution endpoint
         register_rest_route($this->namespace, '/run', [
             'methods' => 'POST',
@@ -1328,5 +1338,60 @@ class RP_Care_REST {
             'global_score' => (int) ($result['global_score'] ?? 0),
             'last_audit_at'=> $result['timestamp'] ?? null,
         ]);
+    }
+
+    // ── Bootstrap: receive Hub token from Plugin Center ──────────────────
+
+    /**
+     * POST /wp-json/replanta-care/v1/set-token
+     * Body (JSON): {license_key, token, hub_url}
+     *
+     * Authenticated by the license_key stored in rpcare_options.
+     * Stores the Hub token so Care can call rphub_get_site_plan automatically.
+     */
+    public function set_hub_token(WP_REST_Request $request) {
+        $license_key = sanitize_text_field($request->get_param('license_key') ?? '');
+        $token       = sanitize_text_field($request->get_param('token')       ?? '');
+        $hub_url     = esc_url_raw($request->get_param('hub_url')             ?? '');
+
+        if (empty($license_key) || empty($token)) {
+            return new WP_Error('missing_params', 'license_key and token are required', ['status' => 400]);
+        }
+
+        $options    = get_option('rpcare_options', []);
+        $stored_key = trim($options['license_key'] ?? '');
+
+        if (empty($stored_key)) {
+            return new WP_Error('not_configured',
+                'Este site de Care no tiene license key configurada. Ve a Care > Ajustes > Conexión con Hub.',
+                ['status' => 403]
+            );
+        }
+
+        if (!hash_equals($stored_key, $license_key)) {
+            return new WP_Error('unauthorized', 'License key incorrecta', ['status' => 403]);
+        }
+
+        // Store Hub token + optionally update Hub URL
+        $options['site_token'] = $token;
+        if ($hub_url) {
+            $options['hub_url'] = $hub_url;
+        }
+        update_option('rpcare_options', $options);
+
+        // Clear plan cache — Care will re-fetch from Hub on next request
+        delete_transient('rpcare_plan_cache');
+        delete_transient('rpcare_hub_backoff');
+        delete_option('rpcare_hub_failures');
+
+        if (class_exists('RP_Care_Utils')) {
+            RP_Care_Utils::log('bootstrap', 'success', 'Hub token configurado via Plugin Center bootstrap');
+        }
+
+        return new WP_REST_Response([
+            'status'     => 'ok',
+            'site_url'   => get_site_url(),
+            'plugin_ver' => defined('RPCARE_VERSION') ? RPCARE_VERSION : '?',
+        ], 200);
     }
 }

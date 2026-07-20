@@ -27,6 +27,14 @@ class RP_Care_REST {
             'permission_callback' => '__return_true',
         ]);
 
+        // ── Hub health ping ────────────────────────────────────────────────
+        // Called by PC_Hub_Care::health() with X-Hub-Token header (sha256 of site_token).
+        register_rest_route($this->control_ns, '/ping', [
+            'methods'             => 'GET',
+            'callback'            => [$this, 'hub_ping'],
+            'permission_callback' => '__return_true',
+        ]);
+
         // Main task execution endpoint
         register_rest_route($this->namespace, '/run', [
             'methods' => 'POST',
@@ -1392,6 +1400,36 @@ class RP_Care_REST {
             'status'     => 'ok',
             'site_url'   => get_site_url(),
             'plugin_ver' => defined('RPCARE_VERSION') ? RPCARE_VERSION : '?',
+        ], 200);
+    }
+
+    /**
+     * GET /wp-json/replanta-care/v1/ping
+     * Called by Plugin Center Hub to check site health. Authenticated via X-Hub-Token header
+     * (sha256 of site_token). Returns plugin_ver, plan, wp_version.
+     */
+    public function hub_ping(WP_REST_Request $request) {
+        $options    = get_option('rpcare_options', []);
+        $site_token = $options['site_token'] ?? '';
+
+        // Validate X-Hub-Token header (sha256 of the raw token, sent by PC_Hub_Care::health())
+        $hub_token_header = $request->get_header('x_hub_token') ?: '';
+        if ($site_token && $hub_token_header) {
+            $expected = hash('sha256', $site_token);
+            if (!hash_equals($expected, $hub_token_header)) {
+                return new WP_REST_Response(['error' => 'Unauthorized'], 403);
+            }
+        }
+        // If no token configured yet, still respond (Hub may ping before bootstrap completes)
+
+        $plan = class_exists('RP_Care_Plan') ? (RP_Care_Plan::get_current() ?: '') : '';
+
+        return new WP_REST_Response([
+            'status'     => 'ok',
+            'plugin_ver' => defined('RPCARE_VERSION') ? RPCARE_VERSION : '',
+            'plan'       => $plan,
+            'wp_version' => get_bloginfo('version'),
+            'site_url'   => get_site_url(),
         ], 200);
     }
 }

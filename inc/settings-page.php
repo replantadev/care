@@ -495,52 +495,43 @@ class RP_Care_Settings_Page {
                             Conexion con Replanta Hub
                         </h2>
 
-                        <div class="rpc-field">
-                            <label class="rpc-label" for="rpc-hub-url">URL del Hub <small style="text-transform:none;font-weight:400;color:var(--rp-muted)">(por defecto: https://replanta.net)</small></label>
-                            <input type="url" id="rpc-hub-url" name="rpcare_options[hub_url]" value="<?php echo $hub_url; ?>"
-                                   class="rpc-input" placeholder="https://replanta.net">
-                        </div>
+                        <!-- Token oculto — lo gestiona Plugin Center automáticamente -->
+                        <input type="hidden" name="rpcare_options[site_token]" value="<?php echo $token; ?>">
+                        <input type="hidden" name="rpcare_options[hub_url]" value="<?php echo $hub_url; ?>">
 
                         <div class="rpc-field">
-                            <label class="rpc-label" for="rpc-license-key">License key <small style="text-transform:none;font-weight:400;color:var(--rp-muted)">(CARE-XXXX… — autentica el bootstrap desde Plugin Center)</small></label>
+                            <label class="rpc-label" for="rpc-license-key">License key</label>
                             <input type="text" id="rpc-license-key" name="rpcare_options[license_key]"
                                    class="rpc-input rpc-input-mono"
                                    value="<?php echo esc_attr($options['license_key'] ?? ''); ?>"
-                                   placeholder="CARE-XXXX-XXXX-XXXX" autocomplete="off">
-                            <span class="rpc-hint <?php echo !empty($options['license_key']) ? 'ok' : 'warn'; ?>">
-                                <?php echo !empty($options['license_key']) ? 'License key configurada' : 'Introduce tu license key para habilitar el bootstrap automático desde Plugin Center'; ?>
+                                   placeholder="CARE-XXXX-XXXX-XXXX" autocomplete="off"
+                                   style="font-size:15px;letter-spacing:.5px;">
+                            <span class="rpc-hint" style="margin-top:6px;display:block;font-size:12px;color:var(--rp-muted)">
+                                Te la proporciona Replanta. Introduce la clave y guarda — la conexión se establece automáticamente.
                             </span>
                         </div>
 
-                        <div class="rpc-field">
-                            <label class="rpc-label" for="rpc-site-token">Token del sitio <small style="text-transform:none;font-weight:400;color:var(--rp-muted)">(generado automáticamente por Plugin Center)</small></label>
-                            <div class="rpc-input-row">
-                                <input type="text" id="rpc-site-token" name="rpcare_options[site_token]"
-                                       class="rpc-input rpc-input-mono" value="<?php echo $token; ?>"
-                                       placeholder="Se genera automáticamente desde Plugin Center" autocomplete="off">
-                                <?php if ($has_token): ?>
-                                <button type="button" class="rpc-btn rpc-btn-secondary rpc-btn-sm"
-                                        onclick="rpcare_copy_token()" title="Copiar token">
-                                    <span class="dashicons dashicons-clipboard"></span>
-                                </button>
-                                <?php endif; ?>
-                            </div>
-                            <span class="rpc-hint <?php echo $has_token ? 'ok' : 'warn'; ?>">
-                                <?php if ($has_token): ?>
-                                    <span class="dashicons dashicons-yes-alt"></span> Token configurado. Hub autenticado.
-                                <?php else: ?>
-                                    <span class="dashicons dashicons-warning"></span> Sin token: copia el token desde Hub y pegalo aqui.
-                                <?php endif; ?>
-                            </span>
+                        <?php if ($has_token): ?>
+                        <div class="rpc-hint ok" style="margin-top:8px;padding:8px 12px;border-radius:8px;background:rgba(147,241,201,0.08);border:1px solid rgba(147,241,201,0.2);">
+                            <span class="dashicons dashicons-yes-alt" style="color:var(--rp-ok);"></span>
+                            <strong style="color:var(--rp-ok);">Conectado</strong>
+                            <?php if ($plan_display): ?>
+                            &nbsp;·&nbsp; Plan <strong><?php echo esc_html($plan_display); ?></strong>
+                            <?php endif; ?>
                         </div>
-
-                        <div class="rpc-field">
-                            <label class="rpc-label" for="rpc-gh-token">Token GitHub <small style="text-transform:none;font-size:10px;color:var(--rp-muted)">(para actualizaciones privadas)</small></label>
-                            <input type="password" id="rpc-gh-token" name="rpcare_options[github_token]"
-                                   class="rpc-input" value="<?php echo $gh_token; ?>" autocomplete="new-password">
+                        <?php elseif (!empty($options['license_key'])): ?>
+                        <div class="rpc-hint warn" style="margin-top:8px;padding:8px 12px;border-radius:8px;background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.2);">
+                            <span class="dashicons dashicons-clock" style="color:var(--rp-warn);"></span>
+                            License key guardada. Replanta la activará en breve desde el Hub.
                         </div>
+                        <?php else: ?>
+                        <div class="rpc-hint warn" style="margin-top:8px;padding:8px 12px;border-radius:8px;background:rgba(251,191,36,0.06);border:1px solid rgba(251,191,36,0.15);">
+                            <span class="dashicons dashicons-warning" style="color:var(--rp-warn);"></span>
+                            Sin conexión con el Hub. Introduce tu license key arriba.
+                        </div>
+                        <?php endif; ?>
 
-                        <button type="button" class="rpc-btn rpc-btn-secondary" id="test-connection" style="margin-top:4px;">
+                        <button type="button" class="rpc-btn rpc-btn-secondary" id="test-connection" style="margin-top:12px;">
                             <span id="rpc-test-icon" class="dashicons dashicons-rest-api"></span> Probar conexion
                         </button>
                         <div id="rpc-connection-result"></div>

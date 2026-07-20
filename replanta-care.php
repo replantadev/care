@@ -133,6 +133,7 @@ class ReplantaCare {
     public function load_dependencies() {
         $required_files = [
             // Core classes
+            'inc/class-environment.php',
             'inc/class-plan.php',
             'inc/class-scheduler.php',
             'inc/class-tasks.php',
@@ -474,7 +475,7 @@ class ReplantaCare {
             add_option('rpcare_activated', false);
             add_option('rpcare_plan', '');
             add_option('rpcare_token', '');
-            add_option('rpcare_hub_url', 'https://sitios.replanta.dev');
+            add_option('rpcare_hub_url', 'https://replanta.net');
 
             // WP Cron only ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â safe at activation time
             if (!wp_next_scheduled('rpcare_daily_check')) {

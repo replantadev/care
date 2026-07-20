@@ -38,11 +38,11 @@ class RP_Care_Plan {
      */
     public static function get_hub_url() {
         $options = get_option('rpcare_options', []);
-        return !empty($options['hub_url']) ? rtrim($options['hub_url'], '/') : 'https://sitios.replanta.dev';
+        return !empty($options['hub_url']) ? rtrim($options['hub_url'], '/') : 'https://replanta.net';
     }
     
     // @deprecated Use get_hub_url() instead
-    const HUB_URL = 'https://sitios.replanta.dev';
+    const HUB_URL = 'https://replanta.net';
     
     private static $plan_configs = [
         self::PLAN_BASIC => [
@@ -245,9 +245,11 @@ class RP_Care_Plan {
         
         $response = wp_remote_post($hub_url . '/wp-admin/admin-ajax.php', [
             'body' => [
-                'action' => 'rphub_get_site_plan',
-                'site_token' => $site_token,
-                'site_url' => $site_url
+                'action'      => 'rphub_get_site_plan',
+                'site_token'  => $site_token,
+                'site_url'    => $site_url,
+                'plugin_ver'  => RPCARE_VERSION,
+                'server_type' => class_exists('RP_Care_Environment') ? RP_Care_Environment::detect() : '',
             ],
             'timeout' => 5
         ]);

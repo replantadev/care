@@ -2280,7 +2280,7 @@ class RP_Care_Settings_Page {
     private function sync_with_hub() {
         $site_url = get_site_url();
         $domain = parse_url($site_url, PHP_URL_HOST);
-        $hub_url = class_exists('RP_Care_Plan') ? RP_Care_Plan::get_hub_url() : 'https://sitios.replanta.dev';
+        $hub_url = class_exists('RP_Care_Plan') ? RP_Care_Plan::get_hub_url() : 'https://replanta.net';
         
         $response = wp_remote_post($hub_url . '/wp-json/replanta/v1/sites/heartbeat', [
             'headers' => [

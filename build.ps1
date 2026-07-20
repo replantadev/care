@@ -1,301 +1,249 @@
-﻿# =============================================================================
-# build.ps1 — Replanta Care deploy pipeline
-# =============================================================================
-# Uso:
-#   .\build.ps1                    # lint + build ZIP (no deploy)
-#   .\build.ps1 -Deploy            # lint + ZIP + git + release + docs + landing
-#   .\build.ps1 -Deploy -Version 1.10.0   # fuerza version concreta
-#
-# Requiere:
-#   $env:SAPWOO_GH_TOKEN  — Personal Access Token de GitHub (repo + releases)
-#   php.exe en PATH       — para lint
-# =============================================================================
+<#
+.SYNOPSIS
+  Build y despliegue de Replanta Care.
+.DESCRIPTION
+  Sin flags  : lint PHP + BOM + ZIP local
+  -Deploy    : todo lo anterior + bump/commit/push (dispara GitHub Actions:
+               Release en replantadev/care + Hub notify replanta.net) +
+               actualiza catalogo sap-woo-suite-info + flush cache
+  -Version   : fuerza un numero de version concreto (bump version)
+.PARAMETER Deploy
+  Activa el modo deploy completo.
+.PARAMETER Version
+  Numero de version destino (p.ej. 1.15.0). Por defecto lee la version actual.
+.PARAMETER Token
+  GitHub PAT. Prioridad: RPCARE_GH_TOKEN → SAPWOO_GH_TOKEN → GITHUB_TOKEN
+.EXAMPLE
+  .\build.ps1
+  .\build.ps1 -Deploy
+  .\build.ps1 -Deploy -Version 1.15.0
+#>
 
 param(
     [switch]$Deploy,
-    [string]$Version = ""
+    [string]$Version = '',
+    [string]$Token   = ''
 )
 
 Set-StrictMode -Version Latest
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = 'Stop'
 
-# ─────────────────────────────────────────────────────────────────────────────
-#  Paths
-# ─────────────────────────────────────────────────────────────────────────────
-$PluginDir   = $PSScriptRoot
-$PluginFile  = Join-Path $PluginDir "replanta-care.php"
-$UpdateJson  = Join-Path $PluginDir "update-info.json"
-$DocsPlugin  = Join-Path $PluginDir "docs"
-$DocsLocal   = "c:\Users\programacion2\Local Sites\repos\care-docs"
-$LandingFile = "c:\Users\programacion2\Local Sites\sapwoo\app\public\plugins-landing.html"
-$BuildTmp    = Join-Path $env:TEMP "replanta-care-build"
-$ZipOut      = Join-Path $env:TEMP "replanta-care-RELEASE.zip"
+# -- Configuracion -------------------------------------------------------------
 
-$GhRepo      = "replantadev/care"
-$GhDocsRepo  = "replantadev/care-docs"
-$GhToken     = $env:SAPWOO_GH_TOKEN
+$PluginFile  = 'replanta-care.php'
+$PluginSlug  = 'replanta-care'
+$GhOwner     = 'replantadev'
+$PluginRepo  = 'care'
+$CatalogRepo = 'sap-woo-suite-info'
+$FlushUrl    = $env:REP_FLUSH_URL
+$FlushSecret = $env:REP_FLUSH_SECRET
 
-# ─────────────────────────────────────────────────────────────────────────────
-#  Helpers
-# ─────────────────────────────────────────────────────────────────────────────
-function Step { param([string]$msg) Write-Host "`n==> $msg" -ForegroundColor Cyan }
-function OK   { param([string]$msg) Write-Host "    OK  $msg" -ForegroundColor Green }
-function Warn { param([string]$msg) Write-Host "    WARN $msg" -ForegroundColor Yellow }
-function Fail { param([string]$msg) Write-Host "`n    ERR $msg" -ForegroundColor Red; exit 1 }
+$ZipExcludes = @(
+    '.git', '.github', '.gitignore',
+    'node_modules',
+    'build.ps1', 'docs',
+    'phpcs.xml', 'phpstan.neon',
+    'composer.json', 'composer.lock',
+    'config.php', 'config-sample.php',
+    'update-info.json'
+)
 
-function GhApi {
-    param([string]$Method, [string]$Path, $Body = $null)
-    $uri = "https://api.github.com$Path"
-    $headers = @{
-        Authorization = "token $GhToken"
-        Accept        = "application/vnd.github.v3+json"
-        "User-Agent"  = "replantadev-build/care"
-    }
-    $params = @{ Method = $Method; Uri = $uri; Headers = $headers; ContentType = "application/json" }
-    if ($null -ne $Body) { $params.Body = ($Body | ConvertTo-Json -Depth 10) }
-    try { return Invoke-RestMethod @params }
-    catch [System.Net.WebException] {
-        $resp = $_.Exception.Response
-        $reader = New-Object System.IO.StreamReader($resp.GetResponseStream())
-        Fail "GH API $Method $Path => $($resp.StatusCode) $($reader.ReadToEnd())"
-    }
+# -- Helpers -------------------------------------------------------------------
+
+function Write-Step([string]$msg) { Write-Host "`n==> $msg" -ForegroundColor Cyan }
+function Write-Ok([string]$msg)   { Write-Host "    [OK] $msg" -ForegroundColor Green }
+function Write-Skip([string]$msg) { Write-Host "    [--] $msg" -ForegroundColor Yellow }
+function Write-Fail([string]$msg) { Write-Host "    [!!] $msg" -ForegroundColor Red; exit 1 }
+
+# -- 1. Resolver token ---------------------------------------------------------
+
+if (-not $Token) {
+    if ($env:RPCARE_GH_TOKEN)      { $Token = $env:RPCARE_GH_TOKEN }
+    elseif ($env:SAPWOO_GH_TOKEN)  { $Token = $env:SAPWOO_GH_TOKEN }
+    elseif ($env:GITHUB_TOKEN)     { $Token = $env:GITHUB_TOKEN }
 }
 
-function GitExec {
-    param([string]$WorkDir, [string[]]$GitArgs)
-    $result = & git -C $WorkDir @GitArgs
-    if ($LASTEXITCODE -ne 0) { Fail "git $GitArgs => exit $LASTEXITCODE" }
-    return $result
-}
+# -- 2. Leer / validar version -------------------------------------------------
 
-# ─────────────────────────────────────────────────────────────────────────────
-#  1. Leer version actual
-# ─────────────────────────────────────────────────────────────────────────────
-Step "Leyendo version actual"
-$phpRaw = Get-Content $PluginFile -Raw
-if ($phpRaw -match "define\s*\(\s*'RPCARE_VERSION'\s*,\s*'([0-9]+\.[0-9]+\.[0-9]+)'\s*\)") {
-    $CurrentVersion = $Matches[1]
-} else {
-    Fail "No se pudo leer RPCARE_VERSION en $PluginFile"
+Write-Step "Leyendo version de $PluginFile"
+if (-not (Test-Path $PluginFile)) { Write-Fail "No se encuentra $PluginFile" }
+$pluginContent = Get-Content $PluginFile -Raw
+if ($pluginContent -notmatch 'Version:\s*(\d+\.\d+\.\d+)') {
+    Write-Fail "No se puede extraer Version: del header de $PluginFile"
 }
+$CurrentVersion = $Matches[1]
 if (-not $Version) { $Version = $CurrentVersion }
-OK "Version: $CurrentVersion  →  destino: $Version"
+Write-Ok "Version actual: $CurrentVersion  →  destino: $Version"
 
-# ─────────────────────────────────────────────────────────────────────────────
-#  2. PHP lint
-# ─────────────────────────────────────────────────────────────────────────────
-Step "PHP lint"
-$phpCmd = Get-Command php -ErrorAction SilentlyContinue
-$phpBin = if ($phpCmd) { $phpCmd.Source } else { $null }
-if (-not $phpBin) { Warn "php no encontrado en PATH - saltando lint" }
-else {
-    $lintErrors = 0
-    Get-ChildItem -Path $PluginDir -Filter "*.php" -Recurse |
-        Where-Object { $_.FullName -notmatch '\\vendor\\' } |
-        ForEach-Object {
-            $out = & php -l $_.FullName 2>&1
-            if ($LASTEXITCODE -ne 0) {
-                Write-Host "    LINT: $($_.Name)" -ForegroundColor Red
-                Write-Host "    $out" -ForegroundColor Red
-                $lintErrors++
-            }
-        }
-    if ($lintErrors -gt 0) { Fail "$lintErrors error(es) de sintaxis" }
-    OK "Todos los archivos PHP OK"
-}
+# -- 3. Bump version (si cambia) -----------------------------------------------
 
-# ─────────────────────────────────────────────────────────────────────────────
-#  3. Bump version en plugin file (si cambia)
-# ─────────────────────────────────────────────────────────────────────────────
 if ($Version -ne $CurrentVersion) {
-    Step "Bumping version $CurrentVersion → $Version"
-    $phpRaw = $phpRaw -replace "(?m)(^\s*\*\s*Version:\s*)$([regex]::Escape($CurrentVersion))", "`${1}$Version"
-    $phpRaw = $phpRaw -replace "define\s*\(\s*'RPCARE_VERSION'\s*,\s*'$([regex]::Escape($CurrentVersion))'\s*\)", "define('RPCARE_VERSION', '$Version')"
-    [System.IO.File]::WriteAllText($PluginFile, $phpRaw, [System.Text.UTF8Encoding]::new($false))
-    OK "replanta-care.php actualizado"
+    Write-Step "Bumping $CurrentVersion → $Version"
+    $pluginContent = $pluginContent -replace `
+        "(?m)(\s*\*\s*Version:\s*)$([regex]::Escape($CurrentVersion))", "`${1}$Version"
+    $pluginContent = $pluginContent -replace `
+        "define\s*\(\s*'RPCARE_VERSION'\s*,\s*'$([regex]::Escape($CurrentVersion))'\s*\)", `
+        "define('RPCARE_VERSION', '$Version')"
+    [System.IO.File]::WriteAllText(
+        (Resolve-Path $PluginFile).Path,
+        $pluginContent,
+        [System.Text.UTF8Encoding]::new($false)
+    )
+    Write-Ok "$PluginFile actualizado a $Version"
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-#  4. Actualizar update-info.json
-# ─────────────────────────────────────────────────────────────────────────────
-Step "Actualizando update-info.json"
-$updateRaw = Get-Content $UpdateJson -Raw -Encoding UTF8 | ConvertFrom-Json
-$updateRaw.version      = $Version
-$updateRaw.download_url = "https://sitios.replanta.dev/wp-content/uploads/replanta-updates/replanta-care-$Version.zip"
-$jsonOut = $updateRaw | ConvertTo-Json -Depth 5
-[System.IO.File]::WriteAllText($UpdateJson, $jsonOut + "`n", [System.Text.UTF8Encoding]::new($false))
-OK "update-info.json => $Version"
+$ZipName = "$PluginSlug-$Version.zip"
 
-# ─────────────────────────────────────────────────────────────────────────────
-#  5. Actualizar plugins-landing.html (version Care)
-# ─────────────────────────────────────────────────────────────────────────────
-Step "Actualizando plugins-landing.html"
-if (Test-Path $LandingFile) {
-    $landing = Get-Content $LandingFile -Raw
-    # Subtitle: "Mantenimiento automático WordPress · v1.9.0 · Estable"
-    $landing = $landing -replace "Mantenimiento autom&aacute;tico WordPress &middot; v[0-9]+\.[0-9]+\.[0-9]+ &middot; Estable", `
-        "Mantenimiento autom&aacute;tico WordPress &middot; v$Version &middot; Estable"
-    # Ficha técnica row versión Care (busca el patrón del bloque Care)
-    # La fila es: <span class="sv">X.X.X · estable</span> justo después de Replanta Care
-    # Hacemos replace del valor en el primer bloque que contiene "Replanta Care" en el featuredName
-    # Usamos regex con lookbehind del bloque (más seguro: reemplazamos en contexto Care)
-    $careBlock = [regex]::Match($landing, '(?s)<!-- MANTENIMIENTO WORDPRESS.*?<!-- FREE')
-    if ($careBlock.Success) {
-        $newBlock = $careBlock.Value -replace '<span class="sv">[0-9]+\.[0-9]+\.[0-9]+ &middot; estable</span>', `
-            "<span class=""sv"">$Version &middot; estable</span>"
-        $landing = $landing.Replace($careBlock.Value, $newBlock)
+# -- 4. PHP Lint ---------------------------------------------------------------
+
+Write-Step 'PHP Lint'
+$phpCmd = Get-Command php -ErrorAction SilentlyContinue
+if ($phpCmd) {
+    $phpFiles = Get-ChildItem -Path . -Include '*.php' -Recurse |
+        Where-Object { $_.FullName -notmatch '\\(vendor|node_modules|action-scheduler)\\' }
+    $lintErrors = 0
+    foreach ($f in $phpFiles) {
+        $out = & php -l $f.FullName 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "    FALLO: $($f.FullName)" -ForegroundColor Red
+            Write-Host "    $out" -ForegroundColor Red
+            $lintErrors++
+        }
     }
-    [System.IO.File]::WriteAllText($LandingFile, $landing, [System.Text.UTF8Encoding]::new($false))
-    OK "plugins-landing.html actualizado a v$Version"
+    if ($lintErrors -gt 0) { Write-Fail "$lintErrors archivo(s) con errores de sintaxis PHP" }
+    Write-Ok "$($phpFiles.Count) archivos PHP sin errores"
 } else {
-    Warn "plugins-landing.html no encontrado en $LandingFile"
+    Write-Skip 'php no encontrado, lint omitido'
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-#  6. Actualizar version en docs/index.md
-# ─────────────────────────────────────────────────────────────────────────────
-Step "Actualizando docs/index.md"
-$docsIndex = Join-Path $DocsPlugin "index.md"
-if (Test-Path $docsIndex) {
-    $idx = Get-Content $docsIndex -Raw
-    $idx = $idx -replace '\*\*Version:\*\* [0-9]+\.[0-9]+\.[0-9]+', "**Version:** $Version"
-    [System.IO.File]::WriteAllText($docsIndex, $idx, [System.Text.UTF8Encoding]::new($false))
-    # Mismo update en care-docs local
-    $docsLocalIndex = Join-Path $DocsLocal "index.md"
-    if (Test-Path $docsLocalIndex) {
-        [System.IO.File]::WriteAllText($docsLocalIndex, $idx, [System.Text.UTF8Encoding]::new($false))
-    }
-    OK "docs/index.md actualizado"
-}
+# -- 5. BOM check --------------------------------------------------------------
 
-# ─────────────────────────────────────────────────────────────────────────────
-#  7. Build ZIP
-# ─────────────────────────────────────────────────────────────────────────────
-Step "Construyendo ZIP"
-if (Test-Path $BuildTmp) { Remove-Item $BuildTmp -Recurse -Force }
-if (Test-Path $ZipOut)   { Remove-Item $ZipOut -Force }
-
-$exclude = @('build.ps1', '.git', '.gitignore', 'node_modules', '.DS_Store', 'Thumbs.db', '*.zip', 'docs', 'CHANGELOG.md')
-$destPlugin = Join-Path $BuildTmp "replanta-care"
-New-Item -ItemType Directory -Path $destPlugin -Force | Out-Null
-
-Get-ChildItem -Path $PluginDir -Force |
-    Where-Object {
-        $name = $_.Name
-        -not ($exclude | Where-Object { $name -like $_ })
-    } |
+Write-Step 'Comprobacion BOM'
+$bomFiles = @()
+Get-ChildItem -Path . -Include '*.php' -Recurse |
+    Where-Object { $_.FullName -notmatch '\\(vendor|node_modules|action-scheduler)\\' } |
     ForEach-Object {
-        Copy-Item -Path $_.FullName -Destination $destPlugin -Recurse -Force
+        $bytes = [System.IO.File]::ReadAllBytes($_.FullName)
+        if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+            $bomFiles += $_.FullName
+        }
     }
+if ($bomFiles.Count -gt 0) {
+    foreach ($f in $bomFiles) { Write-Host "    BOM: $f" -ForegroundColor Red }
+    Write-Fail "$($bomFiles.Count) archivo(s) con BOM"
+}
+Write-Ok 'Sin BOM'
 
-Add-Type -AssemblyName System.IO.Compression.FileSystem
-[System.IO.Compression.ZipFile]::CreateFromDirectory($BuildTmp, $ZipOut)
-$zipSize = [math]::Round((Get-Item $ZipOut).Length / 1KB, 1)
-OK "ZIP creado: $ZipOut ($zipSize KB)"
+# -- 6. Construir ZIP ----------------------------------------------------------
+
+Write-Step "Construyendo $ZipName"
+if (Test-Path $ZipName) { Remove-Item $ZipName -Force }
+
+$tempDir   = Join-Path ([System.IO.Path]::GetTempPath()) "$PluginSlug-build-$(Get-Random)"
+$pluginDir = Join-Path $tempDir $PluginSlug
+New-Item -ItemType Directory -Force $pluginDir | Out-Null
+
+$sourceItems = Get-ChildItem -Path . -Force |
+    Where-Object { $ZipExcludes -notcontains $_.Name -and $_.Name -notlike '*.zip' }
+
+foreach ($item in $sourceItems) {
+    if ($item.PSIsContainer) {
+        Copy-Item $item.FullName (Join-Path $pluginDir $item.Name) -Recurse -Force
+    } else {
+        Copy-Item $item.FullName (Join-Path $pluginDir $item.Name) -Force
+    }
+}
+
+$zipPath = Join-Path (Get-Location) $ZipName
+Compress-Archive -Path $pluginDir -DestinationPath $zipPath -CompressionLevel Optimal
+Remove-Item $tempDir -Recurse -Force
+
+$zipSize = [math]::Round((Get-Item $ZipName).Length / 1KB, 1)
+Write-Ok "$ZipName ($zipSize KB)"
+
+# -- 7. Deploy -----------------------------------------------------------------
 
 if (-not $Deploy) {
-    Write-Host "`n  Build completado (sin deploy). Usa -Deploy para publicar.`n" -ForegroundColor Yellow
+    Write-Host "`nBuild completado. Para desplegar: .\build.ps1 -Deploy`n" -ForegroundColor Yellow
     exit 0
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-#  8. Git commit + push en plugin repo
-# ─────────────────────────────────────────────────────────────────────────────
-Step "Git commit en plugin repo"
-GitExec $PluginDir @("add", "replanta-care.php", "update-info.json", "CHANGELOG.md", "docs", "build.ps1", "inc", "assets")
-$status = & git -C $PluginDir status --porcelain
-if ($status) {
-    GitExec $PluginDir @("commit", "-m", "v$Version")
-    OK "Commit creado"
-} else {
-    OK "Nada que commitear en plugin repo"
-}
-GitExec $PluginDir @("push")
-OK "Push completado"
+if (-not $Token) { Write-Fail 'Token GitHub requerido. Define RPCARE_GH_TOKEN, SAPWOO_GH_TOKEN o GITHUB_TOKEN' }
 
-# ─────────────────────────────────────────────────────────────────────────────
-#  9. Tag + GitHub Release en plugin repo
-# ─────────────────────────────────────────────────────────────────────────────
-Step "Tag v$Version"
-$existingTag = & git -C $PluginDir tag -l "v$Version" 2>&1
-if ($existingTag -eq "v$Version") {
-    Warn "Tag v$Version ya existe — saltando tag/release"
-} else {
-    GitExec $PluginDir @("tag", "v$Version")
-    GitExec $PluginDir @("push", "origin", "v$Version")
-    OK "Tag v$Version publicado"
+# -- 7a. Actualizar catalogo (sap-woo-suite-info) ------------------------------
 
-    Step "GitHub Release v$Version"
-    $release = GhApi "POST" "/repos/$GhRepo/releases" @{
-        tag_name   = "v$Version"
-        name       = "v$Version"
-        body       = "Replanta Care v$Version`n`nVer CHANGELOG.md para detalles."
-        draft      = $false
-        prerelease = $false
-    }
-    OK "Release creada: $($release.html_url)"
+Write-Step "Actualizando catalogo ($CatalogRepo)"
+$tempCat = Join-Path ([System.IO.Path]::GetTempPath()) "rpcare-cat-$(Get-Random)"
+$catUrl  = "https://$Token@github.com/$GhOwner/$CatalogRepo.git"
+cmd /c "git clone --depth 1 `"$catUrl`" `"$tempCat`" 2>&1" | Out-Null
 
-    # Upload ZIP asset
-    Step "Subiendo ZIP al release"
-    $uploadUrl = $release.upload_url -replace '\{.*\}', ''
-    $uploadUrl += "?name=replanta-care-$Version.zip"
-    $zipBytes = [System.IO.File]::ReadAllBytes($ZipOut)
-    $uploadHeaders = @{
-        Authorization  = "token $GhToken"
-        Accept         = "application/vnd.github.v3+json"
-        "Content-Type" = "application/zip"
-        "User-Agent"   = "replantadev-build/care"
-    }
-    Invoke-RestMethod -Method Post -Uri $uploadUrl -Headers $uploadHeaders -Body $zipBytes | Out-Null
-    OK "ZIP subido al release"
-}
+if ($LASTEXITCODE -eq 0) {
+    $catFile = Join-Path $tempCat 'plugins-landing.html'
+    if (Test-Path $catFile) {
+        $cat = Get-Content $catFile -Raw -Encoding UTF8
+        $cat = $cat -replace '(id="rep-care-ver">v)[\d.]+',    "`${1}$Version"
+        $cat = $cat -replace '(id="rep-care-term-ver">)[\d.]+', "`${1}$Version"
+        [System.IO.File]::WriteAllText($catFile, $cat, [System.Text.Encoding]::UTF8)
 
-# ─────────────────────────────────────────────────────────────────────────────
-#  10. Sync docs → care-docs repo
-# ─────────────────────────────────────────────────────────────────────────────
-Step "Sincronizando docs con care-docs"
-if (-not (Test-Path $DocsLocal)) {
-    Warn "care-docs local no encontrado en $DocsLocal"
-} else {
-    # Copiar todos los .md del plugin/docs → care-docs repo
-    Get-ChildItem -Path $DocsPlugin -Filter "*.md" | ForEach-Object {
-        Copy-Item -Path $_.FullName -Destination $DocsLocal -Force
-    }
-
-    $docsStatus = & git -C $DocsLocal status --porcelain 2>&1
-    if ($docsStatus) {
-        GitExec $DocsLocal @("add", "-A")
-        GitExec $DocsLocal @("commit", "-m", "docs: sync v$Version")
-        GitExec $DocsLocal @("push")
-        OK "care-docs actualizado y publicado"
+        Push-Location $tempCat
+        git config user.email 'build@replanta.dev'
+        git config user.name  'Replanta Build'
+        git add -A
+        if (git status --short) {
+            git commit -m "chore: update Care to v$Version in catalog"
+            cmd /c "git push origin HEAD 2>&1" | Out-Null
+            if ($LASTEXITCODE -eq 0) { Write-Ok 'Catalogo actualizado' }
+            else { Write-Skip 'Push catalogo fallo (no critico)' }
+        } else {
+            Write-Skip 'Sin cambios en el catalogo'
+        }
+        Pop-Location
     } else {
-        OK "care-docs sin cambios"
+        Write-Skip 'plugins-landing.html no encontrado en catalogo'
     }
+    Remove-Item $tempCat -Recurse -Force
+} else {
+    Write-Skip "No se pudo clonar $CatalogRepo — omitido"
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-#  11. Commit plugins-landing.html (si hay un repo git para la landing)
-# ─────────────────────────────────────────────────────────────────────────────
-Step "Comprobando repo landing"
-$LandingDir = Split-Path (Split-Path $LandingFile -Parent) -Parent | Split-Path -Parent
-& git -C $LandingDir rev-parse --is-inside-work-tree
-$isLandingGit = $LASTEXITCODE
-if ($isLandingGit -eq 0) {
-    $landingStatus = & git -C $LandingDir status --porcelain
-    if ($landingStatus | Where-Object { $_ -match 'plugins-landing' }) {
-        GitExec $LandingDir @("add", "app/public/plugins-landing.html")
-        GitExec $LandingDir @("commit", "-m", "landing: Care v$Version")
-        GitExec $LandingDir @("push")
-        OK "Landing commiteada y publicada"
-    } else {
-        OK "Landing sin cambios que commitear"
+# -- 7b. Git commit + push plugin (dispara GitHub Actions: Release + Hub) ------
+
+Write-Step 'Commit + push del plugin repo'
+$gitStatus = git status --short 2>&1
+if ($gitStatus) {
+    git add -A
+    git commit -m "chore: release v$Version"
+    Write-Ok "Commit: release v$Version"
+} else {
+    Write-Skip 'Sin cambios locales pendientes'
+}
+$pushOut = cmd /c "git push origin HEAD 2>&1"
+if ($LASTEXITCODE -ne 0) { Write-Fail "git push fallo: $pushOut" }
+Write-Ok 'Push completado — GitHub Actions crea Release y notifica Hub (replanta.net)'
+
+# -- 7c. Flush de cache --------------------------------------------------------
+
+if ($FlushUrl -and $FlushSecret) {
+    Write-Step 'Flush de cache replanta.net'
+    try {
+        $body = @{ secret = $FlushSecret } | ConvertTo-Json
+        Invoke-RestMethod -Uri $FlushUrl -Method Post -Body $body `
+            -ContentType 'application/json' -TimeoutSec 10 | Out-Null
+        Write-Ok 'Cache purgada'
+    } catch {
+        Write-Skip "Flush omitido: $_"
     }
 } else {
-    OK "Landing actualizada localmente (no es repo git)"
+    Write-Skip 'Flush omitido (REP_FLUSH_URL / REP_FLUSH_SECRET no definidos)'
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-Write-Host "`n  Deploy completado: Replanta Care v$Version" -ForegroundColor Green
-Write-Host "  Release: https://github.com/$GhRepo/releases/tag/v$Version`n" -ForegroundColor Green
-Write-Host "  Docs:    https://replantadev.github.io/care-docs/`n" -ForegroundColor Cyan
-exit 0
+# -- Resumen -------------------------------------------------------------------
+
+Write-Host ''
+Write-Host '============================================================' -ForegroundColor Green
+Write-Host "  Replanta Care v$Version desplegado" -ForegroundColor Green
+Write-Host '============================================================' -ForegroundColor Green
+Write-Host "  ZIP local  : $ZipName"
+Write-Host "  GitHub CI  : https://github.com/$GhOwner/$PluginRepo/actions"
+Write-Host "  Catalogo   : https://$GhOwner.github.io/$CatalogRepo/plugins-landing.html"
+Write-Host ''

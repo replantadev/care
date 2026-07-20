@@ -408,18 +408,17 @@ class RP_Care_Scheduler {
     }
     
     public static function get_environment_type() {
-        if (self::is_whm_environment()) {
-            return 'whm';
+        if (class_exists('RP_Care_Environment')) {
+            return RP_Care_Environment::detect();
         }
-        
-        // Check for common hosting providers
+        // Minimal fallback when RP_Care_Environment isn't loaded yet
+        if (self::is_whm_environment()) {
+            return 'cpanel';
+        }
         $host = $_SERVER['HTTP_HOST'] ?? '';
-        $server_name = $_SERVER['SERVER_NAME'] ?? '';
-        
-        if (strpos($host, 'localhost') !== false || strpos($server_name, 'localhost') !== false) {
+        if (strpos($host, 'localhost') !== false) {
             return 'local';
         }
-        
         return 'external';
     }
 }

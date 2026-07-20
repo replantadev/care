@@ -543,15 +543,16 @@ class RP_Care_Task_Updates {
 
     /**
      * HTTP health check against the site homepage.
-     * Returns true when the site responds with a non-5xx status and the body
-     * contains no PHP fatal-error markers.
+     * Checks: HTTP status (non-5xx), PHP fatal markers, TTFB threshold, and minimal HTML.
      */
-    private static function health_check(int $timeout = 15): bool {
+    private static function health_check(int $timeout = 12): bool {
+        $start  = microtime(true);
         $result = wp_remote_get(home_url('/'), [
             'timeout'    => $timeout,
             'user-agent' => 'ReplantaCare/HealthCheck',
-            'sslverify'  => false, // staging/local may use self-signed certs
+            'sslverify'  => false,
         ]);
+        $elapsed = microtime(true) - $start;
 
         if (is_wp_error($result)) {
             RP_Care_Utils::log('updates', 'error', 'Health check request failed: ' . $result->get_error_message());
@@ -564,13 +565,35 @@ class RP_Care_Task_Updates {
             return false;
         }
 
-        $body    = wp_remote_retrieve_body($result);
-        $markers = ['Fatal error', 'Parse error', 'Call to undefined function', 'Call to undefined method'];
+        // TTFB threshold: flag if response took > 8 s (likely PHP crash/infinite loop)
+        if ($elapsed > 8.0) {
+            RP_Care_Utils::log('updates', 'warning', sprintf('Health check: slow response %.2fs — possible issue after update', $elapsed));
+            return false;
+        }
+
+        $body = wp_remote_retrieve_body($result);
+
+        // PHP fatal-error markers in body
+        $markers = [
+            'Fatal error',
+            'Parse error',
+            'Call to undefined function',
+            'Call to undefined method',
+            'Uncaught Error',
+            'Uncaught Exception',
+            'WordPress database error',
+        ];
         foreach ($markers as $marker) {
             if (stripos($body, $marker) !== false) {
-                RP_Care_Utils::log('updates', 'error', "Health check detected PHP error marker in response: '$marker'");
+                RP_Care_Utils::log('updates', 'error', "Health check: PHP error marker in response body: '$marker'");
                 return false;
             }
+        }
+
+        // Require at least some valid HTML (catch white-screen / empty responses)
+        if (strlen($body) < 200 || stripos($body, '<html') === false) {
+            RP_Care_Utils::log('updates', 'warning', 'Health check: response body too short or missing HTML structure');
+            return false;
         }
 
         return true;

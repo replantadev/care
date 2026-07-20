@@ -186,51 +186,108 @@ class RP_Care_Task_Health {
     }
     
     private static function check_plugin_vulnerabilities() {
-        $active_plugins = get_option('active_plugins', []);
-        $plugin_data = [];
-        $vulnerabilities_found = 0;
-        
-        // Known vulnerable plugins (this would ideally come from a security API)
-        $known_vulnerable = [
-            'really-simple-captcha' => ['version' => '1.0.0', 'vulnerability' => 'XSS vulnerability'],
-            'wp-super-cache' => ['version' => '1.7.1', 'vulnerability' => 'RCE vulnerability']
-        ];
-        
+        if (!function_exists('get_plugin_data')) {
+            require_once ABSPATH . 'wp-admin/includes/plugin.php';
+        }
+        if (!function_exists('get_plugin_updates')) {
+            require_once ABSPATH . 'wp-admin/includes/update.php';
+        }
+
+        $active_plugins      = get_option('active_plugins', []);
+        $plugins_with_update = get_plugin_updates(); // reads the update_plugins transient
+        $vuln_slugs          = [];
+        $update_slugs        = [];
+        $plugin_data         = [];
+
+        // Optional WPScan API token (configure under Care settings)
+        $wpscan_token = get_option('rpcare_wpscan_token', '');
+        $wpscan_data  = [];
+        if ($wpscan_token) {
+            $wpscan_data = self::fetch_wpscan_vulnerabilities($active_plugins, $wpscan_token);
+        }
+
         foreach ($active_plugins as $plugin_file) {
-            if (!function_exists('get_plugin_data')) {
-                require_once ABSPATH . 'wp-admin/includes/plugin.php';
-            }
-            
             $plugin_path = WP_PLUGIN_DIR . '/' . $plugin_file;
-            if (file_exists($plugin_path)) {
-                $plugin_info = get_plugin_data($plugin_path);
-                $plugin_slug = dirname($plugin_file);
-                
-                $plugin_data[] = [
-                    'name' => $plugin_info['Name'],
-                    'version' => $plugin_info['Version'],
-                    'slug' => $plugin_slug,
-                    'file' => $plugin_file
-                ];
-                
-                // Check against known vulnerabilities
-                if (isset($known_vulnerable[$plugin_slug])) {
-                    $vuln = $known_vulnerable[$plugin_slug];
-                    if (version_compare($plugin_info['Version'], $vuln['version'], '<=')) {
-                        $vulnerabilities_found++;
-                    }
-                }
+            if (!file_exists($plugin_path)) {
+                continue;
+            }
+            $info = get_plugin_data($plugin_path, false, false);
+            $slug = dirname($plugin_file);
+
+            $has_update = isset($plugins_with_update[$plugin_file]);
+            $has_vuln   = isset($wpscan_data[$slug]);
+
+            $plugin_data[] = [
+                'name'       => $info['Name'],
+                'version'    => $info['Version'],
+                'slug'       => $slug,
+                'has_update' => $has_update,
+                'has_vuln'   => $has_vuln,
+            ];
+
+            if ($has_vuln) {
+                $vuln_slugs[] = $slug;
+            } elseif ($has_update) {
+                $update_slugs[] = $slug;
             }
         }
-        
+
+        $vuln_count   = count($vuln_slugs);
+        $update_count = count($update_slugs);
+
+        if ($vuln_count > 0) {
+            $status  = 'warning';
+            $message = "$vuln_count plugin(s) con vulnerabilidades conocidas: " . implode(', ', $vuln_slugs);
+        } elseif ($update_count > 0) {
+            $status  = 'warning';
+            $message = "$update_count plugin(s) con actualizaciones pendientes (posibles correcciones de seguridad)";
+        } else {
+            $status  = 'good';
+            $message = 'Sin vulnerabilidades conocidas en plugins activos';
+        }
+
         return [
-            'status' => $vulnerabilities_found > 0 ? 'warning' : 'good',
-            'active_plugins' => count($plugin_data),
-            'vulnerabilities_found' => $vulnerabilities_found,
-            'message' => $vulnerabilities_found > 0 ? 
-                "Found $vulnerabilities_found potential security issues" : 
-                'No known vulnerabilities found in active plugins'
+            'status'              => $status,
+            'active_plugins'      => count($plugin_data),
+            'vulnerabilities_found' => $vuln_count,
+            'pending_updates'     => $update_count,
+            'wpscan_enabled'      => !empty($wpscan_token),
+            'message'             => $message,
         ];
+    }
+
+    /**
+     * Query the WPScan API for known vulnerabilities in the given plugin files.
+     * Returns [slug => [vuln_title, ...]] for slugs with findings.
+     */
+    private static function fetch_wpscan_vulnerabilities(array $plugin_files, string $token): array {
+        $slugs = array_filter(array_map(function ($file) {
+            $slug = dirname($file);
+            return $slug !== '.' ? $slug : null;
+        }, $plugin_files));
+
+        if (empty($slugs)) {
+            return [];
+        }
+
+        $findings = [];
+        // WPScan free tier: 25 requests/day. Batch up to 25 slugs per run.
+        foreach (array_slice($slugs, 0, 25) as $slug) {
+            $res = wp_remote_get('https://wpscan.com/api/v3/plugins/' . urlencode($slug), [
+                'timeout' => 8,
+                'headers' => ['Authorization' => 'Token token=' . $token],
+            ]);
+            if (is_wp_error($res) || wp_remote_retrieve_response_code($res) !== 200) {
+                continue;
+            }
+            $body = json_decode(wp_remote_retrieve_body($res), true);
+            $vulns = $body[$slug]['vulnerabilities'] ?? [];
+            if (!empty($vulns)) {
+                $findings[$slug] = array_column($vulns, 'title');
+            }
+        }
+
+        return $findings;
     }
     
     private static function check_file_permissions() {

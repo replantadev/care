@@ -46,7 +46,7 @@ class RP_Care_Plan {
     
     private static $plan_configs = [
         self::PLAN_BASIC => [
-            'name' => 'Plan Básico',
+            'name' => 'Básico',
             'price' => '49€/mes',
             'updates' => 'monthly',
             'backups' => 'weekly',
@@ -63,7 +63,7 @@ class RP_Care_Plan {
             ]
         ],
         self::PLAN_ADVANCED => [
-            'name' => 'Plan Avanzado',
+            'name' => 'Avanzado',
             'price' => '89€/mes',
             'updates' => 'weekly',
             'backups' => 'weekly',
@@ -81,7 +81,7 @@ class RP_Care_Plan {
             ]
         ],
         self::PLAN_PREMIUM => [
-            'name' => 'Plan Premium',
+            'name' => 'Premium',
             'price' => '149€/mes',
             'updates' => 'weekly',
             'backups' => 'daily',
@@ -99,7 +99,7 @@ class RP_Care_Plan {
             ]
         ],
         self::PLAN_SEMILLA => [
-            'name' => 'Plan Semilla',
+            'name' => 'Semilla',
             'price' => '49€/mes',
             'updates' => 'monthly',
             'backups' => 'weekly',
@@ -116,7 +116,7 @@ class RP_Care_Plan {
             ]
         ],
         self::PLAN_RAIZ => [
-            'name' => 'Plan Raíz',
+            'name' => 'Raíz',
             'price' => '89€/mes',
             'updates' => 'weekly',
             'backups' => 'daily',
@@ -135,7 +135,7 @@ class RP_Care_Plan {
             ]
         ],
         self::PLAN_ECOSISTEMA => [
-            'name' => 'Plan Ecosistema',
+            'name' => 'Ecosistema',
             'price' => '149€/mes',
             'updates' => 'weekly',
             'backups' => 'daily',
@@ -481,7 +481,7 @@ class RP_Care_Plan {
     
     public static function get_plan_name($plan = null) {
         $config = self::get_plan_config($plan);
-        return $config['name'] ?? 'Plan Desconocido';
+        return $config['name'] ?? ucfirst( (string) $plan );
     }
     
     public static function get_features($plan = null) {

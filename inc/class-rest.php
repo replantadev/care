@@ -35,6 +35,14 @@ class RP_Care_REST {
             'permission_callback' => '__return_true',
         ]);
 
+        // ── Hub remote update ──────────────────────────────────────────────
+        // Called by PC_Hub_Care::remote_action('update') to self-update Care.
+        register_rest_route($this->control_ns, '/update', [
+            'methods'             => 'POST',
+            'callback'            => [$this, 'hub_update'],
+            'permission_callback' => '__return_true',
+        ]);
+
         // Main task execution endpoint
         register_rest_route($this->namespace, '/run', [
             'methods' => 'POST',
@@ -1404,23 +1412,32 @@ class RP_Care_REST {
     }
 
     /**
-     * GET /wp-json/replanta-care/v1/ping
-     * Called by Plugin Center Hub to check site health. Authenticated via X-Hub-Token header
-     * (sha256 of site_token). Returns plugin_ver, plan, wp_version.
+     * Validates the X-Hub-Token header against the stored site_token.
+     * Returns true if valid, false otherwise.
+     * @param bool $require_token  If false, allows requests when no token is configured yet.
      */
-    public function hub_ping(WP_REST_Request $request) {
+    private function validate_hub_token(WP_REST_Request $request, bool $require_token = true): bool {
         $options    = get_option('rpcare_options', []);
         $site_token = $options['site_token'] ?? '';
 
-        // Validate X-Hub-Token header (sha256 of the raw token, sent by PC_Hub_Care::health())
-        $hub_token_header = $request->get_header('x_hub_token') ?: '';
-        if ($site_token && $hub_token_header) {
-            $expected = hash('sha256', $site_token);
-            if (!hash_equals($expected, $hub_token_header)) {
-                return new WP_REST_Response(['error' => 'Unauthorized'], 403);
-            }
+        if (empty($site_token)) {
+            return !$require_token; // strict: reject; permissive: allow pre-bootstrap
         }
-        // If no token configured yet, still respond (Hub may ping before bootstrap completes)
+
+        $header = $request->get_header('x_hub_token') ?: '';
+        if (empty($header)) return false;
+
+        return hash_equals(hash('sha256', $site_token), $header);
+    }
+
+    /**
+     * GET /wp-json/replanta-care/v1/ping
+     * Hub health check. Permissive: responds even before bootstrap.
+     */
+    public function hub_ping(WP_REST_Request $request) {
+        if (!$this->validate_hub_token($request, false)) {
+            return new WP_REST_Response(['error' => 'Unauthorized'], 403);
+        }
 
         $plan = class_exists('RP_Care_Plan') ? (RP_Care_Plan::get_current() ?: '') : '';
 
@@ -1430,6 +1447,69 @@ class RP_Care_REST {
             'plan'       => $plan,
             'wp_version' => get_bloginfo('version'),
             'site_url'   => get_site_url(),
+        ], 200);
+    }
+
+    /**
+     * POST /wp-json/replanta-care/v1/update
+     * Triggered by Plugin Center to self-update Care to the latest Hub release.
+     * Strict token validation — requires X-Hub-Token.
+     */
+    public function hub_update(WP_REST_Request $request) {
+        if (!$this->validate_hub_token($request, true)) {
+            return new WP_REST_Response(['error' => 'Unauthorized'], 403);
+        }
+
+        require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
+        require_once ABSPATH . 'wp-admin/includes/plugin.php';
+        require_once ABSPATH . 'wp-admin/includes/file.php';
+        require_once ABSPATH . 'wp-admin/includes/misc.php';
+
+        $plugin_file = 'replanta-care/replanta-care.php';
+        $from_ver    = defined('RPCARE_VERSION') ? RPCARE_VERSION : '';
+
+        // Force-refresh update transient so Hub's latest version is seen
+        delete_site_transient('update_plugins');
+        wp_update_plugins();
+
+        $updates = get_site_transient('update_plugins');
+
+        if (empty($updates->response[$plugin_file])) {
+            return new WP_REST_Response([
+                'status'     => 'already_latest',
+                'plugin_ver' => $from_ver,
+                'message'    => "Ya en la versión más reciente ({$from_ver})",
+            ], 200);
+        }
+
+        $new_version = $updates->response[$plugin_file]->new_version ?? '';
+
+        $skin     = new WP_Ajax_Upgrader_Skin();
+        $upgrader = new Plugin_Upgrader($skin);
+        $result   = $upgrader->upgrade($plugin_file);
+
+        if (is_wp_error($result)) {
+            return new WP_REST_Response([
+                'status'  => 'error',
+                'message' => $result->get_error_message(),
+            ], 500);
+        }
+
+        if ($result === false) {
+            $err = $skin->get_errors();
+            $msg = (is_wp_error($err) && $err->get_error_message()) ? $err->get_error_message() : 'Update failed';
+            return new WP_REST_Response(['status' => 'error', 'message' => $msg], 500);
+        }
+
+        if (class_exists('RP_Care_Utils')) {
+            RP_Care_Utils::log('self_update', 'success', "v{$from_ver} → v{$new_version} via Hub");
+        }
+
+        return new WP_REST_Response([
+            'status'   => 'updated',
+            'from_ver' => $from_ver,
+            'to_ver'   => $new_version,
+            'message'  => "Actualizado de v{$from_ver} a v{$new_version}",
         ], 200);
     }
 }

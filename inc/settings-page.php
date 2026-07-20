@@ -516,7 +516,7 @@ class RP_Care_Settings_Page {
                             <span class="dashicons dashicons-yes-alt" style="color:var(--rp-ok);"></span>
                             <strong style="color:var(--rp-ok);">Conectado</strong>
                             <?php if ($plan_display): ?>
-                            &nbsp;·&nbsp; Plan <strong><?php echo esc_html($plan_display); ?></strong>
+                            &nbsp;·&nbsp; <strong><?php echo esc_html($plan_display); ?></strong>
                             <?php endif; ?>
                         </div>
                         <?php elseif (!empty($options['license_key'])): ?>
@@ -547,7 +547,7 @@ class RP_Care_Settings_Page {
 
                         <?php if ($hub_connected && $current_plan): ?>
                         <div class="rpc-hint ok" style="margin-bottom:16px;">
-                            <span class="dashicons dashicons-yes-alt"></span> Plan <strong><?php echo esc_html($plan_display); ?></strong> detectado desde el Hub.
+                            <span class="dashicons dashicons-yes-alt"></span> <strong><?php echo esc_html($plan_display); ?></strong> detectado desde el Hub.
                             Las tareas se ajustan automaticamente.
                         </div>
                         <input type="hidden" name="rpcare_options[plan]" value="<?php echo esc_attr($current_plan); ?>">

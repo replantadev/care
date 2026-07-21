@@ -789,6 +789,7 @@ class RP_Care_Task_Backup {
         ], false);
 
         self::cleanup_old_backups();
+        self::cleanup_b2_old_backups();
         self::remove_directory($backup_dir);
 
         $has_database = (bool) array_filter($artifacts, function($artifact) {
@@ -1520,6 +1521,91 @@ class RP_Care_Task_Backup {
         return $size;
     }
     
+    private static function b2_delete_file_version(array $auth, string $file_id, string $file_name): bool {
+        $response = wp_remote_post($auth['api_url'] . '/b2api/v3/b2_delete_file_version', [
+            'timeout' => 30,
+            'headers' => [
+                'Authorization' => $auth['auth_token'],
+                'Content-Type'  => 'application/json',
+            ],
+            'body' => wp_json_encode([
+                'fileId'   => $file_id,
+                'fileName' => $file_name,
+            ]),
+        ]);
+        if (is_wp_error($response)) {
+            return false;
+        }
+        return wp_remote_retrieve_response_code($response) === 200;
+    }
+
+    private static function cleanup_b2_old_backups(): void {
+        if (!self::is_b2_configured()) {
+            return;
+        }
+
+        $auth = self::b2_authorize();
+        if (is_wp_error($auth)) {
+            return;
+        }
+
+        $cfg   = self::get_b2_config();
+        $files = self::b2_list_files($auth, $cfg['bucket_id'], self::get_b2_prefix_root() . 'backup_', 1000);
+        if (is_wp_error($files) || empty($files)) {
+            return;
+        }
+
+        $groups = [];
+        foreach ($files as $file) {
+            $file_name = $file['fileName'] ?? '';
+            if (!preg_match('#(.+/)?(backup_[^/]+)/([^/]+)$#', $file_name, $m)) {
+                continue;
+            }
+            $backup_id = $m[2];
+            $ts        = !empty($file['uploadTimestamp']) ? (int) ($file['uploadTimestamp'] / 1000) : 0;
+
+            if (!isset($groups[$backup_id])) {
+                $groups[$backup_id] = ['max_ts' => 0, 'files' => []];
+            }
+            if ($ts > $groups[$backup_id]['max_ts']) {
+                $groups[$backup_id]['max_ts'] = $ts;
+            }
+            $groups[$backup_id]['files'][] = [
+                'file_id'   => $file['fileId']   ?? '',
+                'file_name' => $file_name,
+            ];
+        }
+
+        if (count($groups) <= 2) {
+            return;
+        }
+
+        uasort($groups, fn($a, $b) => $b['max_ts'] <=> $a['max_ts']);
+
+        $retention_days = (int) get_option('rpcare_backup_retention_days', 0);
+        if ($retention_days <= 0 && class_exists('RP_Care_Plan')) {
+            $config         = RP_Care_Plan::get_plan_config();
+            $retention_days = (int) ($config['backup_retention_days'] ?? 30);
+        }
+        $retention_days = max(1, $retention_days ?: 30);
+        $cutoff         = time() - ($retention_days * DAY_IN_SECONDS);
+
+        $index = 0;
+        foreach ($groups as $group) {
+            $index++;
+            if ($index <= 2) {
+                continue;
+            }
+            if ($group['max_ts'] < $cutoff) {
+                foreach ($group['files'] as $f) {
+                    if ($f['file_id'] && $f['file_name']) {
+                        self::b2_delete_file_version($auth, $f['file_id'], $f['file_name']);
+                    }
+                }
+            }
+        }
+    }
+
     private static function cleanup_old_backups() {
         $backup_base_dir = self::get_backup_base_dir();
         

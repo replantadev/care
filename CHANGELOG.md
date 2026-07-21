@@ -1,5 +1,13 @@
 # Changelog — Replanta Care
 
+## [1.15.6]
+
+- integrations-backup: cleanup_b2_old_backups() — limpieza automática de backups en B2 según retención del plan
+  - Siempre conserva mínimo 2 sets de backup en B2
+  - Elimina sets más antiguos que backup_retention_days (Semilla 7d, Raíz 30d, Ecosistema 90d)
+  - b2_delete_file_version(): nuevo método privado para borrar objetos B2 via b2_delete_file_version API
+  - Se ejecuta en cada create_b2_backup() tras la limpieza local
+
 ## [1.15.5]
 
 - hub_ping(): añade backup_last_at, backup_status y updates_pending a la respuesta

@@ -1597,6 +1597,20 @@ class RP_Care_REST {
             ], 200);
         }
 
+        // 3b. Pre-update backup: database + config. Si B2 está configurado y falla → abortar.
+        if ( class_exists( 'RP_Care_Task_Backup' ) && RP_Care_Task_Backup::is_b2_configured() ) {
+            $pre_update = RP_Care_Task_Backup::create_b2_backup( [
+                'reason' => 'pre_update',
+                'scopes' => [ 'database', 'config' ],
+            ] );
+            if ( empty( $pre_update['success'] ) ) {
+                return new WP_REST_Response( [
+                    'status'  => 'error',
+                    'message' => 'Backup pre-update falló: ' . ( $pre_update['message'] ?? 'Error desconocido' ) . '. Update abortado por seguridad.',
+                ], 500 );
+            }
+        }
+
         // 4. Download ZIP to temp file.
         $tmp = download_url($zip_url, 60);
         if (is_wp_error($tmp)) {

@@ -1,5 +1,11 @@
 # Changelog — Replanta Care
 
+## [1.15.7]
+
+- hub_update(): backup preventivo pre-update (DB + config) vía B2 antes de aplicar el ZIP
+  - Si B2 está configurado y el backup falla → update abortado con error 500 (seguridad primero)
+  - Si B2 no está configurado → update continúa sin backup (comportamiento previo)
+
 ## [1.15.6]
 
 - integrations-backup: cleanup_b2_old_backups() — limpieza automática de backups en B2 según retención del plan

@@ -438,6 +438,10 @@ class RP_Care_Task_Backup {
     // Backblaze B2 integration
     // -------------------------------------------------------------------------
 
+    public static function is_b2_configured_public(): bool {
+        return self::is_b2_configured();
+    }
+
     private static function is_b2_configured() {
         return !empty(get_option('rpcare_b2_key_id'))
             && !empty(get_option('rpcare_b2_app_key'))

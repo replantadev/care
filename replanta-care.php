@@ -3,7 +3,7 @@
  * Plugin Name: Replanta Care
  * Plugin URI: https://replanta.dev
  * Description: Plugin de mantenimiento WordPress automatizado para clientes de Replanta con integracion Hub
- * Version: 1.15.1
+ * Version: 1.15.2
  * Author: Replanta
  * Author URI: https://replanta.dev
  * License: GPL v2 or later
@@ -17,7 +17,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('RPCARE_VERSION', '1.15.1');
+define('RPCARE_VERSION', '1.15.2');
 define('RPCARE_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('RPCARE_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('RPCARE_PLUGIN_FILE', __FILE__);
@@ -181,12 +181,17 @@ class ReplantaCare {
             }
         }
 
-        // settings-page.php is admin-only: isolate it so a parse error there
-        // never kills cron, REST endpoints, or PUC auto-updates.
+        // settings-page.php and admin-backups.php are admin-only: isolate them
+        // so a parse error there never kills cron, REST endpoints, or PUC auto-updates.
         if ( is_admin() ) {
             $sp = RPCARE_PLUGIN_PATH . 'inc/settings-page.php';
             if ( file_exists( $sp ) ) {
                 require_once $sp;
+            }
+            $ab = RPCARE_PLUGIN_PATH . 'inc/admin-backups.php';
+            if ( file_exists( $ab ) ) {
+                require_once $ab;
+                RP_Care_Admin_Backups::getInstance();
             }
         }
         

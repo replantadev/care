@@ -49,6 +49,28 @@ class RP_Care_REST {
             'permission_callback' => '__return_true',
         ]);
 
+        // ── Hub run task ──────────────────────────────────────────────────────
+        // Called by Plugin Center to dispatch an AS task immediately.
+        register_rest_route($this->control_ns, '/run', [
+            'methods'             => 'POST',
+            'callback'            => [$this, 'hub_run'],
+            'permission_callback' => '__return_true',
+        ]);
+
+        // ── Hub backup list (for Hub-driven UI when client admin may be broken)
+        register_rest_route($this->control_ns, '/backup/list', [
+            'methods'             => 'POST',
+            'callback'            => [$this, 'hub_backup_list'],
+            'permission_callback' => '__return_true',
+        ]);
+
+        // ── Hub-driven restore (control namespace, X-Hub-Token, strict) ───────
+        register_rest_route($this->control_ns, '/backup/restore', [
+            'methods'             => 'POST',
+            'callback'            => [$this, 'hub_backup_restore'],
+            'permission_callback' => '__return_true',
+        ]);
+
         // Main task execution endpoint
         register_rest_route($this->namespace, '/run', [
             'methods' => 'POST',
@@ -1556,6 +1578,101 @@ class RP_Care_REST {
             'from_ver' => $from_ver,
             'to_ver'   => $new_version,
             'message'  => "Actualizado de v{$from_ver} a v{$new_version}",
+        ], 200);
+    }
+
+    /**
+     * POST /wp-json/replanta-care/v1/backup/list
+     * Hub requests the site's backup list. Returns same payload as backup_list().
+     */
+    public function hub_backup_list(WP_REST_Request $request) {
+        if (!$this->validate_hub_token($request, true)) {
+            return new WP_REST_Response(['error' => 'Unauthorized'], 403);
+        }
+        $limit  = max(1, min(50, (int) ($request->get_param('limit') ?: 10)));
+        $result = RP_Care_Task_Backup::list_b2_backups($limit);
+        if (is_wp_error($result)) {
+            return new WP_REST_Response(['error' => $result->get_error_message()], 500);
+        }
+        return new WP_REST_Response($result, 200);
+    }
+
+    /**
+     * POST /wp-json/replanta-care/v1/backup/restore
+     * Hub-driven granular restore — works even when WP admin is broken.
+     * Body: { backup_id: string, scopes: string[] }
+     * Always creates a pre-restore safety backup first.
+     */
+    public function hub_backup_restore(WP_REST_Request $request) {
+        if (!$this->validate_hub_token($request, true)) {
+            return new WP_REST_Response(['error' => 'Unauthorized'], 403);
+        }
+
+        $backup_id = sanitize_key((string) $request->get_param('backup_id'));
+        if (!$backup_id) {
+            return new WP_REST_Response(['error' => 'backup_id requerido'], 400);
+        }
+
+        $scopes = $request->get_param('scopes');
+        if (!is_array($scopes) || empty($scopes)) {
+            $scopes = ['database'];
+        }
+        $scopes = array_map('sanitize_key', $scopes);
+
+        $result = RP_Care_Task_Backup::restore_b2_backup($backup_id, $scopes);
+        if (is_wp_error($result)) {
+            return new WP_REST_Response(['error' => $result->get_error_message()], 500);
+        }
+
+        return new WP_REST_Response($result, $result['success'] ? 200 : 500);
+    }
+
+    /**
+     * POST /wp-json/replanta-care/v1/run
+     * Plugin Center dispatches an Action Scheduler task to run immediately.
+     * Accepted tasks: backup, health, updates, report.
+     */
+    public function hub_run(WP_REST_Request $request) {
+        if (!$this->validate_hub_token($request, true)) {
+            return new WP_REST_Response(['error' => 'Unauthorized'], 403);
+        }
+
+        $allowed = [
+            'backup'  => 'rpcare_task_backup',
+            'health'  => 'rpcare_task_health',
+            'updates' => 'rpcare_task_updates',
+            'report'  => 'rpcare_task_report',
+        ];
+
+        $task = sanitize_key((string) $request->get_param('task'));
+        if (!isset($allowed[$task])) {
+            return new WP_REST_Response([
+                'error'   => 'task_invalid',
+                'message' => 'Tarea no reconocida. Válidas: ' . implode(', ', array_keys($allowed)),
+            ], 400);
+        }
+
+        $hook = $allowed[$task];
+
+        if (function_exists('as_enqueue_async_action')) {
+            $action_id = as_enqueue_async_action($hook, [], 'replanta-care');
+            $method    = 'as_async';
+        } else {
+            do_action($hook);
+            $action_id = null;
+            $method    = 'direct';
+        }
+
+        if (class_exists('RP_Care_Utils')) {
+            RP_Care_Utils::log($task, 'dispatched', "Hub run via REST (method: {$method})");
+        }
+
+        return new WP_REST_Response([
+            'status'    => 'dispatched',
+            'task'      => $task,
+            'hook'      => $hook,
+            'action_id' => $action_id,
+            'method'    => $method,
         ], 200);
     }
 }

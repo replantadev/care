@@ -1555,6 +1555,7 @@ class RP_Care_REST {
 
         // 2. Fall back to WP update mechanism if direct fetch failed.
         if (!$zip_url) {
+            delete_site_option('external_updates-replanta-care'); // Reset PUC internal cache
             delete_site_transient('update_plugins');
             wp_update_plugins();
             $updates = get_site_transient('update_plugins');
@@ -1574,26 +1575,78 @@ class RP_Care_REST {
             ], 200);
         }
 
-        // 4. Install from zip URL directly.
-        $skin     = new WP_Ajax_Upgrader_Skin();
-        $upgrader = new Plugin_Upgrader($skin);
-        $result   = $upgrader->install($zip_url);
-
-        if (is_wp_error($result)) {
-            return new WP_REST_Response([
-                'status'  => 'error',
-                'message' => $result->get_error_message(),
-            ], 500);
+        // 4. Download ZIP to temp file.
+        $tmp = download_url($zip_url, 60);
+        if (is_wp_error($tmp)) {
+            return new WP_REST_Response(['status' => 'error', 'message' => 'Download failed: ' . $tmp->get_error_message()], 500);
         }
 
-        if ($result === false) {
-            $err = $skin->get_errors();
-            $msg = (is_wp_error($err) && $err->get_error_message()) ? $err->get_error_message() : 'Update failed';
-            return new WP_REST_Response(['status' => 'error', 'message' => $msg], 500);
+        // 5. Validate it's a real ZIP (magic bytes PK\x03\x04) — avoids installing an auth-error HTML page.
+        $magic = file_get_contents($tmp, false, null, 0, 4);
+        if ($magic !== "PK\x03\x04") {
+            @unlink($tmp);
+            return new WP_REST_Response(['status' => 'error', 'message' => 'Downloaded file is not a valid ZIP'], 500);
         }
+
+        // 6. ZipArchive + atomic rename — bypasses Plugin_Upgrader hooks (security plugins can block them).
+        $plugin_dir = WP_PLUGIN_DIR . '/replanta-care';
+        $work_dir   = WP_CONTENT_DIR . '/upgrade/rpcare-' . time();
+        $backup_dir = $plugin_dir . '-bkp-' . time();
+        $installed  = false;
+
+        @mkdir($work_dir, 0755, true);
+
+        $zip = new ZipArchive();
+        if ($zip->open($tmp) === true) {
+            $zip->extractTo($work_dir);
+            $zip->close();
+            @unlink($tmp);
+
+            $extracted = $work_dir . '/replanta-care';
+            if (!is_dir($extracted)) {
+                $dirs = glob($work_dir . '/*', GLOB_ONLYDIR);
+                $extracted = !empty($dirs) ? $dirs[0] : '';
+            }
+
+            if ($extracted && is_dir($extracted)) {
+                if (@rename($plugin_dir, $backup_dir)) {
+                    if (@rename($extracted, $plugin_dir)) {
+                        $installed = true;
+                        $this->rmdir_recursive($backup_dir);
+                    } else {
+                        @rename($backup_dir, $plugin_dir); // Rollback
+                    }
+                }
+            }
+
+            $this->rmdir_recursive($work_dir);
+        } else {
+            @unlink($tmp);
+        }
+
+        // 7. Fall back to Plugin_Upgrader if ZipArchive path failed.
+        if (!$installed) {
+            $skin     = new WP_Ajax_Upgrader_Skin();
+            $upgrader = new Plugin_Upgrader($skin);
+            $result   = $upgrader->install($zip_url);
+
+            if (is_wp_error($result)) {
+                return new WP_REST_Response(['status' => 'error', 'message' => $result->get_error_message()], 500);
+            }
+            if ($result === false) {
+                $err = $skin->get_errors();
+                $msg = (is_wp_error($err) && $err->get_error_message()) ? $err->get_error_message() : 'Update failed (ZipArchive + Plugin_Upgrader both failed)';
+                return new WP_REST_Response(['status' => 'error', 'message' => $msg], 500);
+            }
+        }
+
+        // 8. Post-install: reset PUC state and opcache.
+        delete_site_option('external_updates-replanta-care');
+        delete_site_transient('update_plugins');
+        if (function_exists('opcache_reset')) opcache_reset();
 
         if (class_exists('RP_Care_Utils')) {
-            RP_Care_Utils::log('self_update', 'success', "v{$from_ver} → v{$new_version} via Hub");
+            RP_Care_Utils::log('self_update', 'success', "v{$from_ver} → v{$new_version} via Hub (" . ($installed ? 'ZipArchive' : 'Plugin_Upgrader') . ')');
         }
 
         return new WP_REST_Response([
@@ -1602,6 +1655,16 @@ class RP_Care_REST {
             'to_ver'   => $new_version,
             'message'  => "Actualizado de v{$from_ver} a v{$new_version}",
         ], 200);
+    }
+
+    private function rmdir_recursive(string $dir): void {
+        if (!is_dir($dir)) return;
+        foreach (scandir($dir) as $item) {
+            if ($item === '.' || $item === '..') continue;
+            $path = $dir . DIRECTORY_SEPARATOR . $item;
+            is_dir($path) ? $this->rmdir_recursive($path) : @unlink($path);
+        }
+        @rmdir($dir);
     }
 
     /**

@@ -1,5 +1,14 @@
 # Changelog — Replanta Care
 
+## [1.15.4]
+
+- hub_update(): ZipArchive + atomic rename en lugar de Plugin_Upgrader — evita que security plugins (Wordfence, Cerber) bloqueen el update via hooks
+- hub_update(): fallback ZipArchive → Plugin_Upgrader::install() si ZipArchive falla
+- hub_update(): delete_site_option('external_updates-replanta-care') en fallback PUC y post-install — resetea cache interna de PUC (12h)
+- hub_update(): validación magic bytes ZIP antes de instalar — evita instalar respuestas HTML de error de auth
+- hub_update(): post-install opcache_reset() + limpieza de transients PUC
+- Añadido helper privado rmdir_recursive() para limpieza de directorios temporales
+
 ## [1.15.3]
 
 - hub_update(): bypass PUC 12h transient cache — fetch version+zip_url directamente del Hub, instala con Plugin_Upgrader::install() sin depender del mecanismo WP update_plugins

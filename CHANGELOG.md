@@ -1,5 +1,12 @@
 # Changelog — Replanta Care
 
+## [1.15.5]
+
+- hub_ping(): añade backup_last_at, backup_status y updates_pending a la respuesta
+  - backup_last_at: timestamp del último backup completado (rpcare_last_b2_backup o rpcare_last_backup)
+  - backup_status: 'completed' | 'partial' según rpcare_last_b2_backup.status
+  - updates_pending: count de plugins con actualización disponible (get_site_transient update_plugins)
+
 ## [1.15.4]
 
 - hub_update(): ZipArchive + atomic rename en lugar de Plugin_Upgrader — evita que security plugins (Wordfence, Cerber) bloqueen el update via hooks

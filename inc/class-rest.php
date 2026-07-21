@@ -1469,12 +1469,34 @@ class RP_Care_REST {
 
         $plan = class_exists('RP_Care_Plan') ? (RP_Care_Plan::get_current() ?: '') : '';
 
+        // Last backup timestamp (prefer B2 option, fallback to legacy).
+        $b2_data        = get_option('rpcare_last_b2_backup', null);
+        $backup_last_at = '';
+        $backup_status  = '';
+        if (is_array($b2_data) && !empty($b2_data['timestamp'])) {
+            $backup_last_at = gmdate('Y-m-d H:i:s', (int) $b2_data['timestamp']);
+            $backup_status  = $b2_data['status'] ?? 'completed';
+        } elseif ($ts = get_option('rpcare_last_backup', '')) {
+            $backup_last_at = $ts;
+            $backup_status  = 'completed';
+        }
+
+        // Pending plugin updates (cached by WP — no extra HTTP calls).
+        $updates_pending = 0;
+        $update_obj = get_site_transient('update_plugins');
+        if ($update_obj && is_array($update_obj->response ?? null)) {
+            $updates_pending = count($update_obj->response);
+        }
+
         return new WP_REST_Response([
-            'status'     => 'ok',
-            'plugin_ver' => defined('RPCARE_VERSION') ? RPCARE_VERSION : '',
-            'plan'       => $plan,
-            'wp_version' => get_bloginfo('version'),
-            'site_url'   => get_site_url(),
+            'status'          => 'ok',
+            'plugin_ver'      => defined('RPCARE_VERSION') ? RPCARE_VERSION : '',
+            'plan'            => $plan,
+            'wp_version'      => get_bloginfo('version'),
+            'site_url'        => get_site_url(),
+            'backup_last_at'  => $backup_last_at,
+            'backup_status'   => $backup_status,
+            'updates_pending' => $updates_pending,
         ], 200);
     }
 

@@ -1,5 +1,15 @@
 # Changelog — Replanta Care
 
+## [1.15.3]
+
+- hub_update(): bypass PUC 12h transient cache — fetch version+zip_url directamente del Hub, instala con Plugin_Upgrader::install() sin depender del mecanismo WP update_plugins
+
+## [1.15.2]
+
+- REST: nuevas rutas /run, /backup/list, /backup/restore en namespace de control Hub
+- Admin: pagina "Mis Backups" para cliente (admin-backups.php) con restauracion granular BD/Archivos
+- RP_Care_Task_Backup: metodo publico is_b2_configured_public()
+
 ## [1.14.5]
 
 - Admin bar: etiqueta principal "Mantenimiento activo" cuando Care esta conectado al Hub.

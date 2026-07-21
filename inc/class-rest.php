@@ -1522,6 +1522,11 @@ class RP_Care_REST {
      * POST /wp-json/replanta-care/v1/update
      * Triggered by Plugin Center to self-update Care to the latest Hub release.
      * Strict token validation — requires X-Hub-Token.
+     *
+     * Strategy:
+     * 1. Ask the Hub update endpoint for the latest version + download_url directly.
+     * 2. If already on that version → return already_latest.
+     * 3. Otherwise install from the zip URL (bypasses PUC transient cache entirely).
      */
     public function hub_update(WP_REST_Request $request) {
         if (!$this->validate_hub_token($request, true)) {
@@ -1536,25 +1541,43 @@ class RP_Care_REST {
         $plugin_file = 'replanta-care/replanta-care.php';
         $from_ver    = defined('RPCARE_VERSION') ? RPCARE_VERSION : '';
 
-        // Force-refresh update transient so Hub's latest version is seen
-        delete_site_transient('update_plugins');
-        wp_update_plugins();
+        // 1. Fetch update info directly from Hub — bypasses PUC's 12h cache.
+        $update_url  = defined('RPCARE_UPDATE_URL') ? RPCARE_UPDATE_URL : 'https://replanta.net/wp-json/replanta-hub/v1/updates/care';
+        $info_res    = wp_remote_get($update_url, ['timeout' => 15, 'sslverify' => true]);
+        $zip_url     = '';
+        $new_version = '';
 
-        $updates = get_site_transient('update_plugins');
+        if (!is_wp_error($info_res) && wp_remote_retrieve_response_code($info_res) === 200) {
+            $info        = json_decode(wp_remote_retrieve_body($info_res), true);
+            $new_version = $info['version']      ?? '';
+            $zip_url     = $info['download_url'] ?? '';
+        }
 
-        if (empty($updates->response[$plugin_file])) {
+        // 2. Fall back to WP update mechanism if direct fetch failed.
+        if (!$zip_url) {
+            delete_site_transient('update_plugins');
+            wp_update_plugins();
+            $updates = get_site_transient('update_plugins');
+            if (!empty($updates->response[$plugin_file])) {
+                $new_version = $updates->response[$plugin_file]->new_version ?? '';
+                $zip_url     = $updates->response[$plugin_file]->package     ?? '';
+            }
+        }
+
+        // 3. Already on latest?
+        if (!$zip_url || !$new_version || version_compare($from_ver, $new_version, '>=')) {
             return new WP_REST_Response([
                 'status'     => 'already_latest',
                 'plugin_ver' => $from_ver,
+                'latest'     => $new_version ?: $from_ver,
                 'message'    => "Ya en la versión más reciente ({$from_ver})",
             ], 200);
         }
 
-        $new_version = $updates->response[$plugin_file]->new_version ?? '';
-
+        // 4. Install from zip URL directly.
         $skin     = new WP_Ajax_Upgrader_Skin();
         $upgrader = new Plugin_Upgrader($skin);
-        $result   = $upgrader->upgrade($plugin_file);
+        $result   = $upgrader->install($zip_url);
 
         if (is_wp_error($result)) {
             return new WP_REST_Response([

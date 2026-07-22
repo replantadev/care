@@ -1,5 +1,15 @@
 # Changelog — Replanta Care
 
+## [1.15.10]
+
+- hub_ping(): añade notification_channels al response (qué canales están configurados, sin URLs)
+- hub_ping(): dispara rpcare_notify('ssl_expiry_soon') cuando ssl_days_left < 30 (throttle 7d)
+- hub_update(): dispara rpcare_notify('update_applied') en actualización exitosa de Care
+- hub_update(): dispara rpcare_notify('update_failed') en error del Plugin_Upgrader
+- Nuevo endpoint POST /replanta-care/v1/notify-test: envía notificación de prueba en todos los canales
+  configurados; throttle propio 60s; devuelve status=no_channels si nada configurado
+- RP_Care_Notifier: añade evento 'test' (label Prueba de notificación · emoji 🔔 · throttle 60s)
+
 ## [1.15.9]
 
 - RP_Care_Notifier: nuevo sistema de notificaciones multi-canal

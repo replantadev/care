@@ -49,6 +49,12 @@ class RP_Care_REST {
             'permission_callback' => '__return_true',
         ]);
 
+        register_rest_route($this->control_ns, '/notify-test', [
+            'methods'             => 'POST',
+            'callback'            => [$this, 'hub_notify_test'],
+            'permission_callback' => '__return_true',
+        ]);
+
         // ── Hub run task ──────────────────────────────────────────────────────
         // Called by Plugin Center to dispatch an AS task immediately.
         register_rest_route($this->control_ns, '/run', [
@@ -1532,18 +1538,31 @@ class RP_Care_REST {
             $backup_stale = true; // activated but no backup ever recorded
         }
 
+        // SSL expiry notification — fire when < 30 days; throttled 7d in notifier.
+        if ($ssl_days_left !== null && $ssl_days_left > 0 && $ssl_days_left < 30) {
+            do_action('rpcare_notify', 'ssl_expiry_soon', [
+                'days_left'  => $ssl_days_left,
+                'expires_at' => $ssl_expires_at,
+            ]);
+        }
+
+        // Which notification channels are configured (no URLs — metadata only).
+        $notif_cfg      = get_option('rpcare_notification_config', []);
+        $notif_channels = array_keys(array_filter($notif_cfg));
+
         return new WP_REST_Response([
-            'status'          => 'ok',
-            'plugin_ver'      => defined('RPCARE_VERSION') ? RPCARE_VERSION : '',
-            'plan'            => $plan,
-            'wp_version'      => get_bloginfo('version'),
-            'site_url'        => get_site_url(),
-            'backup_last_at'  => $backup_last_at,
-            'backup_status'   => $backup_status,
-            'backup_stale'    => $backup_stale,
-            'updates_pending' => $updates_pending,
-            'ssl_expires_at'  => $ssl_expires_at,
-            'ssl_days_left'   => $ssl_days_left,
+            'status'               => 'ok',
+            'plugin_ver'           => defined('RPCARE_VERSION') ? RPCARE_VERSION : '',
+            'plan'                 => $plan,
+            'wp_version'           => get_bloginfo('version'),
+            'site_url'             => get_site_url(),
+            'backup_last_at'       => $backup_last_at,
+            'backup_status'        => $backup_status,
+            'backup_stale'         => $backup_stale,
+            'updates_pending'      => $updates_pending,
+            'ssl_expires_at'       => $ssl_expires_at,
+            'ssl_days_left'        => $ssl_days_left,
+            'notification_channels'=> $notif_channels,
         ], 200);
     }
 
@@ -1744,11 +1763,13 @@ class RP_Care_REST {
             $result   = $upgrader->install($zip_url);
 
             if (is_wp_error($result)) {
+                do_action('rpcare_notify', 'update_failed', ['message' => $result->get_error_message()]);
                 return new WP_REST_Response(['status' => 'error', 'message' => $result->get_error_message()], 500);
             }
             if ($result === false) {
                 $err = $skin->get_errors();
                 $msg = (is_wp_error($err) && $err->get_error_message()) ? $err->get_error_message() : 'Update failed (ZipArchive + Plugin_Upgrader both failed)';
+                do_action('rpcare_notify', 'update_failed', ['message' => $msg]);
                 return new WP_REST_Response(['status' => 'error', 'message' => $msg], 500);
             }
         }
@@ -1762,11 +1783,49 @@ class RP_Care_REST {
             RP_Care_Utils::log('self_update', 'success', "v{$from_ver} → v{$new_version} via Hub (" . ($installed ? 'ZipArchive' : 'Plugin_Upgrader') . ')');
         }
 
+        do_action('rpcare_notify', 'update_applied', [
+            'count'   => 1,
+            'plugins' => ["replanta-care: v{$from_ver} → v{$new_version}"],
+        ]);
+
         return new WP_REST_Response([
             'status'   => 'updated',
             'from_ver' => $from_ver,
             'to_ver'   => $new_version,
             'message'  => "Actualizado de v{$from_ver} a v{$new_version}",
+        ], 200);
+    }
+
+    /**
+     * POST /wp-json/replanta-care/v1/notify-test
+     * Sends a test notification on all configured channels. No throttle bypass — uses a 60s TTL
+     * so spam-clicking "Probar" from PC won't flood channels.
+     */
+    public function hub_notify_test(WP_REST_Request $request) {
+        if (!$this->validate_hub_token($request, true)) {
+            return new WP_REST_Response(['error' => 'Unauthorized'], 403);
+        }
+
+        $cfg = get_option('rpcare_notification_config', []);
+        if (empty(array_filter($cfg))) {
+            return new WP_REST_Response([
+                'status'  => 'no_channels',
+                'message' => 'No hay canales de notificación configurados.',
+            ], 200);
+        }
+
+        // Clear the per-test throttle so the test always fires (own 60s TTL in notifier).
+        delete_transient('rpcare_nthrottle_test');
+
+        do_action('rpcare_notify', 'test', [
+            'message' => 'Notificación de prueba enviada desde Replanta Care.',
+        ]);
+
+        $channels = array_keys(array_filter($cfg));
+        return new WP_REST_Response([
+            'status'   => 'sent',
+            'channels' => $channels,
+            'message'  => 'Enviado a: ' . implode(', ', $channels),
         ], 200);
     }
 

@@ -20,6 +20,7 @@ class RP_Care_Notifier {
         'update_failed'   => 7200,    // 2h
         'ssl_expiry_soon' => 604800,  // 7d — weekly reminder is enough
         'site_down'       => 3600,    // 1h
+        'test'            => 60,      // 1min — prevent accidental double-send
     ];
 
     private static array $labels = [
@@ -28,6 +29,7 @@ class RP_Care_Notifier {
         'update_failed'   => 'Actualización fallida',
         'ssl_expiry_soon' => 'SSL próximo a caducar',
         'site_down'       => 'Site caído',
+        'test'            => 'Prueba de notificación',
     ];
 
     private static array $emoji = [
@@ -36,6 +38,7 @@ class RP_Care_Notifier {
         'update_failed'   => '🔴',
         'ssl_expiry_soon' => '🔐',
         'site_down'       => '🚨',
+        'test'            => '🔔',
     ];
 
     /**

@@ -104,12 +104,15 @@ class RP_Care_Scheduler {
 
         // Schedule health checks (all plans)
         $this->maybe_schedule('rpcare_task_health', 'daily');
-        
+
         // Schedule 404 cleanup
         $this->maybe_schedule('rpcare_task_404_cleanup', 'weekly');
-        
+
         // Schedule daily maintenance (log rotation, transient cleanup, old backups)
         $this->maybe_schedule('rpcare_task_maintenance', 'daily');
+
+        // Monthly WP DB cleanup (revisions, trash, spam, orphan meta, expired transients)
+        $this->maybe_schedule('rpcare_task_db_cleanup', 'monthly');
         
         // Schedule reports based on plan
         $this->maybe_schedule('rpcare_task_report', 'monthly');
@@ -249,6 +252,9 @@ class RP_Care_Scheduler {
         // Daily maintenance / cleanup
         add_filter('rpcare_task_maintenance', ['RP_Care_Utils', 'cleanup_all']);
 
+        // Monthly WP DB cleanup
+        add_filter('rpcare_task_db_cleanup', ['RP_Care_Utils', 'db_cleanup_wp']);
+
         // On-demand only (no recurring schedule)
         add_filter('rpcare_task_cloudflare_configure', ['RP_Care_Task_Cloudflare', 'configure']);
         add_filter('rpcare_task_orphan_media', ['RP_Care_Task_OrphanMedia', 'scan']);
@@ -275,6 +281,7 @@ class RP_Care_Scheduler {
             'rpcare_task_report',
             'rpcare_task_cwv',
             'rpcare_task_anomaly',
+            'rpcare_task_db_cleanup',
             'rpcare_task_checkout_monitor',
             'rpcare_task_peak_scheduler',
             'rpcare_task_revenue_anomaly',

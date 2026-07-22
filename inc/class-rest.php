@@ -1488,6 +1488,50 @@ class RP_Care_REST {
             $updates_pending = count($update_obj->response);
         }
 
+        // SSL certificate expiry — non-blocking, 10s timeout, cached 12h.
+        $ssl_expires_at = '';
+        $ssl_days_left  = null;
+        $ssl_cache_key  = 'rpcare_ssl_expiry';
+        $ssl_cached     = get_transient($ssl_cache_key);
+        if (false !== $ssl_cached) {
+            $ssl_expires_at = $ssl_cached['expires_at'] ?? '';
+            $ssl_days_left  = $ssl_cached['days_left']  ?? null;
+        } elseif (function_exists('openssl_x509_parse')) {
+            $host = wp_parse_url(get_site_url(), PHP_URL_HOST);
+            if ($host && 'https' === wp_parse_url(get_site_url(), PHP_URL_SCHEME)) {
+                $ctx  = stream_context_create(['ssl' => [
+                    'capture_peer_cert'  => true,
+                    'verify_peer'        => false,
+                    'verify_peer_name'   => false,
+                ]]);
+                $conn = @stream_socket_client("ssl://{$host}:443", $errno, $errstr, 10, STREAM_CLIENT_CONNECT, $ctx);
+                if ($conn) {
+                    $params = stream_context_get_params($conn);
+                    $cert   = $params['options']['ssl']['peer_certificate'] ?? null;
+                    if ($cert) {
+                        $parsed   = openssl_x509_parse($cert);
+                        $valid_to = $parsed['validTo_time_t'] ?? 0;
+                        if ($valid_to > 0) {
+                            $ssl_expires_at = gmdate('Y-m-d', $valid_to);
+                            $ssl_days_left  = (int) ceil(($valid_to - time()) / DAY_IN_SECONDS);
+                        }
+                    }
+                    fclose($conn);
+                }
+                set_transient($ssl_cache_key, ['expires_at' => $ssl_expires_at, 'days_left' => $ssl_days_left], 12 * HOUR_IN_SECONDS);
+            }
+        }
+
+        // Backup stale: compare last backup age against plan threshold.
+        $stale_cfg    = class_exists('RP_Care_Plan') ? (RP_Care_Plan::get_plan_config($plan)['backup_stale_threshold_h'] ?? 192) : 192;
+        $backup_stale = false;
+        if ($backup_last_at) {
+            $age_h        = (time() - strtotime($backup_last_at)) / HOUR_IN_SECONDS;
+            $backup_stale = $age_h > $stale_cfg;
+        } elseif (get_option('rpcare_activated')) {
+            $backup_stale = true; // activated but no backup ever recorded
+        }
+
         return new WP_REST_Response([
             'status'          => 'ok',
             'plugin_ver'      => defined('RPCARE_VERSION') ? RPCARE_VERSION : '',
@@ -1496,7 +1540,10 @@ class RP_Care_REST {
             'site_url'        => get_site_url(),
             'backup_last_at'  => $backup_last_at,
             'backup_status'   => $backup_status,
+            'backup_stale'    => $backup_stale,
             'updates_pending' => $updates_pending,
+            'ssl_expires_at'  => $ssl_expires_at,
+            'ssl_days_left'   => $ssl_days_left,
         ], 200);
     }
 
@@ -1518,12 +1565,24 @@ class RP_Care_REST {
             $updated['b2_config'] = $b2_saved;
         }
 
-        // Plan override
+        // Plan override — reschedule AS jobs when plan changes (backup + update frequency differ)
         $plan = $request->get_param('plan');
         if ($plan && class_exists('RP_Care_Plan') && RP_Care_Plan::is_valid_plan($plan)) {
             $old = RP_Care_Plan::get_current();
             RP_Care_Plan::set_current($plan);
             $updated['plan'] = ['old' => $old, 'new' => $plan];
+
+            if ($old !== $plan && class_exists('RP_Care_Scheduler')) {
+                $plan_hooks = ['rpcare_task_backup', 'rpcare_task_updates'];
+                foreach ($plan_hooks as $hook) {
+                    if (function_exists('as_unschedule_all_actions')) {
+                        as_unschedule_all_actions($hook, [], 'replanta-care');
+                    }
+                    wp_clear_scheduled_hook($hook);
+                }
+                $scheduler = new RP_Care_Scheduler($plan);
+                $scheduler->ensure();
+            }
         }
 
         // Update window

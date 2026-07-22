@@ -103,6 +103,7 @@ class RP_Care_Plan {
             'price' => '49€/mes',
             'updates' => 'monthly',
             'backups' => 'weekly',
+            'backup_stale_threshold_h' => 192, // 8 days — stale if >8d without backup
             'wpo' => 'basic',
             'reviews' => 'quarterly',
             'monitoring' => false,
@@ -121,6 +122,7 @@ class RP_Care_Plan {
             'updates' => 'weekly',
             'backups' => 'daily',
             'backup_retention_days' => 30,
+            'backup_stale_threshold_h' => 26, // SLA: alerta si >26h sin backup
             'wpo' => 'advanced',
             'reviews' => 'monthly',
             'monitoring' => true,
@@ -138,8 +140,9 @@ class RP_Care_Plan {
             'name' => 'Ecosistema',
             'price' => '149€/mes',
             'updates' => 'weekly',
-            'backups' => 'daily',
+            'backups' => 'twicedaily',
             'backup_retention_days' => 60,
+            'backup_stale_threshold_h' => 14, // 2x día: stale si >14h sin backup
             'wpo' => 'premium',
             'reviews' => 'quarterly_audit',
             'monitoring' => true,

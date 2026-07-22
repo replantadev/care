@@ -1,5 +1,20 @@
 # Changelog — Replanta Care
 
+## [1.15.8]
+
+- hub_ping(): añade ssl_expires_at + ssl_days_left (check cert SSL del propio site, caché 12h)
+- hub_ping(): añade backup_stale (bool) — true si el último backup supera el umbral del plan
+  - Semilla: stale si >8 días sin backup
+  - Raíz: stale si >26 horas sin backup (SLA)
+  - Ecosistema: stale si >14 horas sin backup (2× día)
+- hub_config(): reschedule AS jobs (backup + updates) al cambiar de plan — evita que la
+  frecuencia anterior quede activa tras el cambio
+- class-plan: Ecosistema backups → twicedaily (era daily)
+- class-plan: añade backup_stale_threshold_h por plan
+- class-scheduler: añade rpcare_task_db_cleanup (mensual) → RP_Care_Utils::db_cleanup_wp
+- class-utils: db_cleanup_wp() — limpieza WP DB: revisiones, trash, spam, meta huérfana,
+  transients expirados
+
 ## [1.15.7]
 
 - hub_update(): backup preventivo pre-update (DB + config) vía B2 antes de aplicar el ZIP

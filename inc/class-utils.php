@@ -130,6 +130,70 @@ class RP_Care_Utils {
     }
 
     /**
+     * Monthly WP database cleanup: revisions, trash, spam, orphan meta, expired transients.
+     * Scheduled via rpcare_task_db_cleanup (Action Scheduler, monthly).
+     */
+    public static function db_cleanup_wp($args = []) {
+        global $wpdb;
+        $deleted = [];
+
+        // Post revisions
+        $deleted['revisions'] = (int) $wpdb->query(
+            "DELETE FROM {$wpdb->posts} WHERE post_type = 'revision'"
+        );
+
+        // Auto-drafts older than 7 days
+        $deleted['auto_drafts'] = (int) $wpdb->query(
+            "DELETE FROM {$wpdb->posts} WHERE post_status = 'auto-draft'
+             AND post_modified < DATE_SUB(NOW(), INTERVAL 7 DAY)"
+        );
+
+        // Trashed posts older than 30 days
+        $deleted['trash_posts'] = (int) $wpdb->query(
+            "DELETE FROM {$wpdb->posts} WHERE post_status = 'trash'
+             AND post_modified < DATE_SUB(NOW(), INTERVAL 30 DAY)"
+        );
+
+        // Spam and trashed comments
+        $deleted['spam_comments'] = (int) $wpdb->query(
+            "DELETE FROM {$wpdb->comments} WHERE comment_approved IN ('spam', 'trash')"
+        );
+
+        // Orphan postmeta (post_id has no matching post)
+        $deleted['orphan_postmeta'] = (int) $wpdb->query(
+            "DELETE pm FROM {$wpdb->postmeta} pm
+             LEFT JOIN {$wpdb->posts} p ON pm.post_id = p.ID
+             WHERE p.ID IS NULL"
+        );
+
+        // Orphan commentmeta
+        $deleted['orphan_commentmeta'] = (int) $wpdb->query(
+            "DELETE cm FROM {$wpdb->commentmeta} cm
+             LEFT JOIN {$wpdb->comments} c ON cm.comment_id = c.comment_ID
+             WHERE c.comment_ID IS NULL"
+        );
+
+        // All expired transients (WP global, not just rpcare_)
+        $now = time();
+        $expired = $wpdb->get_col($wpdb->prepare(
+            "SELECT option_name FROM {$wpdb->options}
+             WHERE option_name LIKE '_transient_timeout_%'
+             AND CAST(option_value AS UNSIGNED) < %d",
+            $now
+        ));
+        $deleted['expired_transients'] = 0;
+        foreach ($expired as $timeout_key) {
+            $transient_key = str_replace('_transient_timeout_', '_transient_', $timeout_key);
+            $wpdb->delete($wpdb->options, ['option_name' => $timeout_key]);
+            $wpdb->delete($wpdb->options, ['option_name' => $transient_key]);
+            $deleted['expired_transients']++;
+        }
+
+        self::log('db_cleanup', 'success', 'WP DB cleanup completed', $deleted);
+        return $deleted;
+    }
+
+    /**
      * Remove expired transients that belong to this plugin.
      */
     public static function clean_expired_transients() {

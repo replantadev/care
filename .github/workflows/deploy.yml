@@ -148,18 +148,18 @@ jobs:
 
       - name: Notify Hub to cache zip and refresh care-info.json
         env:
-          HUB_DEPLOY_TOKEN: ${{ secrets.HUB_DEPLOY_TOKEN }}
+          REPLANTA_API_TOKEN: ${{ secrets.REPLANTA_API_TOKEN }}
         run: |
           VERSION=${{ steps.meta.outputs.version }}
 
-          if [ -z "$HUB_DEPLOY_TOKEN" ]; then
-            echo "ERROR: HUB_DEPLOY_TOKEN secret not configured"
+          if [ -z "$REPLANTA_API_TOKEN" ]; then
+            echo "ERROR: REPLANTA_API_TOKEN secret not configured"
             exit 1
           fi
 
           RESPONSE=$(curl -s -o /tmp/hub_response.json -w "%{http_code}" \
             -X POST "https://replanta.net/wp-json/replanta-hub/v1/deploy/care?version=${VERSION}" \
-            -H "X-Deploy-Token: ${HUB_DEPLOY_TOKEN}" \
+            -H "X-Deploy-Token: ${REPLANTA_API_TOKEN}" \
             --max-time 30 --retry 3 --retry-delay 5)
 
           echo "Hub response HTTP $RESPONSE:"

@@ -1,5 +1,16 @@
 # Changelog — Replanta Care
 
+## [1.15.11]
+
+- task-updates: force-refresh `update_core` transient + `wp_version_check()` antes de comprobar actualizaciones de WP core (mismo patrón que plugins — evita quedarse con el transient stale semanas)
+- task-updates: escribe `rpcare_last_update` además de `rpcare_last_update_check` — corrige widget de dashboard que leía el nombre incorrecto y siempre mostraba "Pendiente"
+- task-updates: devuelve `success`, `updated_plugins` y `wp_updated` en el resultado — corrige el wrapper de notificaciones en class-scheduler que no encontraba estas claves y nunca disparaba rpcare_notify tras actualizaciones
+- task-updates: `health_check()` dividida en `health_check()` + `check_single_url()` — para page builders (Elementor, Divi, Beaver, etc.) activa modo extendido: comprueba home + una inner page + WC shop si existe
+- task-updates: añade marcador `Elementor detected some incompatible` a los error markers del health check
+- class-client-portal: nuevo método `renderBackupsSection()` — muestra puntos de restauración B2 con panel de restore inline (reutiliza AJAX `rpcare_bk_list` + `rpcare_bk_restore` de admin-backups)
+- class-client-portal: nuevo método `renderPluginVersionsSection()` — carga async (wp_ajax_rpcare_plugin_versions) versiones instaladas vs disponibles de plugins Replanta (care, ai-chat, sap-woo-suite, plugin-center)
+- class-client-portal: nuevo handler AJAX `ajaxPluginVersions()` — detecta plugins Replanta por TextDomain/AuthorURI, cruza con transient update_plugins, devuelve JSON sin llamadas externas
+
 ## [1.15.10]
 
 - hub_ping(): añade notification_channels al response (qué canales están configurados, sin URLs)

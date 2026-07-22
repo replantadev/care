@@ -29,6 +29,7 @@ class RP_Care_Client_Portal {
 
     private function __construct() {
         add_action('admin_menu', [$this, 'registerMenus'], 5);
+        add_action('wp_ajax_rpcare_plugin_versions', [$this, 'ajaxPluginVersions']);
     }
 
     // -------------------------------------------------------------------------
@@ -71,6 +72,8 @@ class RP_Care_Client_Portal {
             <?php $this->renderStatsStrip($d); ?>
             <?php $this->renderCards($d); ?>
             <?php $this->renderEcommerceSection($d); ?>
+            <?php $this->renderBackupsSection(); ?>
+            <?php $this->renderPluginVersionsSection(); ?>
             <?php $this->renderTimeline($d); ?>
             <?php $this->renderFooterRow($d); ?>
 
@@ -690,6 +693,178 @@ class RP_Care_Client_Portal {
             $label = round($diff / 86400) . ' días';
         }
         return $prefix . $label;
+    }
+
+    // -------------------------------------------------------------------------
+    // AJAX: Replanta plugin versions
+    // -------------------------------------------------------------------------
+
+    public function ajaxPluginVersions() {
+        check_ajax_referer('rpcare_ajax', 'nonce');
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('Forbidden', 403);
+        }
+        if (!function_exists('get_plugins')) {
+            require_once ABSPATH . 'wp-admin/includes/plugin.php';
+        }
+        $all_plugins = get_plugins();
+        $updates     = get_site_transient('update_plugins');
+        $replanta    = [];
+        foreach ($all_plugins as $file => $data) {
+            $td = $data['TextDomain'] ?? '';
+            $au = $data['AuthorURI']  ?? '';
+            if (!in_array($td, ['replanta-care', 'replanta-ai-chat', 'sap-woo-suite', 'plugin-center'], true)
+                && stripos($au, 'replanta') === false) {
+                continue;
+            }
+            $available  = $updates->response[$file]->new_version ?? null;
+            $replanta[] = [
+                'file'       => $file,
+                'name'       => $data['Name'],
+                'version'    => $data['Version'],
+                'available'  => $available,
+                'up_to_date' => $available === null || version_compare($data['Version'], $available, '>='),
+            ];
+        }
+        wp_send_json_success(['plugins' => $replanta]);
+    }
+
+    // -------------------------------------------------------------------------
+    // Sección: puntos de restauración
+    // -------------------------------------------------------------------------
+
+    private function renderBackupsSection() {
+        $b2_ok    = class_exists('RP_Care_Task_Backup') && RP_Care_Task_Backup::is_b2_configured_public();
+        $nonce    = wp_create_nonce('rpcare_bk');
+        $ajax_url = admin_url('admin-ajax.php');
+        ?>
+        <div class="rcp-card rcp-card-wide" style="margin-top:16px">
+            <h2 class="rcp-card-h" style="display:flex;align-items:center">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px;margin-right:8px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Puntos de restauraci&oacute;n
+                <a href="<?php echo esc_url(admin_url('admin.php?page=replanta-care-backups')); ?>"
+                   style="margin-left:auto;font-size:11px;font-weight:400;color:var(--rp-teal);text-decoration:none">
+                    Abrir p&aacute;gina completa &rarr;
+                </a>
+            </h2>
+
+            <?php if (!$b2_ok): ?>
+            <p style="font-size:13px;color:var(--rp-muted)">
+                Los backups en Backup externo Replanta no est&aacute;n configurados a&uacute;n.
+                Contacta con Replanta para activarlos.
+            </p>
+            <?php else: ?>
+            <div id="rcp-bk-status" style="display:none;padding:8px 12px;margin-bottom:10px;border-radius:6px;font-size:13px"></div>
+            <div id="rcp-bk-list"><p style="color:var(--rp-muted);font-size:13px">Cargando&hellip;</p></div>
+
+            <script>
+            (function($){
+                var nonce   = <?php echo wp_json_encode($nonce); ?>;
+                var ajaxUrl = <?php echo wp_json_encode($ajax_url); ?>;
+                var scopeLabel = {database:'BD',uploads:'Archivos',plugins:'Plugins',themes:'Temas',config:'Config'};
+                function fmtDate(s){
+                    if(!s) return '—';
+                    return new Date(s.replace(' ','T')+'Z').toLocaleString('es-ES',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
+                }
+                function fmtSize(b){
+                    if(!b) return '—';
+                    return b>1048576?(b/1048576).toFixed(1)+' MB':(b/1024).toFixed(0)+' KB';
+                }
+                function showStatus(msg,type){
+                    var el=$('#rcp-bk-status'), colors={ok:['rgba(74,222,128,0.12)','var(--rp-ok)','rgba(74,222,128,0.3)'],err:['rgba(248,113,113,0.12)','var(--rp-fail)','rgba(248,113,113,0.3)'],info:['rgba(251,191,36,0.1)','var(--rp-warn)','rgba(251,191,36,0.3)']};
+                    var c=colors[type]||colors.info;
+                    el.css({display:'block',background:c[0],color:c[1],border:'1px solid '+c[2]}).html(msg);
+                }
+                function loadBackups(){
+                    $.post(ajaxUrl,{action:'rpcare_bk_list',nonce:nonce,limit:5},function(res){
+                        if(!res.success||!res.data.backups||!res.data.backups.length){
+                            $('#rcp-bk-list').html('<p style="color:var(--rp-muted);font-size:13px">Sin puntos de restauraci&oacute;n disponibles a&uacute;n.</p>');
+                            return;
+                        }
+                        var bks=res.data.backups, html='<div style="overflow-x:auto"><table class="rcp-bk-tbl"><thead><tr><th>Fecha</th><th>Estado</th><th>Componentes</th><th>Tama&ntilde;o</th><th></th></tr></thead><tbody>';
+                        bks.forEach(function(bk,i){
+                            var scopes=(bk.artifacts||[]).map(function(a){return a.scope;}).filter(function(s){return s!=='manifest';});
+                            var badge=bk.status==='completed'?'<span class="rcp-badge-ok">Completo</span>':'<span class="rcp-badge-part">Parcial</span>';
+                            var sc_html=scopes.map(function(s){return '<span class="rcp-scope">'+(scopeLabel[s]||s)+'</span>';}).join('');
+                            html+='<tr><td>'+fmtDate(bk.created_at)+'</td><td>'+badge+'</td><td>'+(sc_html||'—')+'</td><td>'+fmtSize(bk.size)+'</td><td><button class="rcp-bk-open" data-i="'+i+'" style="background:none;border:1px solid var(--rp-border);color:var(--rp-teal);padding:3px 10px;border-radius:6px;cursor:pointer;font-size:12px">Restaurar ↓</button></td></tr>';
+                            html+='<tr id="rcp-bkp-'+i+'" style="display:none"><td colspan="5" style="background:rgba(147,241,201,0.04);border-top:1px dashed var(--rp-border);padding:12px 16px"><p style="margin:0 0 8px;font-size:13px;font-weight:600;color:var(--rp-text)">¿Qu&eacute; restaurar?</p><div style="display:flex;gap:8px;flex-wrap:wrap">';
+                            if(scopes.indexOf('database')>=0) html+='<button class="rcp-do-restore" data-bid="'+bk.id+'" data-scopes="database" style="background:var(--rp-teal);color:#fff;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px">Restaurar BD</button>';
+                            if(scopes.indexOf('uploads')>=0) html+='<button class="rcp-do-restore" data-bid="'+bk.id+'" data-scopes="uploads" style="background:rgba(147,241,201,0.15);color:var(--rp-text);border:1px solid var(--rp-border);padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px">Restaurar Archivos</button>';
+                            if(scopes.indexOf('database')>=0&&scopes.indexOf('uploads')>=0) html+='<button class="rcp-do-restore" data-bid="'+bk.id+'" data-scopes="database,uploads" style="background:rgba(147,241,201,0.15);color:var(--rp-text);border:1px solid var(--rp-border);padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px">BD + Archivos</button>';
+                            html+='</div><p style="margin:8px 0 0;font-size:11px;color:var(--rp-muted)">Se crear&aacute; un backup previo autom&aacute;tico antes de restaurar.</p></td></tr>';
+                        });
+                        html+='</tbody></table></div>';
+                        $('#rcp-bk-list').html(html);
+                        $('.rcp-bk-open').on('click',function(){
+                            var i=$(this).data('i'), row=$('#rcp-bkp-'+i), open=row.is(':visible');
+                            row.toggle(!open); $(this).text(open?'Restaurar ↓':'Cerrar ↑');
+                        });
+                        $('.rcp-do-restore').on('click',function(){
+                            var bid=$(this).data('bid'), scopes=$(this).data('scopes');
+                            if(!confirm('¿Restaurar '+scopes+' desde backup '+bid+'?\n\nSobrescribirá datos actuales.')) return;
+                            var me=$(this).prop('disabled',true).text('Restaurando…');
+                            showStatus('<span style="opacity:.7">Restaurando…</span>','info');
+                            $.post(ajaxUrl,{action:'rpcare_bk_restore',nonce:nonce,backup_id:bid,scopes:scopes.split(',')},function(res){
+                                me.prop('disabled',false).text(scopes);
+                                if(res.success) showStatus('&#10003; Restauraci&oacute;n completada correctamente.','ok');
+                                else showStatus('&#10007; '+(res.data||'Error en la restauraci&oacute;n'),'err');
+                            }).fail(function(){ me.prop('disabled',false).text(scopes); showStatus('&#10007; Error de red.','err'); });
+                        });
+                    }).fail(function(){ $('#rcp-bk-list').html('<p style="color:var(--rp-fail);font-size:13px">Error al cargar los backups.</p>'); });
+                }
+                $(document).ready(loadBackups);
+            })(jQuery);
+            </script>
+            <style>
+            .rcp-bk-tbl{width:100%;border-collapse:collapse;font-size:13px;color:var(--rp-text)}
+            .rcp-bk-tbl th{text-align:left;padding:8px 10px;color:var(--rp-muted);font-size:11px;text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid var(--rp-border)}
+            .rcp-bk-tbl td{padding:8px 10px;border-bottom:1px solid var(--rp-border);vertical-align:middle}
+            .rcp-bk-tbl tbody tr:hover>td{background:rgba(147,241,201,0.03)}
+            .rcp-badge-ok{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:rgba(74,222,128,0.15);color:var(--rp-ok)}
+            .rcp-badge-part{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:rgba(251,191,36,0.15);color:var(--rp-warn)}
+            .rcp-scope{display:inline-block;padding:1px 6px;border-radius:6px;font-size:11px;background:rgba(147,241,201,0.1);color:var(--rp-teal);margin:1px}
+            </style>
+            <?php endif; ?>
+        </div>
+        <?php
+    }
+
+    // -------------------------------------------------------------------------
+    // Sección: versiones de plugins Replanta (async)
+    // -------------------------------------------------------------------------
+
+    private function renderPluginVersionsSection() {
+        $nonce = wp_create_nonce('rpcare_ajax');
+        ?>
+        <div class="rcp-card rcp-card-wide" style="margin-top:16px">
+            <h2 class="rcp-card-h">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px;margin-right:8px"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                Plugins Replanta instalados
+            </h2>
+            <div id="rcp-ver-list" style="color:var(--rp-muted);font-size:13px">Cargando&hellip;</div>
+        </div>
+        <script>
+        (function($){
+            $.post(ajaxurl,{action:'rpcare_plugin_versions',nonce:<?php echo wp_json_encode($nonce); ?>},function(res){
+                if(!res.success||!res.data.plugins.length){
+                    $('#rcp-ver-list').html('<p>No se detectaron plugins Replanta en este sitio.</p>'); return;
+                }
+                var html='<div style="display:flex;flex-wrap:wrap;gap:10px">';
+                res.data.plugins.forEach(function(p){
+                    var badge=p.up_to_date
+                        ? '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:rgba(74,222,128,0.15);color:var(--rp-ok)">Al d&iacute;a</span>'
+                        : '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:rgba(251,191,36,0.15);color:var(--rp-warn)">&rarr; v'+p.available+' disponible</span>';
+                    html+='<div style="flex:1;min-width:190px;padding:12px 14px;background:rgba(147,241,201,0.04);border:1px solid var(--rp-border);border-radius:10px">';
+                    html+='<div style="font-size:12px;font-weight:600;color:var(--rp-text);margin-bottom:4px">'+p.name+'</div>';
+                    html+='<div style="font-size:12px;color:var(--rp-muted)">v'+p.version+' '+badge+'</div>';
+                    html+='</div>';
+                });
+                html+='</div>';
+                $('#rcp-ver-list').html(html);
+            }).fail(function(){ $('#rcp-ver-list').html('<p>Error al cargar versiones.</p>'); });
+        })(jQuery);
+        </script>
+        <?php
     }
 
     // -------------------------------------------------------------------------

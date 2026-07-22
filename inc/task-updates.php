@@ -111,10 +111,27 @@ class RP_Care_Task_Updates {
         );
 
         update_option('rpcare_last_update_check', current_time('mysql'));
+        update_option('rpcare_last_update', current_time('mysql'));
 
         self::check_critical_updates($results);
 
-        return $results;
+        $updated_plugin_names = [];
+        foreach ($results['plugins'] as $file => $r) {
+            if (!empty($r['updated'])) {
+                $updated_plugin_names[] = ($r['name'] ?? $file) . (!empty($r['new_version']) ? ' → v' . $r['new_version'] : '');
+            }
+        }
+        foreach ($results['themes'] as $slug => $r) {
+            if (!empty($r['updated'])) {
+                $updated_plugin_names[] = ($r['name'] ?? $slug) . (!empty($r['new_version']) ? ' (theme) → v' . $r['new_version'] : '');
+            }
+        }
+
+        return array_merge($results, [
+            'success'         => true,
+            'updated_plugins' => $updated_plugin_names,
+            'wp_updated'      => !empty($results['core']['updated']),
+        ]);
     }
     
     private static function check_staging_gate($plan, $args = []) {
@@ -168,6 +185,10 @@ class RP_Care_Task_Updates {
         if (!function_exists('get_core_updates')) {
             require_once ABSPATH . 'wp-admin/includes/update.php';
         }
+
+        // Force a fresh core-update check from api.wordpress.org (same approach used for plugins).
+        delete_site_transient('update_core');
+        wp_version_check();
 
         $updates = get_core_updates();
 
@@ -271,7 +292,8 @@ class RP_Care_Task_Updates {
             }
 
             // Snapshot the plugin directory so we can roll back if needed
-            $snapshot = self::snapshot_plugin($plugin_file);
+            $snapshot       = self::snapshot_plugin($plugin_file);
+            $is_pagebuilder = self::is_pagebuilder_plugin($plugin_file);
 
             try {
                 if (!class_exists('Plugin_Upgrader')) {
@@ -302,8 +324,8 @@ class RP_Care_Task_Updates {
                     continue;
                 }
 
-                // Health check — rollback on failure
-                if (!self::health_check()) {
+                // Extended health check for page builders (checks 3 URLs including WC shop)
+                if (!self::health_check(12, $is_pagebuilder)) {
                     $rolled_back = $snapshot ? self::restore_plugin_snapshot($plugin_file, $snapshot) : false;
                     self::cleanup_snapshots([$snapshot]);
 
@@ -544,10 +566,35 @@ class RP_Care_Task_Updates {
     /**
      * HTTP health check against the site homepage.
      * Checks: HTTP status (non-5xx), PHP fatal markers, TTFB threshold, and minimal HTML.
+     * When $extended=true (page-builder updates), also checks an inner page and WC shop.
      */
-    private static function health_check(int $timeout = 12): bool {
+    private static function health_check(int $timeout = 12, bool $extended = false): bool {
+        $urls = [home_url('/')];
+
+        if ($extended) {
+            $pages = get_posts(['post_type' => 'page', 'post_status' => 'publish', 'numberposts' => 1, 'orderby' => 'modified']);
+            if (!empty($pages)) {
+                $urls[] = get_permalink($pages[0]->ID);
+            }
+            if (function_exists('wc_get_page_id')) {
+                $shop_id = wc_get_page_id('shop');
+                if ($shop_id > 0) {
+                    $urls[] = get_permalink($shop_id);
+                }
+            }
+        }
+
+        foreach ($urls as $url) {
+            if (!self::check_single_url($url, $timeout)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static function check_single_url(string $url, int $timeout): bool {
         $start  = microtime(true);
-        $result = wp_remote_get(home_url('/'), [
+        $result = wp_remote_get($url, [
             'timeout'    => $timeout,
             'user-agent' => 'ReplantaCare/HealthCheck',
             'sslverify'  => false,
@@ -555,25 +602,23 @@ class RP_Care_Task_Updates {
         $elapsed = microtime(true) - $start;
 
         if (is_wp_error($result)) {
-            RP_Care_Utils::log('updates', 'error', 'Health check request failed: ' . $result->get_error_message());
+            RP_Care_Utils::log('updates', 'error', 'Health check failed for ' . $url . ': ' . $result->get_error_message());
             return false;
         }
 
         $code = (int) wp_remote_retrieve_response_code($result);
         if ($code >= 500) {
-            RP_Care_Utils::log('updates', 'error', "Health check returned HTTP $code");
+            RP_Care_Utils::log('updates', 'error', "Health check returned HTTP $code for $url");
             return false;
         }
 
-        // TTFB threshold: flag if response took > 8 s (likely PHP crash/infinite loop)
         if ($elapsed > 8.0) {
-            RP_Care_Utils::log('updates', 'warning', sprintf('Health check: slow response %.2fs — possible issue after update', $elapsed));
+            RP_Care_Utils::log('updates', 'warning', sprintf('Health check: slow response %.2fs for %s', $elapsed, $url));
             return false;
         }
 
         $body = wp_remote_retrieve_body($result);
 
-        // PHP fatal-error markers in body
         $markers = [
             'Fatal error',
             'Parse error',
@@ -582,21 +627,35 @@ class RP_Care_Task_Updates {
             'Uncaught Error',
             'Uncaught Exception',
             'WordPress database error',
+            'Elementor detected some incompatible',
         ];
         foreach ($markers as $marker) {
             if (stripos($body, $marker) !== false) {
-                RP_Care_Utils::log('updates', 'error', "Health check: PHP error marker in response body: '$marker'");
+                RP_Care_Utils::log('updates', 'error', "Health check: error marker '$marker' in $url");
                 return false;
             }
         }
 
-        // Require at least some valid HTML (catch white-screen / empty responses)
         if (strlen($body) < 200 || stripos($body, '<html') === false) {
-            RP_Care_Utils::log('updates', 'warning', 'Health check: response body too short or missing HTML structure');
+            RP_Care_Utils::log('updates', 'warning', "Health check: response too short or missing HTML for $url");
             return false;
         }
 
         return true;
+    }
+
+    private static function is_pagebuilder_plugin(string $plugin_file): bool {
+        static $slugs = [
+            'elementor/elementor.php',
+            'elementor-pro/elementor-pro.php',
+            'divi-builder/divi-builder.php',
+            'bb-plugin/fl-builder.php',
+            'oxygen/functions.php',
+            'bricks/bricks.php',
+            'wpbakery/js_composer.php',
+            'js_composer/js_composer.php',
+        ];
+        return in_array($plugin_file, $slugs, true);
     }
 
     /**

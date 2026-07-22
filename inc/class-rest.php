@@ -1593,6 +1593,24 @@ class RP_Care_REST {
         if ($window_start !== null) { update_option('rpcare_update_window_start_hour', (int) $window_start); $updated['update_window_start'] = (int) $window_start; }
         if ($window_end !== null)   { update_option('rpcare_update_window_end_hour', (int) $window_end);   $updated['update_window_end']   = (int) $window_end; }
 
+        // Notification channels — stored as a single option array
+        $nfields  = ['notification_email', 'notification_webhook_url', 'notification_slack_webhook'];
+        $nchanged = false;
+        $ncfg     = get_option('rpcare_notification_config', []);
+        foreach ($nfields as $nf) {
+            $val = $request->get_param($nf);
+            if ($val !== null) {
+                $ncfg[$nf] = ($nf === 'notification_email')
+                    ? sanitize_email((string) $val)
+                    : esc_url_raw((string) $val);
+                $nchanged = true;
+            }
+        }
+        if ($nchanged) {
+            update_option('rpcare_notification_config', array_filter($ncfg));
+            $updated['notification_config'] = array_keys(array_filter($ncfg));
+        }
+
         return new WP_REST_Response([
             'status'  => 'ok',
             'updated' => $updated,

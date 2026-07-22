@@ -3,7 +3,7 @@
  * Plugin Name: Replanta Care
  * Plugin URI: https://replanta.dev
  * Description: Plugin de mantenimiento WordPress automatizado para clientes de Replanta con integracion Hub
- * Version: 1.15.8
+ * Version: 1.15.9
  * Author: Replanta
  * Author URI: https://replanta.dev
  * License: GPL v2 or later
@@ -17,7 +17,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('RPCARE_VERSION', '1.15.8');
+define('RPCARE_VERSION', '1.15.9');
 define('RPCARE_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('RPCARE_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('RPCARE_PLUGIN_FILE', __FILE__);
@@ -115,6 +115,9 @@ class ReplantaCare {
         add_action('wp_ajax_rpcare_force_backup', [$this, 'ajax_force_backup']);
         add_action('wp_ajax_rpcare_regenerate_token', [$this, 'ajax_regenerate_token']);
         
+        // Notifier dispatcher
+        add_action('rpcare_notify', ['RP_Care_Notifier', 'dispatch'], 10, 2);
+
         // Daily check hook ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ also run maintenance cleanup
         add_action('rpcare_daily_check', ['RP_Care_Utils', 'cleanup_all']);
         
@@ -144,6 +147,7 @@ class ReplantaCare {
             'inc/class-dashboard.php',
             'inc/class-metrics.php',
             'inc/class-addon-manager.php',
+            'inc/class-notifier.php',
 
             // Task classes
             'inc/task-updates.php',

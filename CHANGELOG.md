@@ -1,5 +1,20 @@
 # Changelog — Replanta Care
 
+## [1.15.9]
+
+- RP_Care_Notifier: nuevo sistema de notificaciones multi-canal
+  - Email via wp_mail() con subject y cuerpo estructurado
+  - Webhook JSON genérico via wp_remote_post (non-blocking, 5s timeout)
+  - Slack Incoming Webhook con Block Kit (section + context, non-blocking)
+  - Throttle independiente por tipo de evento:
+    backup_failed 4h · update_applied 12h · update_failed 2h · ssl_expiry_soon 7d · site_down 1h
+  - Activado con do_action('rpcare_notify', $event, $context)
+  - Config en option rpcare_notification_config {notification_email, notification_webhook_url, notification_slack_webhook}
+- hub_config(): acepta y persiste los 3 canales de notificación (sobreescritura parcial segura)
+- class-scheduler: hooks priority-20 en rpcare_task_backup y rpcare_task_updates
+  que disparan rpcare_notify tras la tarea sin interferir con el filtro principal (p10)
+- replanta-care.php: bumped a 1.15.9; notifier cargado en load_dependencies()
+
 ## [1.15.8]
 
 - hub_ping(): añade ssl_expires_at + ssl_days_left (check cert SSL del propio site, caché 12h)

@@ -218,10 +218,30 @@ class RP_Care_Scheduler {
         // — and returns its result array.
         
         // Updates
-        add_filter('rpcare_task_updates', ['RP_Care_Task_Updates', 'run']);
-        
+        add_filter('rpcare_task_updates', ['RP_Care_Task_Updates', 'run'], 10, 1);
+        add_filter('rpcare_task_updates', static function($result) {
+            if (!is_array($result) || !empty($result['__rpcare_unhandled'])) return $result;
+            $count = count($result['updated_plugins'] ?? []) + (int)($result['wp_updated'] ?? 0);
+            if (!empty($result['success']) && $count > 0) {
+                do_action('rpcare_notify', 'update_applied', [
+                    'count'   => $count,
+                    'plugins' => $result['updated_plugins'] ?? [],
+                ]);
+            } elseif (isset($result['success']) && !$result['success']) {
+                do_action('rpcare_notify', 'update_failed', ['message' => $result['message'] ?? '']);
+            }
+            return $result;
+        }, 20, 1);
+
         // Backups
-        add_filter('rpcare_task_backup', ['RP_Care_Task_Backup', 'run']);
+        add_filter('rpcare_task_backup', ['RP_Care_Task_Backup', 'run'], 10, 1);
+        add_filter('rpcare_task_backup', static function($result) {
+            if (!is_array($result) || !empty($result['__rpcare_unhandled'])) return $result;
+            if (empty($result['success'])) {
+                do_action('rpcare_notify', 'backup_failed', ['message' => $result['message'] ?? '']);
+            }
+            return $result;
+        }, 20, 1);
         
         // WPO
         add_filter('rpcare_task_wpo', ['RP_Care_Task_WPO', 'run']);

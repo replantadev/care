@@ -397,6 +397,7 @@ class RP_Care_Scheduler {
             'health' => 'rpcare_task_health',
             '404_cleanup' => 'rpcare_task_404_cleanup',
             'maintenance' => 'rpcare_task_maintenance',
+            'db_cleanup'  => 'rpcare_task_db_cleanup',
             'report' => 'rpcare_task_report',
             'cwv' => 'rpcare_task_cwv',
             'anomaly' => 'rpcare_task_anomaly',

@@ -1546,6 +1546,26 @@ class RP_Care_REST {
             ]);
         }
 
+        // TTFB — HEAD to home URL, cached 1 h. Skip inside CLI/cron to avoid loops.
+        $ttfb_ms = null;
+        if ( ! defined( 'DOING_CRON' ) || ! DOING_CRON ) {
+            $ttfb_cached = get_transient( 'rpcare_ttfb' );
+            if ( false !== $ttfb_cached ) {
+                $ttfb_ms = (int) $ttfb_cached;
+            } else {
+                $t0      = microtime( true );
+                $ttfb_r  = wp_remote_head( home_url( '/' ), [
+                    'timeout'     => 8,
+                    'sslverify'   => false,
+                    'redirection' => 0,
+                ] );
+                if ( ! is_wp_error( $ttfb_r ) ) {
+                    $ttfb_ms = (int) round( ( microtime( true ) - $t0 ) * 1000 );
+                    set_transient( 'rpcare_ttfb', $ttfb_ms, HOUR_IN_SECONDS );
+                }
+            }
+        }
+
         // Which notification channels are configured (no URLs — metadata only).
         $notif_cfg      = get_option('rpcare_notification_config', []);
         $notif_channels = array_keys(array_filter($notif_cfg));
@@ -1562,6 +1582,7 @@ class RP_Care_REST {
             'updates_pending'      => $updates_pending,
             'ssl_expires_at'       => $ssl_expires_at,
             'ssl_days_left'        => $ssl_days_left,
+            'ttfb_ms'              => $ttfb_ms,
             'notification_channels'=> $notif_channels,
         ], 200);
     }
@@ -1777,10 +1798,34 @@ class RP_Care_REST {
         // 8. Post-install: reset PUC state and opcache.
         delete_site_option('external_updates-replanta-care');
         delete_site_transient('update_plugins');
+        delete_transient('rpcare_ttfb'); // force fresh TTFB after update
         if (function_exists('opcache_reset')) opcache_reset();
 
         if (class_exists('RP_Care_Utils')) {
             RP_Care_Utils::log('self_update', 'success', "v{$from_ver} → v{$new_version} via Hub (" . ($installed ? 'ZipArchive' : 'Plugin_Upgrader') . ')');
+        }
+
+        // 9. Post-update health check — new PHP process loads the updated plugin.
+        $post_health = 'unknown';
+        $post_code   = null;
+        $post_ms     = null;
+        $t0          = microtime( true );
+        $hr          = wp_remote_get( home_url( '/' ), [
+            'timeout'     => 10,
+            'sslverify'   => false,
+            'redirection' => 0,
+        ] );
+        if ( ! is_wp_error( $hr ) ) {
+            $post_code   = (int) wp_remote_retrieve_response_code( $hr );
+            $post_body   = wp_remote_retrieve_body( $hr );
+            $has_fatal   = str_contains( $post_body, 'Ha habido un error' ) || str_contains( $post_body, 'critical error' );
+            $post_health = ( 200 === $post_code && ! $has_fatal ) ? 'ok' : 'error';
+            $post_ms     = (int) round( ( microtime( true ) - $t0 ) * 1000 );
+            if ( 'error' === $post_health ) {
+                do_action( 'rpcare_notify', 'update_failed', [
+                    'message' => "Post-update health check failed: HTTP {$post_code}" . ( $has_fatal ? ' (fatal detected)' : '' ),
+                ] );
+            }
         }
 
         do_action('rpcare_notify', 'update_applied', [
@@ -1789,10 +1834,15 @@ class RP_Care_REST {
         ]);
 
         return new WP_REST_Response([
-            'status'   => 'updated',
-            'from_ver' => $from_ver,
-            'to_ver'   => $new_version,
-            'message'  => "Actualizado de v{$from_ver} a v{$new_version}",
+            'status'       => 'updated',
+            'from_ver'     => $from_ver,
+            'to_ver'       => $new_version,
+            'message'      => "Actualizado de v{$from_ver} a v{$new_version}",
+            'health_check' => [
+                'status'      => $post_health,
+                'http_code'   => $post_code,
+                'response_ms' => $post_ms,
+            ],
         ], 200);
     }
 

@@ -1692,16 +1692,12 @@ class RP_Care_REST {
             $zip_url     = $info['download_url'] ?? '';
         }
 
-        // 2. Fall back to WP update mechanism if direct fetch failed.
+        // 2. Hub fetch es la única ruta soportada — sin fallback a wp_update_plugins() (riesgo OOM).
         if (!$zip_url) {
-            delete_site_option('external_updates-replanta-care'); // Reset PUC internal cache
-            delete_site_transient('update_plugins');
-            wp_update_plugins();
-            $updates = get_site_transient('update_plugins');
-            if (!empty($updates->response[$plugin_file])) {
-                $new_version = $updates->response[$plugin_file]->new_version ?? '';
-                $zip_url     = $updates->response[$plugin_file]->package     ?? '';
-            }
+            return new WP_REST_Response([
+                'status'  => 'error',
+                'message' => 'No se pudo obtener la URL de descarga desde Hub. Verifica conectividad con replanta.net.',
+            ], 503);
         }
 
         // 3. Already on latest?
@@ -1946,10 +1942,11 @@ class RP_Care_REST {
         }
 
         $allowed = [
-            'backup'  => 'rpcare_task_backup',
-            'health'  => 'rpcare_task_health',
-            'updates' => 'rpcare_task_updates',
-            'report'  => 'rpcare_task_report',
+            'backup'     => 'rpcare_task_backup',
+            'health'     => 'rpcare_task_health',
+            'updates'    => 'rpcare_task_updates',
+            'report'     => 'rpcare_task_report',
+            'db_cleanup' => 'rpcare_task_db_cleanup',
         ];
 
         $task = sanitize_key((string) $request->get_param('task'));

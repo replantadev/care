@@ -3,7 +3,7 @@
  * Plugin Name: Replanta Care
  * Plugin URI: https://replanta.dev
  * Description: Plugin de mantenimiento WordPress automatizado para clientes de Replanta con integracion Hub
- * Version: 1.15.14
+ * Version: 1.15.15
  * Author: Replanta
  * Author URI: https://replanta.dev
  * License: GPL v2 or later
@@ -17,7 +17,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('RPCARE_VERSION', '1.15.14');
+define('RPCARE_VERSION', '1.15.15');
 define('RPCARE_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('RPCARE_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('RPCARE_PLUGIN_FILE', __FILE__);
@@ -117,6 +117,9 @@ class ReplantaCare {
         
         // Notifier dispatcher
         add_action('rpcare_notify', ['RP_Care_Notifier', 'dispatch'], 10, 2);
+
+        // Auto-onboarding: if license key is set but no Hub token, register with Hub
+        add_action('init', [$this, 'maybe_auto_onboard'], 99);
 
         // Daily check hook ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ also run maintenance cleanup
         add_action('rpcare_daily_check', ['RP_Care_Utils', 'cleanup_all']);
@@ -498,6 +501,51 @@ class ReplantaCare {
         }
     }
     
+    /**
+     * Auto-onboarding: if Care has a license key but no Hub token, attempt to register
+     * with Hub so the operator doesn't need to manually add the site in Plugin Center.
+     * Throttled to 1 attempt per hour via transient. Stops permanently once token is set.
+     */
+    public function maybe_auto_onboard(): void {
+        // Only run in non-cron, non-REST (i.e. admin or front-end page loads) contexts
+        if (defined('DOING_CRON') && DOING_CRON)     return;
+        if (defined('REST_REQUEST') && REST_REQUEST)  return;
+        if (wp_doing_ajax())                          return;
+
+        // Throttle: 1 attempt per hour max
+        if (get_transient('rpcare_onboard_attempt')) return;
+
+        $options     = get_option('rpcare_options', []);
+        $license_key = trim($options['license_key'] ?? '');
+        $site_token  = $options['site_token'] ?? '';
+        $hub_url     = rtrim($options['hub_url'] ?? get_option('rpcare_hub_url', 'https://replanta.net'), '/');
+
+        // Prerequisites: license key set, no token yet, hub URL known
+        if (!$license_key || $site_token || !$hub_url) return;
+
+        set_transient('rpcare_onboard_attempt', 1, HOUR_IN_SECONDS);
+
+        $response = wp_remote_post($hub_url . '/wp-json/replanta-hub/v1/care/onboard', [
+            'timeout' => 15,
+            'headers' => ['Content-Type' => 'application/json'],
+            'body'    => wp_json_encode([
+                'license_key'  => $license_key,
+                'site_url'     => get_site_url(),
+                'care_version' => defined('RPCARE_VERSION') ? RPCARE_VERSION : '',
+            ]),
+            'sslverify' => !(defined('WP_DEBUG') && WP_DEBUG),
+        ]);
+
+        if (!is_wp_error($response) && 200 === (int) wp_remote_retrieve_response_code($response)) {
+            $body = json_decode(wp_remote_retrieve_body($response), true);
+            if (!empty($body['status']) && 'ok' === $body['status']) {
+                RP_Care_Utils::log('onboard', 'success', 'Auto-onboarding con Hub completado.');
+                // Hub called /set-token, so token is now stored. Stop future attempts.
+                delete_transient('rpcare_onboard_attempt');
+            }
+        }
+    }
+
     public function deactivate() {
         // Clear all scheduled tasks (Action Scheduler + WP Cron fallback)
         $hooks = [

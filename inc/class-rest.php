@@ -1652,6 +1652,25 @@ class RP_Care_REST {
             $updated['notification_config'] = array_keys(array_filter($ncfg));
         }
 
+        // Addons — enables/disables addons pushed from PC Config tab (e.g. ecommerce)
+        $addons = $request->get_param('addons');
+        if ( ! is_null( $addons ) && is_array( $addons ) && class_exists( 'RP_Care_Addon_Manager' ) ) {
+            $manager    = RP_Care_Addon_Manager::get();
+            $old_addons = $manager->get_active();
+            $new_addons = array_values( array_map( 'sanitize_key', $addons ) );
+            $manager->update( $new_addons, [] );
+            $updated['addons'] = $new_addons;
+
+            if ( $old_addons !== $new_addons && class_exists( 'RP_Care_Scheduler' ) ) {
+                $current_plan = RP_Care_Plan::get_current();
+                if ( $current_plan ) {
+                    $scheduler = new RP_Care_Scheduler( $current_plan );
+                    $scheduler->clear_addon_schedules();
+                    $scheduler->ensure();
+                }
+            }
+        }
+
         return new WP_REST_Response([
             'status'  => 'ok',
             'updated' => $updated,

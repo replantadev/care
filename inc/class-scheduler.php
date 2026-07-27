@@ -82,13 +82,13 @@ class RP_Care_Scheduler {
         }
 
         // Anomaly detection — Raíz+: poll every 15 min to approximate 24/7 monitoring
-        if (RP_Care_Plan::can_access_feature('anomaly_detection')) {
+        if (RP_Care_Plan::can_access_feature('anomaly_detection', $this->plan)) {
             $this->maybe_schedule('rpcare_task_anomaly', 'fifteen_minutes');
         }
 
         // CWV measurement — all paid plans
-        if (RP_Care_Plan::can_access_feature('cwv_reports')) {
-            $freq = RP_Care_Plan::can_access_feature('seo_reviews') ? 'monthly' : 'quarterly';
+        if (RP_Care_Plan::can_access_feature('cwv_reports', $this->plan)) {
+            $freq = RP_Care_Plan::can_access_feature('seo_reviews', $this->plan) ? 'monthly' : 'quarterly';
             $this->maybe_schedule('rpcare_task_cwv', $freq);
         }
         

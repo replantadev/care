@@ -190,6 +190,13 @@ class RP_Care_Utils {
         }
 
         self::log('db_cleanup', 'success', 'WP DB cleanup completed', $deleted);
+
+        update_option( 'rpcare_last_db_cleanup', [
+            'at'   => current_time( 'Y-m-d H:i:s' ),
+            'rows' => array_sum( $deleted ),
+            'detail' => $deleted,
+        ], false );
+
         return $deleted;
     }
 

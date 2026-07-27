@@ -1583,6 +1583,7 @@ class RP_Care_REST {
             'ssl_expires_at'       => $ssl_expires_at,
             'ssl_days_left'        => $ssl_days_left,
             'ttfb_ms'              => $ttfb_ms,
+            'db_cleanup_last_at'   => get_option( 'rpcare_last_db_cleanup', [] )['at'] ?? '',
             'notification_channels'=> $notif_channels,
         ], 200);
     }

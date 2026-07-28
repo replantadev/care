@@ -346,9 +346,9 @@ class RP_Care_Utils {
     }
     
     public static function send_notification($type, $subject, $message, $data = null) {
-        $options = get_option('rpcare_options', []);
-        $hub_url = !empty($options['hub_url']) ? $options['hub_url'] : get_option('rpcare_hub_url', 'https://replanta.net');
-        $token = !empty($options['site_token']) ? $options['site_token'] : get_option('rpcare_token', '');
+        $options  = get_option('rpcare_options', []);
+        $hub_url  = !empty($options['hub_url']) ? $options['hub_url'] : get_option('rpcare_hub_url', 'https://replanta.net');
+        $token    = !empty($options['site_token']) ? $options['site_token'] : get_option('rpcare_token', '');
         $site_url = get_site_url();
 
         if (empty($token)) {
@@ -356,23 +356,21 @@ class RP_Care_Utils {
         }
 
         $payload = [
-            'type' => $type,
-            'subject' => $subject,
-            'message' => $message,
-            'site_url' => $site_url,
-            'site_token' => $token,
+            'type'      => $type,
+            'subject'   => $subject,
+            'message'   => $message,
             'timestamp' => time(),
-            'data' => $data
+            'data'      => $data,
         ];
 
-        $response = wp_remote_post(rtrim($hub_url, '/') . '/wp-json/rphub/v1/notifications', [
+        $response = wp_remote_post(rtrim($hub_url, '/') . '/wp-json/rphub/v1/care-event', [
             'headers' => [
-                'X-Site-Token' => $token,
-                'X-Site-URL' => $site_url,
-                'Content-Type' => 'application/json'
+                'X-Hub-Token'  => hash('sha256', $token),
+                'X-Site-URL'   => $site_url,
+                'Content-Type' => 'application/json',
             ],
-            'body' => wp_json_encode($payload),
-            'timeout' => 15
+            'body'    => wp_json_encode($payload),
+            'timeout' => 15,
         ]);
 
         if (is_wp_error($response)) {

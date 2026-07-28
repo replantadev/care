@@ -1730,17 +1730,15 @@ class RP_Care_REST {
             ], 200);
         }
 
-        // 3b. Pre-update backup: database + config. Si B2 está configurado y falla → abortar.
+        // 3b. Pre-update backup: database + config. Fallo = warning, no bloquea la actualización.
+        $backup_warning = null;
         if ( class_exists( 'RP_Care_Task_Backup' ) && RP_Care_Task_Backup::is_b2_configured() ) {
             $pre_update = RP_Care_Task_Backup::create_b2_backup( [
                 'reason' => 'pre_update',
                 'scopes' => [ 'database', 'config' ],
             ] );
             if ( empty( $pre_update['success'] ) ) {
-                return new WP_REST_Response( [
-                    'status'  => 'error',
-                    'message' => 'Backup pre-update falló: ' . ( $pre_update['message'] ?? 'Error desconocido' ) . '. Update abortado por seguridad.',
-                ], 500 );
+                $backup_warning = 'Backup pre-update falló: ' . ( $pre_update['message'] ?? 'Error desconocido' );
             }
         }
 
@@ -1850,11 +1848,12 @@ class RP_Care_REST {
         ]);
 
         return new WP_REST_Response([
-            'status'       => 'updated',
-            'from_ver'     => $from_ver,
-            'to_ver'       => $new_version,
-            'message'      => "Actualizado de v{$from_ver} a v{$new_version}",
-            'health_check' => [
+            'status'         => 'updated',
+            'from_ver'       => $from_ver,
+            'to_ver'         => $new_version,
+            'message'        => "Actualizado de v{$from_ver} a v{$new_version}",
+            'backup_warning' => $backup_warning,
+            'health_check'   => [
                 'status'      => $post_health,
                 'http_code'   => $post_code,
                 'response_ms' => $post_ms,

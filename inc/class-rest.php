@@ -1732,7 +1732,7 @@ class RP_Care_REST {
 
         // 3b. Pre-update backup: database + config. Fallo = warning, no bloquea la actualización.
         $backup_warning = null;
-        if ( class_exists( 'RP_Care_Task_Backup' ) && RP_Care_Task_Backup::is_b2_configured() ) {
+        if ( class_exists( 'RP_Care_Task_Backup' ) && RP_Care_Task_Backup::is_b2_configured_public() ) {
             $pre_update = RP_Care_Task_Backup::create_b2_backup( [
                 'reason' => 'pre_update',
                 'scopes' => [ 'database', 'config' ],

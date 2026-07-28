@@ -23,10 +23,26 @@ class RP_Care_Task_Updates {
             ];
         }
 
+        // Bug #5: Auto-detect WP Toolkit even when Hub never pushed rpcare_update_managed.
+        // Prevents Care running its own update loop alongside WP Toolkit on StablePoint sites.
+        if ( class_exists( 'RP_Care_Environment' ) && RP_Care_Environment::updates_externally_managed() ) {
+            $msg = 'Actualizaciones gestionadas externamente (WP Toolkit detectado automáticamente)';
+            RP_Care_Utils::log( 'updates', 'info', $msg );
+            return [ 'success' => true, 'managed_externally' => true, 'message' => $msg, 'skipped' => true ];
+        }
+
         $plan       = RP_Care_Plan::get_current();
         $exclusions = RP_Care_Tasks::get_exclusions();
+
+        // Bug #7: Staging gate cooldown — prevent infinite loop when staging is required but
+        // validation never arrives. Gate fires once per 6h; next run just skips silently.
+        if ( get_transient( 'rpcare_staging_gate_cooldown' ) ) {
+            return [ 'success' => false, 'skipped' => true, 'message' => 'Staging gate cooldown activo — esperando validación del clon.' ];
+        }
+
         $staging_gate = self::check_staging_gate($plan, $args);
         if (empty($staging_gate['success'])) {
+            set_transient( 'rpcare_staging_gate_cooldown', 1, 6 * HOUR_IN_SECONDS );
             RP_Care_Utils::log('updates', 'warning', $staging_gate['message'], $staging_gate);
             RP_Care_Utils::send_notification(
                 'updates_waiting_for_staging',
@@ -38,6 +54,7 @@ class RP_Care_Task_Updates {
 
         // Si un fatal interrumpe un upgrade, WP dejaría el sitio bloqueado
         // en modo mantenimiento (.maintenance). Lo retiramos al apagar.
+        // Bug #6: también limpiamos snapshots/upgrade dirs huérfanos del proceso actual.
         register_shutdown_function(function () {
             $error = error_get_last();
             if ($error && in_array($error['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true)) {
@@ -45,6 +62,22 @@ class RP_Care_Task_Updates {
                 if (file_exists($file)) {
                     @unlink($file);
                     RP_Care_Utils::log('updates', 'error', 'Fatal durante actualización — modo mantenimiento retirado', ['error' => $error['message']]);
+                }
+                // Clean orphaned rpcare upgrade work dirs
+                $rm = function ( string $dir ) use ( &$rm ): void {
+                    foreach ( glob( $dir . '/*' ) ?: [] as $f ) {
+                        is_dir( $f ) ? $rm( $f ) : @unlink( $f );
+                    }
+                    @rmdir( $dir );
+                };
+                foreach ( glob( WP_CONTENT_DIR . '/upgrade/rpcare-*' ) ?: [] as $d ) {
+                    if ( is_dir( $d ) ) $rm( $d );
+                }
+                // Clean snapshot dirs created in the last hour
+                $upload_dir = wp_upload_dir();
+                $snap_base  = $upload_dir['basedir'] . '/rpcare-snapshots';
+                foreach ( glob( $snap_base . '/*' ) ?: [] as $d ) {
+                    if ( is_dir( $d ) && filemtime( $d ) >= time() - HOUR_IN_SECONDS ) $rm( $d );
                 }
             }
         });
@@ -186,9 +219,13 @@ class RP_Care_Task_Updates {
             require_once ABSPATH . 'wp-admin/includes/update.php';
         }
 
-        // Force a fresh core-update check from api.wordpress.org (same approach used for plugins).
-        delete_site_transient('update_core');
-        wp_version_check();
+        // Bug #2: only force-refresh if transient is stale (> 15 min) to avoid sync HTTP
+        // call on shared hosting with a tight PHP execution limit.
+        $cached_core = get_site_transient( 'update_core' );
+        if ( ! $cached_core || empty( $cached_core->last_checked ) || ( time() - $cached_core->last_checked ) > 15 * MINUTE_IN_SECONDS ) {
+            delete_site_transient( 'update_core' );
+            wp_version_check();
+        }
 
         $updates = get_core_updates();
 
@@ -252,12 +289,12 @@ class RP_Care_Task_Updates {
             require_once ABSPATH . 'wp-admin/includes/update.php';
         }
 
-        // Force a fresh check from wp.org. The stored transient may be stale or
-        // was corrupted by the old pre_set_site_transient_update_plugins hook that
-        // stripped free plugins before saving to DB. Deleting it forces wp_update_plugins()
-        // to make a new request — typically <5s, acceptable for a background task.
-        delete_site_transient('update_plugins');
-        wp_update_plugins();
+        // Bug #2: same time-gate as core — only refresh if transient is stale (> 15 min).
+        $cached_plugins = get_site_transient( 'update_plugins' );
+        if ( ! $cached_plugins || empty( $cached_plugins->last_checked ) || ( time() - $cached_plugins->last_checked ) > 15 * MINUTE_IN_SECONDS ) {
+            delete_site_transient( 'update_plugins' );
+            wp_update_plugins();
+        }
 
         RP_Care_Update_Control::$bypass_for_task = true;
         $plugin_updates = get_plugin_updates();
@@ -399,6 +436,16 @@ class RP_Care_Task_Updates {
                 $results[$theme_slug] = [
                     'updated' => false,
                     'message' => 'Excluded from auto-updates',
+                    'name'    => $theme_name,
+                ];
+                continue;
+            }
+
+            // Bug #3: respect explicit auto-update opt-outs (admin toggle or theme filter).
+            if ( ! apply_filters( 'auto_update_theme', true, $theme_slug ) ) {
+                $results[$theme_slug] = [
+                    'updated' => false,
+                    'message' => 'Auto-updates disabled',
                     'name'    => $theme_name,
                 ];
                 continue;
@@ -546,8 +593,15 @@ class RP_Care_Task_Updates {
         ]);
         
         foreach ($results['plugins'] as $plugin_file => $result) {
-            if (in_array($plugin_file, $critical_plugins) && !$result['updated'] && isset($result['error'])) {
-                $critical_alerts[] = 'Critical plugin update failed: ' . $result['name'] . ' - ' . $result['error'];
+            // Bug #4: fire alert for any failed critical plugin update, not only when
+            // 'error' key is set — "Update failed" without error key was silently dropped.
+            $intentional_skip = in_array( $result['message'] ?? '', [
+                'Excluded from auto-updates',
+                'Auto-updates disabled by plugin',
+            ] );
+            if (in_array($plugin_file, $critical_plugins) && !$result['updated'] && !$intentional_skip) {
+                $detail = $result['error'] ?? $result['message'] ?? 'fallo sin detalles';
+                $critical_alerts[] = 'Critical plugin update failed: ' . $result['name'] . ' — ' . $detail;
             }
         }
         
@@ -612,8 +666,11 @@ class RP_Care_Task_Updates {
             return false;
         }
 
-        if ($elapsed > 8.0) {
-            RP_Care_Utils::log('updates', 'warning', sprintf('Health check: slow response %.2fs for %s', $elapsed, $url));
+        // Bug #1: threshold must always be below the HTTP timeout to avoid false rollbacks.
+        // A response arriving in 9s with a 12s timeout was failing this check and triggering rollback.
+        $slow_threshold = max( 6.0, $timeout - 2 );
+        if ($elapsed > $slow_threshold) {
+            RP_Care_Utils::log('updates', 'warning', sprintf('Health check: slow response %.2fs (threshold %.1fs) for %s', $elapsed, $slow_threshold, $url));
             return false;
         }
 

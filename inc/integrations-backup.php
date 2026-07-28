@@ -242,22 +242,28 @@ class RP_Care_Task_Backup {
         }
         
         try {
-            // Trigger UpdraftPlus backup
-            $updraft_class = 'UpdraftPlus'; $updraftplus = class_exists($updraft_class) ? new $updraft_class() : null;
-            
-            // Set backup parameters
-            $backup_files = true;
-            $backup_database = true;
-            
-            // Start the backup
-            $backup_result = $updraftplus->backup_files_and_db(
-                $backup_files,
-                $backup_database,
-                false, // Don't show admin messages
-                false, // Not incremental
-                false, // Don't email
-                $args['reason'] ?? 'replanta_care_scheduled'
-            );
+            // UpdraftPlus is a singleton — use the global instance, not new UpdraftPlus().
+            // Instantiating a second copy corrupts its internal state.
+            $updraftplus = $GLOBALS['updraftplus'] ?? null;
+            if ( ! $updraftplus && class_exists( 'UpdraftPlus' ) ) {
+                $updraftplus = new UpdraftPlus();
+            }
+            if ( ! $updraftplus ) {
+                return [ 'success' => false, 'method' => 'updraftplus', 'message' => 'UpdraftPlus instance not available' ];
+            }
+
+            // boot_backup(files, db, restrict_files_to_override, one_shot, services, restrict_sites_to)
+            // Prefer boot_backup (UpdraftPlus 1.x/2.x); fall back to legacy backup_files_and_db.
+            if ( method_exists( $updraftplus, 'boot_backup' ) ) {
+                $backup_result = $updraftplus->boot_backup( 1, 1, false, false,
+                    get_option( 'updraft_service', '' ),
+                    $args['reason'] ?? 'replanta_care_scheduled' );
+            } else {
+                $backup_result = $updraftplus->backup_files_and_db(
+                    true, true, false, false, false,
+                    $args['reason'] ?? 'replanta_care_scheduled'
+                );
+            }
             
             if ($backup_result) {
                 return [

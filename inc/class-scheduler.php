@@ -272,6 +272,13 @@ class RP_Care_Scheduler {
         // Daily maintenance / cleanup
         add_filter('rpcare_task_maintenance', ['RP_Care_Utils', 'cleanup_all']);
 
+        // Staging snapshot capture (offloaded from update task to avoid HTTP loopback deadlock)
+        add_action('rpcare_task_capture_staging_snapshot', static function() {
+            if (class_exists('RP_Care_Task_StagingEval')) {
+                RP_Care_Task_StagingEval::capture_production_snapshot();
+            }
+        });
+
         // Monthly WP DB cleanup
         add_filter('rpcare_task_db_cleanup', ['RP_Care_Utils', 'db_cleanup_wp']);
 

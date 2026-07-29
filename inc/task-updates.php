@@ -189,13 +189,19 @@ class RP_Care_Task_Updates {
         $triggered = is_array($clone) && !empty($clone['triggered']);
 
         if ($triggered && class_exists('RP_Care_Task_StagingEval')) {
-            $snapshot = RP_Care_Task_StagingEval::capture_production_snapshot();
-
             $options     = get_option('rpcare_options', []);
             $staging_url = $options['staging_url'] ?? '';
+
+            // Capture prod snapshot in a separate async action to avoid HTTP loopback
+            // deadlock on single-worker PHP-FPM pools (this task already holds a worker).
+            if (function_exists('as_enqueue_async_action')) {
+                as_enqueue_async_action('rpcare_task_capture_staging_snapshot', [], 'replanta-care');
+            } else {
+                RP_Care_Task_StagingEval::capture_production_snapshot();
+            }
+
             RP_Care_Utils::send_notification('staging_clone_triggered', 'Clon de staging iniciado', 'Se ha creado un clon de staging. Evalua el entorno y aprueba desde Plugin Center para aplicar actualizaciones.', [
                 'staging_url'       => $staging_url,
-                'snapshot_captured' => !empty($snapshot['captured_at']),
                 'clone_data'        => is_array($clone) ? array_intersect_key($clone, array_flip(['name', 'url', 'id'])) : [],
             ]);
         }

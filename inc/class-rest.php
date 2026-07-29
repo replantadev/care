@@ -84,6 +84,13 @@ class RP_Care_REST {
             'permission_callback' => '__return_true',
         ]);
 
+        // ── Staging baseline — returns the production DOM snapshot captured at clone time ─
+        register_rest_route($this->control_ns, '/staging-baseline', [
+            'methods'             => 'GET',
+            'callback'            => [$this, 'hub_staging_baseline'],
+            'permission_callback' => '__return_true',
+        ]);
+
         // Main task execution endpoint
         register_rest_route($this->namespace, '/run', [
             'methods' => 'POST',
@@ -1942,6 +1949,31 @@ class RP_Care_REST {
             'message' => 'Staging aprobado — actualización de producción programada',
             'method'  => $method,
         ], 200 );
+    }
+
+    /**
+     * GET /wp-json/replanta-care/v1/staging-baseline
+     * Returns the production DOM snapshot captured at the last staging-clone trigger.
+     * PC uses this as the authoritative "before" snapshot instead of a live fetch.
+     */
+    public function hub_staging_baseline( WP_REST_Request $request ) {
+        if ( ! $this->validate_hub_token( $request, true ) ) {
+            return new WP_REST_Response( [ 'error' => 'Unauthorized' ], 403 );
+        }
+
+        if ( ! class_exists( 'RP_Care_Task_StagingEval' ) ) {
+            return new WP_REST_Response( [ 'error' => 'StagingEval module not available' ], 503 );
+        }
+
+        $snapshot = get_option( RP_Care_Task_StagingEval::OPT_BASELINE, null );
+        if ( ! $snapshot ) {
+            return new WP_REST_Response( [ 'error' => 'No baseline captured yet. Trigger a staging clone first.' ], 404 );
+        }
+
+        // Strip the raw Elementor DB data (large, not needed for HTTP fingerprint diff)
+        unset( $snapshot['elementor_db'] );
+
+        return new WP_REST_Response( [ 'snapshot' => $snapshot ], 200 );
     }
 
     /**

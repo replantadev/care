@@ -2312,7 +2312,7 @@ class RP_Care_Settings_Page {
                         'from'        => $current_ver,
                         'to'          => $new_ver,
                         'will_update' => $will_update,
-                        'reason'      => ($is_major && !$allow_major) ? 'Versión mayor — habilitar en Hub' : '',
+                        'reason'      => ($is_major && !$allow_major) ? 'Versión mayor — desactivada (Hub)' : '',
                     ];
                     break;
                 }

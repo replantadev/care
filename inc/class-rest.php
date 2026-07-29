@@ -728,6 +728,13 @@ class RP_Care_REST {
             $updated['update_managed'] = (bool) $update_managed;
         }
 
+        // Per-site toggle for WP Core major version updates (e.g. 6.x → 7.x)
+        $allow_major_updates = $request->get_param('allow_major_updates');
+        if (!is_null($allow_major_updates)) {
+            update_option('rpcare_allow_major_updates', (bool) $allow_major_updates);
+            $updated['allow_major_updates'] = (bool) $allow_major_updates;
+        }
+
         $backup_frequency = $request->get_param('backup_frequency');
         if ($backup_frequency !== null) {
             $allowed = ['hourly', 'twicedaily', 'daily', 'weekly', 'monthly', 'quarterly'];

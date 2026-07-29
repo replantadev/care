@@ -376,6 +376,19 @@ class RP_Care_Settings_Page {
         .rpcare-plan-detected { background: rgba(147,241,201,0.08) !important; border-color: rgba(147,241,201,0.25) !important; }
         .rpcare-plan-detected strong { color: var(--rp-green) !important; }
         .rpcare-plan-detected .plan-price { color: var(--rp-muted) !important; }
+
+        /* Select dropdown — fix white-on-white on native OS options */
+        .rpc-select {
+            background-color: var(--rp-card);
+            color: var(--rp-text);
+            border: 1px solid var(--rp-border-s);
+            border-radius: 4px;
+            padding: 4px 8px;
+        }
+        .rpc-select option {
+            background-color: #1E2F23;
+            color: #F7FBF9;
+        }
         </style>
         <?php
     }
@@ -752,21 +765,56 @@ class RP_Care_Settings_Page {
                     </div>
                 </div>
 
-                <?php if (!empty($update_schedule['pending_plugins'])): ?>
+                <?php
+                $has_pending = !empty($update_schedule['pending_core'])
+                    || !empty($update_schedule['pending_themes'])
+                    || !empty($update_schedule['pending_plugins']);
+                $total_pending = count($update_schedule['pending_core'] ?? [])
+                    + count($update_schedule['pending_themes'] ?? [])
+                    + count($update_schedule['pending_plugins'] ?? []);
+                if ($has_pending): ?>
                 <div style="margin-top:14px;">
-                    <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:#646970;margin:0 0 8px;">
-                        <?php echo count($update_schedule['pending_plugins']); ?> actualizaciones pendientes
+                    <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--rp-muted);margin:0 0 8px;">
+                        <?php echo $total_pending; ?> actualizaciones pendientes
                     </h3>
-                    <table style="width:100%;border-collapse:collapse;font-size:12px;">
-                        <?php foreach ($update_schedule['pending_plugins'] as $pf => $pi): ?>
-                        <tr style="border-bottom:1px solid #f0f0f1;">
-                            <td style="padding:5px 8px 5px 0;"><?php echo esc_html($pi['name']); ?></td>
-                            <td style="padding:5px 4px;color:#646970;white-space:nowrap;"><?php echo esc_html($pi['from']); ?> &rarr; <?php echo esc_html($pi['to']); ?></td>
+                    <table style="width:100%;border-collapse:collapse;font-size:12px;color:var(--rp-text);">
+                        <?php foreach ($update_schedule['pending_core'] ?? [] as $cu): ?>
+                        <tr style="border-bottom:1px solid var(--rp-border);">
+                            <td style="padding:5px 8px 5px 0;font-weight:600;">WordPress Core</td>
+                            <td style="padding:5px 4px;color:var(--rp-muted);white-space:nowrap;"><?php echo esc_html($cu['from']); ?> &rarr; <?php echo esc_html($cu['to']); ?></td>
                             <td style="padding:5px 0 5px 4px;text-align:right;">
-                                <?php if ($pi['will_update']): ?>
-                                <span style="color:#00a32a;font-weight:500;">Se actualizara</span>
+                                <?php if ($cu['will_update']): ?>
+                                <span style="color:var(--rp-ok);font-weight:500;">Se actualizará</span>
                                 <?php else: ?>
-                                <span style="color:#d63638;" title="<?php echo esc_attr($pi['reason']); ?>"><?php echo esc_html($pi['reason']); ?></span>
+                                <span style="color:var(--rp-fail);" title="<?php echo esc_attr($cu['reason']); ?>"><?php echo esc_html($cu['reason']); ?></span>
+                                <?php endif; ?>
+                            </td>
+                        </tr>
+                        <?php endforeach; ?>
+                        <?php foreach ($update_schedule['pending_themes'] ?? [] as $ts => $ti): ?>
+                        <tr style="border-bottom:1px solid var(--rp-border);">
+                            <td style="padding:5px 8px 5px 0;"><?php echo esc_html($ti['name']); ?> <small style="color:var(--rp-muted);">(tema)</small></td>
+                            <td style="padding:5px 4px;color:var(--rp-muted);white-space:nowrap;"><?php echo esc_html($ti['from']); ?> &rarr; <?php echo esc_html($ti['to']); ?></td>
+                            <td style="padding:5px 0 5px 4px;text-align:right;">
+                                <?php if ($ti['will_update']): ?>
+                                <span style="color:var(--rp-ok);font-weight:500;">Se actualizará</span>
+                                <?php else: ?>
+                                <span style="color:var(--rp-fail);" title="<?php echo esc_attr($ti['reason']); ?>"><?php echo esc_html($ti['reason']); ?></span>
+                                <?php endif; ?>
+                            </td>
+                        </tr>
+                        <?php endforeach; ?>
+                        <?php foreach ($update_schedule['pending_plugins'] ?? [] as $pf => $pi): ?>
+                        <tr style="border-bottom:1px solid var(--rp-border);">
+                            <td style="padding:5px 8px 5px 0;"><?php echo esc_html($pi['name']); ?></td>
+                            <td style="padding:5px 4px;color:var(--rp-muted);white-space:nowrap;"><?php echo esc_html($pi['from']); ?> &rarr; <?php echo esc_html($pi['to']); ?></td>
+                            <td style="padding:5px 0 5px 4px;text-align:right;">
+                                <?php if ($pi['will_update'] && $pi['reason'] === 'Gestionado por Replanta'): ?>
+                                <span style="color:var(--rp-teal);font-weight:500;" title="Care programa la actualización automáticamente">Gestionado por Care</span>
+                                <?php elseif ($pi['will_update']): ?>
+                                <span style="color:var(--rp-ok);font-weight:500;">Se actualizará</span>
+                                <?php else: ?>
+                                <span style="color:var(--rp-fail);" title="<?php echo esc_attr($pi['reason']); ?>"><?php echo esc_html($pi['reason']); ?></span>
                                 <?php endif; ?>
                             </td>
                         </tr>
@@ -774,7 +822,7 @@ class RP_Care_Settings_Page {
                     </table>
                 </div>
                 <?php elseif ($pending_upd === 0): ?>
-                <p style="margin:12px 0 0;color:#00a32a;font-size:13px;">Todos los plugins estan al dia.</p>
+                <p style="margin:12px 0 0;color:var(--rp-ok);font-size:13px;">Todos los componentes están al día.</p>
                 <?php endif; ?>
             </div>
             <?php endif; ?>
@@ -2211,6 +2259,8 @@ class RP_Care_Settings_Page {
             'frequency_label' => $freq_map[$raw_freq] ?? ucfirst($raw_freq),
             'next_run_human'  => null,
             'next_run_date'   => null,
+            'pending_core'    => [],
+            'pending_themes'  => [],
             'pending_plugins' => [],
         ];
 
@@ -2230,21 +2280,62 @@ class RP_Care_Settings_Page {
         if (!function_exists('get_plugin_updates')) {
             require_once ABSPATH . 'wp-admin/includes/update.php';
         }
+
+        $exclusions = class_exists('RP_Care_Tasks') ? RP_Care_Tasks::get_exclusions() : [];
+
+        // Core updates
+        $core_updates_raw = get_core_updates();
+        if (!empty($core_updates_raw)) {
+            foreach ($core_updates_raw as $cu) {
+                if (isset($cu->response) && $cu->response === 'upgrade') {
+                    $current_ver = get_bloginfo('version');
+                    $new_ver     = $cu->current ?? '?';
+                    $is_major    = (int) $new_ver !== (int) $current_ver;
+                    $allow_major = get_option('rpcare_allow_major_updates', false);
+                    $will_update = !$is_major || $allow_major;
+                    $info['pending_core'][] = [
+                        'from'        => $current_ver,
+                        'to'          => $new_ver,
+                        'will_update' => $will_update,
+                        'reason'      => ($is_major && !$allow_major) ? 'Versión mayor — habilitar en Hub' : '',
+                    ];
+                    break;
+                }
+            }
+        }
+
+        // Theme updates
+        $theme_updates_raw = get_theme_updates();
+        if (!empty($theme_updates_raw)) {
+            $exclusions_themes = $exclusions['themes'] ?? [];
+            foreach ($theme_updates_raw as $slug => $theme) {
+                $allowed = !in_array($slug, $exclusions_themes);
+                $info['pending_themes'][$slug] = [
+                    'name'        => $theme->get('Name'),
+                    'from'        => $theme->get('Version'),
+                    'to'          => $theme->update['new_version'] ?? '?',
+                    'will_update' => $allowed,
+                    'reason'      => $allowed ? '' : 'Excluido manualmente',
+                ];
+            }
+        }
+
+        // Plugin updates — bypass_for_task ensures we see all (including Care-managed free ones)
         RP_Care_Update_Control::$bypass_for_task = true;
         $plugin_updates = get_plugin_updates();
         RP_Care_Update_Control::$bypass_for_task = false;
         if (!empty($plugin_updates)) {
             $uc = class_exists('RP_Care_Update_Control') ? new RP_Care_Update_Control() : null;
-            $exclusions = RP_Care_Tasks::get_exclusions();
+            $exclusions_plugins = $exclusions['plugins'] ?? [];
             foreach ($plugin_updates as $file => $data) {
                 $allowed = true;
                 $reason  = '';
-                if (in_array($file, $exclusions['plugins'] ?? [])) {
+                if (in_array($file, $exclusions_plugins)) {
                     $allowed = false;
                     $reason  = 'Excluido manualmente';
                 } elseif ($uc && !$uc->is_plugin_update_allowed($file)) {
-                    $allowed = false;
-                    $reason  = 'Gestionado por Replanta';
+                    // Care manages when this updates via scheduled task — will_update stays true
+                    $reason = 'Gestionado por Replanta';
                 }
                 $info['pending_plugins'][$file] = [
                     'name'        => $data->Name ?? $file,

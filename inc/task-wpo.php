@@ -89,22 +89,33 @@ class RP_Care_Task_WPO {
 
     /**
      * Mide el tiempo de respuesta de la portada (ms). Warm-up + mejor de 2 mediciones.
+     *
+     * El warm-up NO lleva headers no-cache para que opcache y object cache puedan calentarse.
+     * Esto evita el falso positivo donde opcache_reset() hace que la medición DESPUÉS
+     * siempre parezca más lenta aunque las optimizaciones hayan mejorado el rendimiento real.
      */
     private static function measure_response_time() {
-        $args = [
+        $base_url = home_url('/');
+        $warmup_args = [
+            'timeout'   => 30,
+            'sslverify' => false,
+        ];
+        $measure_args = [
             'timeout'   => 30,
             'sslverify' => false,
             'headers'   => ['Cache-Control' => 'no-cache, no-store', 'Pragma' => 'no-cache'],
         ];
-        // Unique query param bypasses CDN and server page caches on every call
-        $url = add_query_arg('rpcare_measure', wp_generate_password(8, false), home_url('/'));
-        wp_remote_get($url, $args); // warm-up
 
+        // Dos warm-ups normales (permiten caché) — PHP / opcache / object cache llegan calientes
+        wp_remote_get($base_url, $warmup_args);
+        wp_remote_get($base_url, $warmup_args);
+
+        // Mediciones con param único para bypassear page cache, pero con opcache ya caliente
         $times = [];
         for ($i = 0; $i < 2; $i++) {
-            $url   = add_query_arg('rpcare_measure', wp_generate_password(8, false), home_url('/'));
+            $url   = add_query_arg('rpcare_measure', wp_generate_password(8, false), $base_url);
             $start = microtime(true);
-            $res   = wp_remote_get($url, $args);
+            $res   = wp_remote_get($url, $measure_args);
             if (!is_wp_error($res) && wp_remote_retrieve_response_code($res) < 500) {
                 $times[] = (microtime(true) - $start) * 1000;
             }

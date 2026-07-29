@@ -27,12 +27,28 @@ class RP_Care_Task_Report {
             self::send_email_report($email_recipient, $html_report, $report_data, $plan);
         }
         
-        // Notify hub
+        // Notify hub — include key metrics so PC Operaciones can display them without a round-trip
+        $upd_task = $report_data['tasks_summary']['updates'] ?? [];
         RP_Care_Utils::send_notification(
             'monthly_report_generated',
             'Informe mensual generado',
             "Informe mensual generado para $site_url",
-            ['report_id' => $report_id]
+            [
+                'report_id'          => $report_id,
+                'period'             => $report_data['site_info']['report_period'] ?? null,
+                'wpo_before_ms'      => $report_data['wpo_perf']['before']['response_ms'] ?? null,
+                'wpo_after_ms'       => $report_data['wpo_perf']['after']['response_ms'] ?? null,
+                'perf_score'         => $report_data['performance_metrics']['performance_score'] ?? null,
+                'updates_ok'         => isset( $upd_task['successful_runs'] ) ? (int) $upd_task['successful_runs'] : null,
+                'updates_total'      => isset( $upd_task['total_runs'] ) ? (int) $upd_task['total_runs'] : null,
+                'updates_rate'       => isset( $upd_task['success_rate'] ) ? (float) $upd_task['success_rate'] : null,
+                'errors_404_unique'  => $report_data['error_404_summary']['total_404s'] ?? null,
+                'errors_404_hits'    => $report_data['error_404_summary']['total_hits'] ?? null,
+                'recommendations'    => array_map(
+                    fn( $r ) => [ 'priority' => $r['priority'] ?? '', 'title' => $r['title'] ?? '' ],
+                    array_slice( $report_data['recommendations'] ?? [], 0, 5 )
+                ),
+            ]
         );
         
         RP_Care_Utils::log('report_generation', 'success', 'Monthly report generated', [

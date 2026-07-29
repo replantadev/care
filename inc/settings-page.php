@@ -438,6 +438,7 @@ class RP_Care_Settings_Page {
 
         // Tasks
         $auto_updates = $options['auto_updates'] ?? 'minor_only';
+        $staging_url  = $options['staging_url'] ?? '';
         $backup_on    = !isset($options['backup_enabled']) || $options['backup_enabled'];
         $cache_on     = !isset($options['cache_clearing']) || $options['cache_clearing'];
         $security_on  = !isset($options['security_monitoring']) || $options['security_monitoring'];
@@ -578,6 +579,16 @@ class RP_Care_Settings_Page {
                                 <option value="minor_only" <?php selected($auto_updates, 'minor_only'); ?>>Solo actualizaciones menores</option>
                                 <option value="all" <?php selected($auto_updates, 'all'); ?>>Todas las actualizaciones</option>
                             </select>
+                        </div>
+
+                        <div class="rpc-field" style="margin-top:12px;">
+                            <label class="rpc-label">URL de Staging</label>
+                            <input type="url"
+                                   name="rpcare_options[staging_url]"
+                                   value="<?php echo esc_attr($staging_url); ?>"
+                                   placeholder="https://staging.tudominio.com"
+                                   style="width:100%;background:var(--rp-card);color:var(--rp-text);border:1px solid var(--rp-border-s);border-radius:4px;padding:6px 10px;font-size:13px;">
+                            <p style="font-size:11px;color:var(--rp-muted);margin:4px 0 0;">URL del clon de staging para evaluacion pre-actualizacion (plan Ecosistema)</p>
                         </div>
 
                         <div class="rpc-toggle-row">
@@ -1292,6 +1303,10 @@ class RP_Care_Settings_Page {
         
         if (isset($input['hub_url'])) {
             $sanitized['hub_url'] = esc_url_raw($input['hub_url']);
+        }
+
+        if (isset($input['staging_url'])) {
+            $sanitized['staging_url'] = esc_url_raw($input['staging_url']);
         }
 
         if (isset($input['site_token'])) {

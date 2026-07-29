@@ -77,6 +77,13 @@ class RP_Care_REST {
             'permission_callback' => '__return_true',
         ]);
 
+        // ── Staging approval — clears cooldown and schedules production update ─
+        register_rest_route($this->control_ns, '/staging-approve', [
+            'methods'             => 'POST',
+            'callback'            => [$this, 'hub_staging_approve'],
+            'permission_callback' => '__return_true',
+        ]);
+
         // Main task execution endpoint
         register_rest_route($this->namespace, '/run', [
             'methods' => 'POST',
@@ -1902,6 +1909,39 @@ class RP_Care_REST {
             is_dir($path) ? $this->rmdir_recursive($path) : @unlink($path);
         }
         @rmdir($dir);
+    }
+
+    /**
+     * POST /wp-json/replanta-care/v1/staging-approve
+     * PC Hub approves staging evaluation → clears gate cooldown and schedules production update.
+     */
+    public function hub_staging_approve( WP_REST_Request $request ) {
+        if ( ! $this->validate_hub_token( $request, true ) ) {
+            return new WP_REST_Response( [ 'error' => 'Unauthorized' ], 403 );
+        }
+
+        // Clear the 6h cooldown so the production update can proceed
+        delete_transient( 'rpcare_staging_gate_cooldown' );
+
+        // Schedule update with staging_validated=true so check_staging_gate() passes
+        $args = [ 'staging_validated' => true ];
+        if ( function_exists( 'as_enqueue_async_action' ) ) {
+            as_enqueue_async_action( 'rpcare_task_updates', [ $args ], 'replanta-care' );
+            $method = 'as_async';
+        } else {
+            do_action( 'rpcare_task_updates', $args );
+            $method = 'direct';
+        }
+
+        RP_Care_Utils::log( 'staging', 'success', 'Staging aprobado desde Hub — update a producción programado', [
+            'method' => $method,
+        ] );
+
+        return new WP_REST_Response( [
+            'status'  => 'approved',
+            'message' => 'Staging aprobado — actualización de producción programada',
+            'method'  => $method,
+        ], 200 );
     }
 
     /**

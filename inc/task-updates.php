@@ -188,6 +188,18 @@ class RP_Care_Task_Updates {
         $clone = RP_Care_Task_Staging::create_clone('pre-update-' . gmdate('Ymd-His'));
         $triggered = is_array($clone) && !empty($clone['triggered']);
 
+        if ($triggered && class_exists('RP_Care_Task_StagingEval')) {
+            $snapshot = RP_Care_Task_StagingEval::capture_production_snapshot();
+
+            $options     = get_option('rpcare_options', []);
+            $staging_url = $options['staging_url'] ?? '';
+            RP_Care_Utils::send_notification('staging_clone_triggered', 'Clon de staging iniciado', 'Se ha creado un clon de staging. Evalua el entorno y aprueba desde Plugin Center para aplicar actualizaciones.', [
+                'staging_url'       => $staging_url,
+                'snapshot_captured' => !empty($snapshot['captured_at']),
+                'clone_data'        => is_array($clone) ? array_intersect_key($clone, array_flip(['name', 'url', 'id'])) : [],
+            ]);
+        }
+
         return [
             'success' => false,
             'skipped' => true,

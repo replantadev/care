@@ -1,7 +1,7 @@
 <?php
 // Minimal bootstrap for offline unit tests — no WP or DB required.
 define( 'ABSPATH', __DIR__ . '/../' );
-define( 'RPCARE_VERSION', '1.15.26' );
+define( 'RPCARE_VERSION', '1.15.29' );
 
 // Shim WP functions used by tested code.
 if ( ! function_exists( 'trailingslashit' ) ) {
@@ -15,6 +15,11 @@ if ( ! function_exists( 'get_option' ) ) {
     function get_option( string $k, $default = false ) { return $GLOBALS['_wp_options'][$k] ?? $default; }
     function update_option( string $k, $v, $autoload = true ): bool { $GLOBALS['_wp_options'][$k] = $v; return true; }
     function delete_option( string $k ): bool { unset( $GLOBALS['_wp_options'][$k] ); return true; }
+}
+if ( ! function_exists( 'get_transient' ) ) {
+    function get_transient( string $k ) { return $GLOBALS['_wp_options']['_transient_' . $k] ?? false; }
+    function set_transient( string $k, $v, int $expiration = 0 ): bool { $GLOBALS['_wp_options']['_transient_' . $k] = $v; return true; }
+    function delete_transient( string $k ): bool { unset( $GLOBALS['_wp_options']['_transient_' . $k] ); return true; }
 }
 if ( ! class_exists( 'WP_Error' ) ) {
     class WP_Error {

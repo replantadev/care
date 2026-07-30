@@ -98,6 +98,18 @@ class RP_Care_REST {
             'permission_callback' => '__return_true',
         ]);
 
+        // ── Reports: Hub reads Care's local report history ─────────────────────
+        register_rest_route($this->control_ns, '/reports', [
+            'methods'             => 'GET',
+            'callback'            => [$this, 'hub_get_reports'],
+            'permission_callback' => '__return_true',
+        ]);
+        register_rest_route($this->control_ns, '/reports/(?P<id>[a-zA-Z0-9_\-]+)', [
+            'methods'             => 'GET',
+            'callback'            => [$this, 'hub_get_report_html'],
+            'permission_callback' => '__return_true',
+        ]);
+
         // Main task execution endpoint
         register_rest_route($this->namespace, '/run', [
             'methods' => 'POST',
@@ -2180,6 +2192,70 @@ class RP_Care_REST {
             'status'    => $status,
             'logs'      => $logs,
             'errors'    => $errors,
+        ], 200 );
+    }
+
+    /**
+     * GET /wp-json/replanta-care/v1/reports
+     * Returns the list of generated reports (metadata only, no HTML).
+     */
+    public function hub_get_reports( WP_REST_Request $request ) {
+        if ( ! $this->validate_hub_token( $request ) ) {
+            return new WP_REST_Response( [ 'error' => 'Unauthorized' ], 403 );
+        }
+
+        $history = (array) get_option( 'rpcare_reports_history', [] );
+        $list    = array_map( function ( $entry ) {
+            return [
+                'id'           => $entry['id']           ?? '',
+                'generated_at' => $entry['generated_at'] ?? '',
+                'plan'         => $entry['plan']          ?? '',
+            ];
+        }, $history );
+
+        return new WP_REST_Response( [ 'reports' => $list, 'count' => count( $list ) ], 200 );
+    }
+
+    /**
+     * GET /wp-json/replanta-care/v1/reports/{id}
+     * Returns the full HTML of a generated report, embedded in a JSON envelope.
+     */
+    public function hub_get_report_html( WP_REST_Request $request ) {
+        if ( ! $this->validate_hub_token( $request ) ) {
+            return new WP_REST_Response( [ 'error' => 'Unauthorized' ], 403 );
+        }
+
+        $id      = sanitize_key( $request->get_param( 'id' ) );
+        $history = (array) get_option( 'rpcare_reports_history', [] );
+
+        $entry = null;
+        foreach ( $history as $h ) {
+            if ( ( $h['id'] ?? '' ) === $id ) {
+                $entry = $h;
+                break;
+            }
+        }
+
+        if ( ! $entry ) {
+            return new WP_REST_Response( [ 'error' => 'Informe no encontrado.' ], 404 );
+        }
+
+        $html_file = $entry['html_file'] ?? '';
+        if ( ! $html_file || ! file_exists( $html_file ) ) {
+            return new WP_REST_Response( [ 'error' => 'Archivo HTML no disponible.' ], 404 );
+        }
+
+        // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
+        $html = file_get_contents( $html_file );
+        if ( $html === false ) {
+            return new WP_REST_Response( [ 'error' => 'Error al leer el archivo.' ], 500 );
+        }
+
+        return new WP_REST_Response( [
+            'id'           => $id,
+            'generated_at' => $entry['generated_at'] ?? '',
+            'plan'         => $entry['plan']          ?? '',
+            'html'         => $html,
         ], 200 );
     }
 }

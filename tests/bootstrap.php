@@ -1,7 +1,7 @@
 <?php
 // Minimal bootstrap for offline unit tests — no WP or DB required.
 define( 'ABSPATH', __DIR__ . '/../' );
-define( 'RPCARE_VERSION', '1.15.25' );
+define( 'RPCARE_VERSION', '1.15.26' );
 
 // Shim WP functions used by tested code.
 if ( ! function_exists( 'trailingslashit' ) ) {
@@ -28,5 +28,5 @@ if ( ! class_exists( 'WP_Error' ) ) {
     }
 }
 if ( ! function_exists( 'is_wp_error' ) ) {
-    function is_wp_error( mixed $v ): bool { return $v instanceof WP_Error; }
+    function is_wp_error( $v ) { return $v instanceof WP_Error; }
 }

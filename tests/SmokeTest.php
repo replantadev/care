@@ -39,7 +39,8 @@ class SmokeTest extends TestCase {
         $b2_id    = 'backup_20240610T120000';
         $this->assertStringStartsWith( 'udp_', $udp_id, 'UpdraftPlus ID must start with udp_' );
         $this->assertStringStartsWith( 'backup_', $b2_id, 'B2 ID must start with backup_' );
-        $this->assertNotSame( str_starts_with( $udp_id, 'udp_' ), str_starts_with( $udp_id, 'backup_' ) );
+        $this->assertTrue(  strncmp( $udp_id, 'udp_',    4 ) === 0 );
+        $this->assertFalse( strncmp( $udp_id, 'backup_', 7 ) === 0 );
     }
 
     /**

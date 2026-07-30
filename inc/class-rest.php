@@ -2145,9 +2145,12 @@ class RP_Care_REST {
         if ( class_exists( 'ActionScheduler_Store' ) ) {
             try {
                 $as_status = ActionScheduler_Store::instance()->get_status( $action_id );
-                if ( $as_status === 'in-progress' ) $status = 'running';
-                elseif ( $as_status === 'complete' ) $status = 'complete';
-                elseif ( $as_status === 'failed'   ) $status = 'failed';
+                if ( $as_status === 'in-progress' ) {
+                    $status = 'running';
+                } elseif ( $as_status === 'complete' || $as_status === 'failed' ) {
+                    $status = ( $as_status === 'complete' ) ? 'complete' : 'failed';
+                    delete_option( "rpcare_job_{$action_id}" );
+                }
             } catch ( \Exception $e ) { /* ignore */ }
         }
 

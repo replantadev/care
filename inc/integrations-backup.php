@@ -228,7 +228,7 @@ class RP_Care_Task_Backup {
         return false;
     }
     
-    private static function is_updraftplus_active() {
+    public static function is_updraftplus_active(): bool {
         return is_plugin_active('updraftplus/updraftplus.php') && class_exists('UpdraftPlus');
     }
     
@@ -1665,6 +1665,176 @@ class RP_Care_Task_Backup {
         rmdir($dir);
     }
     
+    // -------------------------------------------------------------------------
+    // UpdraftPlus — list + restore
+    // -------------------------------------------------------------------------
+
+    private static function get_updraftplus_local_dir(): string {
+        $dir = get_option('updraft_backupdir', '');
+        if (!$dir) {
+            $dir = WP_CONTENT_DIR . '/updraft';
+        }
+        if (!path_is_absolute($dir)) {
+            $dir = ABSPATH . $dir;
+        }
+        return is_dir($dir) ? rtrim($dir, '/\\') : '';
+    }
+
+    public static function list_updraftplus_backups(int $limit = 10): array {
+        if (!self::is_updraftplus_active()) {
+            return ['success' => false, 'provider' => 'updraftplus', 'error' => 'UpdraftPlus no está activo', 'backups' => []];
+        }
+
+        $history = get_option('updraft_backup_history', []);
+        if (empty($history) || !is_array($history)) {
+            return ['success' => true, 'provider' => 'updraftplus', 'backups' => [], 'total' => 0, 'plugin_active' => true];
+        }
+
+        krsort($history); // newest first (keys are timestamps)
+
+        $backup_dir = self::get_updraftplus_local_dir();
+        $backups    = [];
+
+        $scope_keys = ['db' => 'database', 'plugins' => 'plugins', 'themes' => 'themes', 'uploads' => 'uploads', 'others' => 'others'];
+
+        foreach ($history as $ts => $backup) {
+            if (count($backups) >= $limit) break;
+
+            $timestamp = (int) ($backup['backup_time'] ?? $ts);
+            $scopes    = [];
+            $size      = 0;
+            $db_local  = false;
+
+            foreach ($scope_keys as $udp_key => $scope_name) {
+                if (!empty($backup[$udp_key])) {
+                    $scopes[] = $scope_name;
+                    foreach ((array) $backup[$udp_key] as $file) {
+                        $fpath = $backup_dir ? ($backup_dir . '/' . $file) : '';
+                        if ($fpath && file_exists($fpath)) {
+                            $size += filesize($fpath);
+                            if ($udp_key === 'db') $db_local = true;
+                        }
+                    }
+                }
+            }
+
+            $backups[] = [
+                'id'            => 'udp_' . $timestamp,
+                'provider'      => 'updraftplus',
+                'created_at'    => date('Y-m-d H:i:s', $timestamp),
+                'size'          => $size,
+                'scopes'        => $scopes,
+                'is_restorable' => $db_local,
+                'status'        => in_array('database', $scopes, true) ? 'completed' : 'partial',
+                'label'         => $backup['label'] ?? '',
+                'nonce'         => $backup['nonce'] ?? '',
+            ];
+        }
+
+        return [
+            'success'      => true,
+            'provider'     => 'updraftplus',
+            'backups'      => $backups,
+            'total'        => count($history),
+            'plugin_active'=> true,
+        ];
+    }
+
+    public static function restore_updraftplus_backup(string $backup_id, array $scopes = ['database']): array|\WP_Error {
+        if (!self::is_updraftplus_active()) {
+            return new \WP_Error('udp_not_active', 'UpdraftPlus no está activo');
+        }
+
+        if (!preg_match('/^udp_(\d+)$/', $backup_id, $m)) {
+            return new \WP_Error('udp_invalid_id', 'backup_id UpdraftPlus inválido');
+        }
+        $timestamp = (int) $m[1];
+
+        $history = get_option('updraft_backup_history', []);
+        $backup  = $history[$timestamp] ?? null;
+        if (!$backup) {
+            foreach ($history as $ts => $b) {
+                if ((int) ($b['backup_time'] ?? $ts) === $timestamp) { $backup = $b; break; }
+            }
+        }
+        if (!$backup) {
+            return new \WP_Error('udp_not_found', 'Backup UpdraftPlus no encontrado en historial');
+        }
+
+        $backup_dir = self::get_updraftplus_local_dir();
+        if (!$backup_dir) {
+            return new \WP_Error('udp_no_local_dir', 'Directorio local de UpdraftPlus no disponible (backup remoto no soportado)');
+        }
+
+        $errors   = [];
+        $restored = [];
+
+        if (in_array('database', $scopes, true)) {
+            $db_files = (array) ($backup['db'] ?? []);
+            if (empty($db_files)) {
+                return new \WP_Error('udp_no_db', 'Este backup no contiene base de datos');
+            }
+            $local_path = $backup_dir . '/' . $db_files[0];
+            if (!file_exists($local_path)) {
+                return new \WP_Error('udp_file_missing', 'Archivo de BD no disponible localmente: ' . $db_files[0]);
+            }
+
+            // Pre-restore safety backup
+            if (self::is_b2_configured()) {
+                $pre = self::create_b2_backup(['reason' => 'pre_restore_udp', 'scopes' => ['database']]);
+                if (empty($pre['success'])) {
+                    $errors[] = 'Advertencia: pre-restore B2 backup falló';
+                }
+            }
+
+            $tmp_dir  = self::create_backup_directory();
+            if (!$tmp_dir) return new \WP_Error('udp_tmp_failed', 'No se pudo crear directorio temporal');
+
+            $sql_file  = $tmp_dir . '/udp_restore.sql';
+            $extracted = false;
+
+            if (str_ends_with($local_path, '.bz2') && function_exists('bzopen')) {
+                $in = bzopen($local_path, 'r'); $out = fopen($sql_file, 'w');
+                if ($in && $out) {
+                    while (!feof($in)) fwrite($out, bzread($in, 524288));
+                    bzclose($in); fclose($out); $extracted = true;
+                }
+            } elseif (str_ends_with($local_path, '.gz')) {
+                $extracted = self::gunzip_file($local_path, $sql_file);
+            } else {
+                $extracted = copy($local_path, $sql_file);
+            }
+
+            if (!$extracted) {
+                self::remove_directory($tmp_dir);
+                return new \WP_Error('udp_extract_failed', 'No se pudo descomprimir el backup de BD de UpdraftPlus');
+            }
+
+            $import = self::import_sql_file($sql_file);
+            self::remove_directory($tmp_dir);
+
+            if (is_wp_error($import)) {
+                return new \WP_Error('udp_import_failed', 'Importación SQL falló: ' . $import->get_error_message());
+            }
+            $restored[] = 'database';
+        }
+
+        RP_Care_Utils::log('backup_restore', empty($errors) ? 'success' : 'warning', 'Restore UpdraftPlus ejecutado', [
+            'backup_id' => $backup_id,
+            'timestamp' => $timestamp,
+            'restored'  => $restored,
+            'errors'    => $errors,
+        ]);
+
+        return [
+            'success'   => !empty($restored),
+            'provider'  => 'updraftplus',
+            'backup_id' => $backup_id,
+            'restored'  => $restored,
+            'errors'    => $errors,
+        ];
+    }
+
     public static function get_backup_status() {
         $last_backup = get_option('rpcare_last_backup', '');
         $backup_frequency = RP_Care_Plan::get_backup_frequency();

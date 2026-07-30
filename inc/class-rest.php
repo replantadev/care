@@ -1998,12 +1998,41 @@ class RP_Care_REST {
         if (!$this->validate_hub_token($request, true)) {
             return new WP_REST_Response(['error' => 'Unauthorized'], 403);
         }
-        $limit  = max(1, min(50, (int) ($request->get_param('limit') ?: 10)));
-        $result = RP_Care_Task_Backup::list_b2_backups($limit);
-        if (is_wp_error($result)) {
-            return new WP_REST_Response(['error' => $result->get_error_message()], 500);
+        $limit   = max(1, min(50, (int) ($request->get_param('limit') ?: 10)));
+        $backups = [];
+
+        // B2 backups
+        if (RP_Care_Task_Backup::is_b2_configured_public()) {
+            $b2 = RP_Care_Task_Backup::list_b2_backups($limit);
+            if (!is_wp_error($b2) && !empty($b2['backups'])) {
+                $backups = array_merge($backups, $b2['backups']);
+            }
         }
-        return new WP_REST_Response($result, 200);
+
+        // UpdraftPlus backups
+        if (RP_Care_Task_Backup::is_updraftplus_active()) {
+            $udp = RP_Care_Task_Backup::list_updraftplus_backups($limit);
+            if (!empty($udp['backups'])) {
+                $backups = array_merge($backups, $udp['backups']);
+            }
+        }
+
+        if (empty($backups)) {
+            return new WP_REST_Response([
+                'success' => false,
+                'error'   => 'Ningún proveedor de backup disponible (B2 ni UpdraftPlus)',
+                'backups' => [],
+            ], 200);
+        }
+
+        // Sort unified list newest-first
+        usort($backups, fn($a, $b) => strcmp($b['created_at'], $a['created_at']));
+
+        return new WP_REST_Response([
+            'success' => true,
+            'backups' => array_slice($backups, 0, $limit),
+            'total'   => count($backups),
+        ], 200);
     }
 
     /**
@@ -2028,7 +2057,13 @@ class RP_Care_REST {
         }
         $scopes = array_map('sanitize_key', $scopes);
 
-        $result = RP_Care_Task_Backup::restore_b2_backup($backup_id, $scopes);
+        // Route by provider prefix
+        if (str_starts_with($backup_id, 'udp_')) {
+            $result = RP_Care_Task_Backup::restore_updraftplus_backup($backup_id, $scopes);
+        } else {
+            $result = RP_Care_Task_Backup::restore_b2_backup($backup_id, $scopes);
+        }
+
         if (is_wp_error($result)) {
             return new WP_REST_Response(['error' => $result->get_error_message()], 500);
         }

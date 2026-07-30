@@ -113,6 +113,9 @@ class RP_Care_Scheduler {
 
         // Monthly WP DB cleanup (revisions, trash, spam, orphan meta, expired transients)
         $this->maybe_schedule('rpcare_task_db_cleanup', 'monthly');
+
+        // Daily B2 backup retention cleanup (respects plan retention_days)
+        $this->maybe_schedule('rpcare_task_retention', 'daily');
         
         // Schedule reports based on plan
         $this->maybe_schedule('rpcare_task_report', 'monthly');
@@ -281,6 +284,9 @@ class RP_Care_Scheduler {
 
         // Monthly WP DB cleanup
         add_filter('rpcare_task_db_cleanup', ['RP_Care_Utils', 'db_cleanup_wp']);
+
+        // Daily B2 retention — also callable on-demand via hub_run()
+        add_filter('rpcare_task_retention', ['RP_Care_Task_Backup', 'run_b2_retention']);
 
         // On-demand only (no recurring schedule)
         add_filter('rpcare_task_cloudflare_configure', ['RP_Care_Task_Cloudflare', 'configure']);

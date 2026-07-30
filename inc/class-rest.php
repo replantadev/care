@@ -2087,6 +2087,7 @@ class RP_Care_REST {
             'updates'    => 'rpcare_task_updates',
             'report'     => 'rpcare_task_report',
             'db_cleanup' => 'rpcare_task_db_cleanup',
+            'retention'  => 'rpcare_task_retention',
         ];
 
         $task = sanitize_key((string) $request->get_param('task'));

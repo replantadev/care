@@ -103,6 +103,7 @@ class RP_Care_Plan {
             'price' => '49€/mes',
             'updates' => 'monthly',
             'backups' => 'weekly',
+            'backup_retention_days' => 7,
             'backup_stale_threshold_h' => 192, // 8 days — stale if >8d without backup
             'wpo' => 'basic',
             'reviews' => 'quarterly',
@@ -141,7 +142,7 @@ class RP_Care_Plan {
             'price' => '149€/mes',
             'updates' => 'weekly',
             'backups' => 'twicedaily',
-            'backup_retention_days' => 60,
+            'backup_retention_days' => 90,
             'backup_stale_threshold_h' => 14, // 2x día: stale si >14h sin backup
             'wpo' => 'premium',
             'reviews' => 'quarterly_audit',

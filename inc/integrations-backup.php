@@ -1545,20 +1545,63 @@ class RP_Care_Task_Backup {
         return wp_remote_retrieve_response_code($response) === 200;
     }
 
-    private static function cleanup_b2_old_backups(): void {
+    /**
+     * Public entry point for the 'retention' hub_run() task.
+     * Called by rpcare_task_retention AS hook and directly by run_b2_retention().
+     *
+     * @param mixed $args Ignored — kept for apply_filters() compat.
+     * @return array {success, deleted, skipped, retention_days, message}
+     */
+    public static function run_b2_retention( $args = [] ): array {
+        if ( ! self::is_b2_configured() ) {
+            RP_Care_Utils::log( 'retention', 'info', 'B2 no configurado — nada que limpiar.' );
+            return [ 'success' => true, 'deleted' => 0, 'skipped' => 0, 'message' => 'B2 no configurado' ];
+        }
+
+        $result = self::cleanup_b2_old_backups();
+        $deleted = count( $result['deleted'] ?? [] );
+        $errors  = $result['errors']  ?? [];
+
+        $msg = "Retención B2: {$deleted} backup(s) eliminados, {$result['retention_days']} días.";
+        if ( $errors ) {
+            $msg .= ' Errores: ' . implode( '; ', $errors );
+            RP_Care_Utils::log( 'retention', 'error', $msg );
+        } else {
+            RP_Care_Utils::log( 'retention', 'success', $msg );
+        }
+
+        return [
+            'success'        => empty( $errors ),
+            'deleted'        => $deleted,
+            'skipped'        => $result['skipped'] ?? 0,
+            'retention_days' => $result['retention_days'] ?? 0,
+            'errors'         => $errors,
+            'message'        => $msg,
+        ];
+    }
+
+    private static function cleanup_b2_old_backups(): array {
         if (!self::is_b2_configured()) {
-            return;
+            return ['deleted' => [], 'skipped' => 0, 'errors' => [], 'retention_days' => 0];
         }
 
         $auth = self::b2_authorize();
         if (is_wp_error($auth)) {
-            return;
+            return ['deleted' => [], 'skipped' => 0, 'errors' => [$auth->get_error_message()], 'retention_days' => 0];
         }
+
+        $retention_days = (int) get_option('rpcare_backup_retention_days', 0);
+        if ($retention_days <= 0 && class_exists('RP_Care_Plan')) {
+            $config         = RP_Care_Plan::get_plan_config();
+            $retention_days = (int) ($config['backup_retention_days'] ?? 7);
+        }
+        $retention_days = max(1, $retention_days ?: 7);
+        $cutoff         = time() - ($retention_days * DAY_IN_SECONDS);
 
         $cfg   = self::get_b2_config();
         $files = self::b2_list_files($auth, $cfg['bucket_id'], self::get_b2_prefix_root() . 'backup_', 1000);
         if (is_wp_error($files) || empty($files)) {
-            return;
+            return ['deleted' => [], 'skipped' => 0, 'errors' => [], 'retention_days' => $retention_days];
         }
 
         $groups = [];
@@ -1582,34 +1625,36 @@ class RP_Care_Task_Backup {
             ];
         }
 
-        if (count($groups) <= 2) {
-            return;
-        }
+        // Always keep at least 2 backups regardless of retention policy.
+        uasort($groups, static function($a, $b) { return $b['max_ts'] - $a['max_ts']; });
 
-        uasort($groups, fn($a, $b) => $b['max_ts'] <=> $a['max_ts']);
+        $deleted = [];
+        $errors  = [];
+        $skipped = 0;
+        $index   = 0;
 
-        $retention_days = (int) get_option('rpcare_backup_retention_days', 0);
-        if ($retention_days <= 0 && class_exists('RP_Care_Plan')) {
-            $config         = RP_Care_Plan::get_plan_config();
-            $retention_days = (int) ($config['backup_retention_days'] ?? 30);
-        }
-        $retention_days = max(1, $retention_days ?: 30);
-        $cutoff         = time() - ($retention_days * DAY_IN_SECONDS);
-
-        $index = 0;
-        foreach ($groups as $group) {
+        foreach ($groups as $backup_id => $group) {
             $index++;
             if ($index <= 2) {
+                $skipped++;
                 continue;
             }
-            if ($group['max_ts'] < $cutoff) {
-                foreach ($group['files'] as $f) {
-                    if ($f['file_id'] && $f['file_name']) {
-                        self::b2_delete_file_version($auth, $f['file_id'], $f['file_name']);
+            if ($group['max_ts'] >= $cutoff) {
+                $skipped++;
+                continue;
+            }
+            foreach ($group['files'] as $f) {
+                if ($f['file_id'] && $f['file_name']) {
+                    $ok = self::b2_delete_file_version($auth, $f['file_id'], $f['file_name']);
+                    if (!$ok) {
+                        $errors[] = "No se pudo eliminar: {$f['file_name']}";
                     }
                 }
             }
+            $deleted[] = $backup_id;
         }
+
+        return ['deleted' => $deleted, 'skipped' => $skipped, 'errors' => $errors, 'retention_days' => $retention_days];
     }
 
     private static function cleanup_old_backups() {

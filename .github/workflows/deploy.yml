@@ -57,7 +57,7 @@ jobs:
           extensions: mysqli, bz2
 
       - name: Install dev dependencies
-        run: composer install --dev --no-progress --no-interaction --ignore-platform-reqs
+        run: composer require --dev phpunit/phpunit:^10 --no-progress --no-interaction --ignore-platform-reqs
 
       - name: Run PHPUnit
         run: vendor/bin/phpunit --configuration phpunit.xml.dist --testdox

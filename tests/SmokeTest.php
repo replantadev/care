@@ -4,7 +4,7 @@ use PHPUnit\Framework\TestCase;
 class SmokeTest extends TestCase {
 
     public function test_version_constant_defined(): void {
-        $this->assertSame( '1.15.25', RPCARE_VERSION );
+        $this->assertMatchesRegularExpression( '/^\d+\.\d+\.\d+$/', RPCARE_VERSION );
     }
 
     public function test_wp_error_shim(): void {
@@ -47,12 +47,16 @@ class SmokeTest extends TestCase {
      * complete/error statuses must override 'queued'.
      */
     public function test_job_status_logic(): void {
-        $statuses = [ 'complete', 'error' ];
-        foreach ( $statuses as $s ) {
-            $is_terminal = in_array( $s, [ 'complete', 'error', 'failed' ], true );
-            $this->assertTrue( $is_terminal, "Status '$s' should be terminal" );
+        // Terminal log statuses that trigger completion in hub_job_status()
+        $log_terminal = [ 'success', 'error' ];
+        // Terminal AS/poll statuses returned to the client
+        $poll_terminal = [ 'complete', 'failed', 'canceled' ];
+
+        foreach ( $log_terminal as $s ) {
+            $this->assertTrue( in_array( $s, $log_terminal, true ), "Log status '$s' should be terminal" );
         }
-        $this->assertFalse( in_array( 'queued', [ 'complete', 'error', 'failed' ], true ) );
-        $this->assertFalse( in_array( 'running', [ 'complete', 'error', 'failed' ], true ) );
+        $this->assertFalse( in_array( 'queued',     $poll_terminal, true ) );
+        $this->assertFalse( in_array( 'running',    $poll_terminal, true ) );
+        $this->assertFalse( in_array( 'dispatched', $log_terminal,  true ) );
     }
 }

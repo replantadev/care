@@ -2058,7 +2058,7 @@ class RP_Care_REST {
         $scopes = array_map('sanitize_key', $scopes);
 
         // Route by provider prefix
-        if (str_starts_with($backup_id, 'udp_')) {
+        if (strncmp($backup_id, 'udp_', 4) === 0) {
             $result = RP_Care_Task_Backup::restore_updraftplus_backup($backup_id, $scopes);
         } else {
             $result = RP_Care_Task_Backup::restore_b2_backup($backup_id, $scopes);
@@ -2141,26 +2141,31 @@ class RP_Care_REST {
         $logs      = [];
         $errors    = [];
 
-        // Check AS store for running state (best-effort — doesn't affect correctness)
+        // Check AS store for running/complete state
         if ( class_exists( 'ActionScheduler_Store' ) ) {
             try {
                 $as_status = ActionScheduler_Store::instance()->get_status( $action_id );
                 if ( $as_status === 'in-progress' ) $status = 'running';
+                elseif ( $as_status === 'complete' ) $status = 'complete';
+                elseif ( $as_status === 'failed'   ) $status = 'failed';
             } catch ( \Exception $e ) { /* ignore */ }
         }
 
-        // Detect completion via log entries written by the task
+        // Detect completion via log entries written by the task.
+        // Only 'success' or 'error' rows are terminal; skip 'dispatched'/'info'/'warning'.
         if ( $task && class_exists( 'RP_Care_Utils' ) ) {
-            $all_logs = RP_Care_Utils::get_logs( 5, $task );
+            $all_logs = RP_Care_Utils::get_logs( 20, $task );
+            $terminal = null;
             foreach ( $all_logs as $row ) {
-                if ( $row->created_at >= $since_str ) {
-                    $logs[] = $row;
-                    if ( in_array( $row->status, [ 'error', 'warning' ], true ) )
-                        $errors[] = $row->message;
-                }
+                if ( $row->created_at < $since_str ) continue;
+                $logs[] = $row;
+                if ( in_array( $row->status, [ 'error', 'warning' ], true ) )
+                    $errors[] = $row->message;
+                if ( $terminal === null && in_array( $row->status, [ 'success', 'error' ], true ) )
+                    $terminal = $row;
             }
-            if ( ! empty( $logs ) ) {
-                $status = ( $logs[0]->status === 'error' ) ? 'failed' : 'complete';
+            if ( $terminal !== null ) {
+                $status = ( $terminal->status === 'error' ) ? 'failed' : 'complete';
                 delete_option( "rpcare_job_{$action_id}" );
             }
         }

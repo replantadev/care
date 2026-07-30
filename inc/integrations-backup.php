@@ -1740,7 +1740,12 @@ class RP_Care_Task_Backup {
         ];
     }
 
-    public static function restore_updraftplus_backup(string $backup_id, array $scopes = ['database']): array|\WP_Error {
+    /**
+     * @param string   $backup_id
+     * @param string[] $scopes
+     * @return array|\WP_Error
+     */
+    public static function restore_updraftplus_backup(string $backup_id, array $scopes = ['database']) {
         if (!self::is_updraftplus_active()) {
             return new \WP_Error('udp_not_active', 'UpdraftPlus no está activo');
         }
@@ -1793,13 +1798,13 @@ class RP_Care_Task_Backup {
             $sql_file  = $tmp_dir . '/udp_restore.sql';
             $extracted = false;
 
-            if (str_ends_with($local_path, '.bz2') && function_exists('bzopen')) {
+            if (substr($local_path, -4) === '.bz2' && function_exists('bzopen')) {
                 $in = bzopen($local_path, 'r'); $out = fopen($sql_file, 'w');
                 if ($in && $out) {
                     while (!feof($in)) fwrite($out, bzread($in, 524288));
                     bzclose($in); fclose($out); $extracted = true;
                 }
-            } elseif (str_ends_with($local_path, '.gz')) {
+            } elseif (substr($local_path, -3) === '.gz') {
                 $extracted = self::gunzip_file($local_path, $sql_file);
             } else {
                 $extracted = copy($local_path, $sql_file);

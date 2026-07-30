@@ -90,6 +90,8 @@ jobs:
             --exclude='.github' \
             --exclude='*.md' \
             --exclude='docs/' \
+            --exclude='tests/' \
+            --exclude='phpunit.xml.dist' \
             --exclude='composer.json' \
             --exclude='composer.lock' \
             --exclude='config-sample.php' \

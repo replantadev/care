@@ -77,6 +77,13 @@ class RP_Care_REST {
             'permission_callback' => '__return_true',
         ]);
 
+        // ── Async job status poll — returns AS status + recent logs ─────────
+        register_rest_route($this->control_ns, '/job/status', [
+            'methods'             => 'POST',
+            'callback'            => [$this, 'hub_job_status'],
+            'permission_callback' => '__return_true',
+        ]);
+
         // ── Staging approval — clears cooldown and schedules production update ─
         register_rest_route($this->control_ns, '/staging-approve', [
             'methods'             => 'POST',
@@ -2060,6 +2067,11 @@ class RP_Care_REST {
         if (function_exists('as_enqueue_async_action')) {
             $action_id = as_enqueue_async_action($hook, [], 'replanta-care');
             $method    = 'as_async';
+            // Store job meta so /job/status can find the result via log lookup
+            update_option( "rpcare_job_{$action_id}", [
+                'task'       => $task,
+                'dispatched' => current_time( 'mysql' ),
+            ], false );
         } else {
             do_action($hook);
             $action_id = null;
@@ -2077,5 +2089,53 @@ class RP_Care_REST {
             'action_id' => $action_id,
             'method'    => $method,
         ], 200);
+    }
+
+    public function hub_job_status( WP_REST_Request $request ): WP_REST_Response {
+        if ( ! $this->validate_hub_token( $request, true ) )
+            return new WP_REST_Response( [ 'error' => 'Unauthorized' ], 403 );
+
+        $action_id = (int) $request->get_param( 'action_id' );
+        if ( ! $action_id )
+            return new WP_REST_Response( [ 'error' => 'action_id required' ], 400 );
+
+        $meta      = get_option( "rpcare_job_{$action_id}", [] );
+        $task      = $meta['task']       ?? '';
+        $since_str = $meta['dispatched'] ?? '1970-01-01 00:00:00';
+        $status    = 'queued';
+        $logs      = [];
+        $errors    = [];
+
+        // Check AS store for running state (best-effort — doesn't affect correctness)
+        if ( class_exists( 'ActionScheduler_Store' ) ) {
+            try {
+                $as_status = ActionScheduler_Store::instance()->get_status( $action_id );
+                if ( $as_status === 'in-progress' ) $status = 'running';
+            } catch ( \Exception $e ) { /* ignore */ }
+        }
+
+        // Detect completion via log entries written by the task
+        if ( $task && class_exists( 'RP_Care_Utils' ) ) {
+            $all_logs = RP_Care_Utils::get_logs( 5, $task );
+            foreach ( $all_logs as $row ) {
+                if ( $row->created_at >= $since_str ) {
+                    $logs[] = $row;
+                    if ( in_array( $row->status, [ 'error', 'warning' ], true ) )
+                        $errors[] = $row->message;
+                }
+            }
+            if ( ! empty( $logs ) ) {
+                $status = ( $logs[0]->status === 'error' ) ? 'failed' : 'complete';
+                delete_option( "rpcare_job_{$action_id}" );
+            }
+        }
+
+        return new WP_REST_Response( [
+            'action_id' => $action_id,
+            'task'      => $task,
+            'status'    => $status,
+            'logs'      => $logs,
+            'errors'    => $errors,
+        ], 200 );
     }
 }

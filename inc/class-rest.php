@@ -1586,6 +1586,17 @@ class RP_Care_REST {
             ]);
         }
 
+        // Backup stale notification — fire when backup is overdue; throttled 24h.
+        if ($backup_stale) {
+            do_action('rpcare_notify', 'backup_stale', [
+                'message'       => $backup_last_at
+                    ? 'El último backup fue el ' . $backup_last_at . '.'
+                    : 'No hay ningún backup registrado aún.',
+                'plan'          => $plan,
+                'backup_last_at' => $backup_last_at ?: 'nunca',
+            ]);
+        }
+
         // TTFB — HEAD to home URL, cached 1 h. Skip inside CLI/cron to avoid loops.
         $ttfb_ms = null;
         if ( ! defined( 'DOING_CRON' ) || ! DOING_CRON ) {

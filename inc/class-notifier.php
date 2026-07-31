@@ -16,6 +16,7 @@ class RP_Care_Notifier {
     // Throttle in seconds per event type (0 = no throttle).
     private static array $throttle = [
         'backup_failed'   => 14400,   // 4h — retry within 30min, don't spam
+        'backup_stale'    => 86400,   // 24h — once a day is enough
         'update_applied'  => 43200,   // 12h — daily window may run multiple times
         'update_failed'   => 7200,    // 2h
         'ssl_expiry_soon' => 604800,  // 7d — weekly reminder is enough
@@ -25,6 +26,7 @@ class RP_Care_Notifier {
 
     private static array $labels = [
         'backup_failed'   => 'Backup fallido',
+        'backup_stale'    => 'Backup atrasado',
         'update_applied'  => 'Actualizaciones aplicadas',
         'update_failed'   => 'Actualización fallida',
         'ssl_expiry_soon' => 'SSL próximo a caducar',
@@ -34,6 +36,7 @@ class RP_Care_Notifier {
 
     private static array $emoji = [
         'backup_failed'   => '🔴',
+        'backup_stale'    => '⚠️',
         'update_applied'  => '✅',
         'update_failed'   => '🔴',
         'ssl_expiry_soon' => '🔐',

@@ -7,6 +7,8 @@ use PHPUnit\Framework\TestCase;
 
 // Load the plan class — uses only class constants and static arrays, no WP calls needed.
 require_once __DIR__ . '/../inc/class-plan.php';
+// Notifier class uses static arrays only at definition time; WP functions only inside methods.
+require_once __DIR__ . '/../inc/class-notifier.php';
 
 class IntegrationTest extends TestCase {
 
@@ -109,5 +111,44 @@ class IntegrationTest extends TestCase {
         $expected_filter = 'rpcare_task_' . $hub_run_key;
         $this->assertSame( $scheduler_hook, $expected_filter,
             "hub_run key '$hub_run_key' must map to AS hook 'rpcare_task_retention'" );
+    }
+
+    // ── Notifier: backup_stale event registration (Sprint S8) ────────────────
+
+    private function notifierProp( string $name ): array {
+        $rc   = new \ReflectionClass( 'RP_Care_Notifier' );
+        $prop = $rc->getProperty( $name );
+        $prop->setAccessible( true );
+        return (array) $prop->getValue( null );
+    }
+
+    public function test_backup_stale_throttle_is_24h(): void {
+        $throttle = $this->notifierProp( 'throttle' );
+        $this->assertArrayHasKey( 'backup_stale', $throttle, 'backup_stale must exist in $throttle' );
+        $this->assertSame( 86400, $throttle['backup_stale'], 'Throttle debe ser exactamente 24 h (86400 s)' );
+    }
+
+    public function test_backup_stale_has_label(): void {
+        $labels = $this->notifierProp( 'labels' );
+        $this->assertArrayHasKey( 'backup_stale', $labels );
+        $this->assertNotEmpty( $labels['backup_stale'], 'backup_stale label no puede estar vacío' );
+    }
+
+    public function test_backup_stale_has_emoji(): void {
+        $emoji = $this->notifierProp( 'emoji' );
+        $this->assertArrayHasKey( 'backup_stale', $emoji );
+        $this->assertNotEmpty( $emoji['backup_stale'], 'backup_stale emoji no puede estar vacío' );
+    }
+
+    public function test_all_notifier_event_arrays_are_consistent(): void {
+        $expected_events = [ 'backup_failed', 'backup_stale', 'update_applied',
+                             'update_failed', 'ssl_expiry_soon', 'site_down', 'test' ];
+        foreach ( [ 'throttle', 'labels', 'emoji' ] as $propName ) {
+            $arr = $this->notifierProp( $propName );
+            foreach ( $expected_events as $event ) {
+                $this->assertArrayHasKey( $event, $arr,
+                    "Event '$event' missing from \$$propName" );
+            }
+        }
     }
 }

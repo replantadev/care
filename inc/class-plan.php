@@ -247,11 +247,57 @@ class RP_Care_Plan {
         // Remove common incorrect paths that users might add
         $hub_url = preg_replace('#/(api/test-connection|wp-admin/admin-ajax\.php)$#', '', $hub_url);
         
+        // Collect health snapshot from locally cached data only (zero extra network calls).
+        $b2_data        = get_option( 'rpcare_last_b2_backup', null );
+        $backup_last_at = '';
+        $backup_status  = '';
+        if ( is_array( $b2_data ) && ! empty( $b2_data['timestamp'] ) ) {
+            $backup_last_at = gmdate( 'Y-m-d H:i:s', (int) $b2_data['timestamp'] );
+            $backup_status  = $b2_data['status'] ?? 'completed';
+        } elseif ( ( $ts = get_option( 'rpcare_last_backup', '' ) ) !== '' ) {
+            $backup_last_at = $ts;
+            $backup_status  = 'completed';
+        }
+
+        $updates_pending = 0;
+        $update_obj      = get_site_transient( 'update_plugins' );
+        if ( $update_obj && is_array( $update_obj->response ?? null ) ) {
+            $updates_pending = count( $update_obj->response );
+        }
+
+        $ssl_cached     = get_transient( 'rpcare_ssl_expiry' );
+        $ssl_expires_at = is_array( $ssl_cached ) ? ( $ssl_cached['expires_at'] ?? '' ) : '';
+        $ssl_days_left  = is_array( $ssl_cached ) ? ( $ssl_cached['days_left']  ?? null ) : null;
+
+        $ttfb_raw = get_transient( 'rpcare_ttfb' );
+        $ttfb_ms  = $ttfb_raw !== false ? (int) $ttfb_raw : null;
+
+        $plan_local  = self::get_current() ?: 'semilla';
+        $stale_cfg   = self::get_plan_config( $plan_local )['backup_stale_threshold_h'] ?? 192;
+        $backup_stale = false;
+        if ( $backup_last_at ) {
+            $backup_stale = ( time() - strtotime( $backup_last_at ) ) / HOUR_IN_SECONDS > $stale_cfg;
+        } elseif ( get_option( 'rpcare_activated' ) ) {
+            $backup_stale = true;
+        }
+
         $payload = [
             'site_token'  => $site_token,
             'site_url'    => $site_url,
             'plugin_ver'  => RPCARE_VERSION,
-            'server_type' => class_exists('RP_Care_Environment') ? RP_Care_Environment::detect() : '',
+            'server_type' => class_exists( 'RP_Care_Environment' ) ? RP_Care_Environment::detect() : '',
+            'health'      => [
+                'plugin_ver'         => RPCARE_VERSION,
+                'wp_version'         => get_bloginfo( 'version' ),
+                'backup_last_at'     => $backup_last_at,
+                'backup_status'      => $backup_status,
+                'backup_stale'       => $backup_stale,
+                'updates_pending'    => $updates_pending,
+                'ssl_expires_at'     => $ssl_expires_at,
+                'ssl_days_left'      => $ssl_days_left,
+                'ttfb_ms'            => $ttfb_ms,
+                'db_cleanup_last_at' => get_option( 'rpcare_last_db_cleanup', [] )['at'] ?? '',
+            ],
         ];
 
         // Prefer REST endpoint (Hub ≥ v1.0.7) — not blocked by CF WAF challenge.

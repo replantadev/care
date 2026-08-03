@@ -1451,15 +1451,13 @@ class RP_Care_REST {
         $options    = get_option('rpcare_options', []);
         $stored_key = trim($options['license_key'] ?? '');
 
-        if (empty($stored_key)) {
-            return new WP_Error('not_configured',
-                'Este site de Care no tiene license key configurada. Ve a Care > Ajustes > Conexión con Hub.',
-                ['status' => 403]
-            );
-        }
-
-        if (!hash_equals($stored_key, $license_key)) {
-            return new WP_Error('unauthorized', 'License key incorrecta', ['status' => 403]);
+        if ( empty( $stored_key ) ) {
+            // Fresh Care with no key yet: accept the key sent by PC so the operator
+            // can bootstrap the site entirely from Plugin Center without the client
+            // having to enter anything manually.
+            $options['license_key'] = $license_key;
+        } elseif ( ! hash_equals( $stored_key, $license_key ) ) {
+            return new WP_Error( 'unauthorized', 'License key incorrecta', [ 'status' => 403 ] );
         }
 
         // Store Hub token + optionally update Hub URL

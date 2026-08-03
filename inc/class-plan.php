@@ -284,15 +284,22 @@ class RP_Care_Plan {
         
         $response_code = wp_remote_retrieve_response_code($response);
         if ($response_code !== 200) {
-            error_log('Care Plugin: Hub returned HTTP ' . $response_code);
-            
-            // Implement backoff for HTTP errors too
             $failure_count = get_option('rpcare_hub_failures', 0) + 1;
             update_option('rpcare_hub_failures', $failure_count);
-            
             $backoff_seconds = min(300 * pow(2, $failure_count - 1), 3600);
             set_transient($backoff_key, time() + $backoff_seconds, $backoff_seconds);
-            
+
+            if (403 === (int) $response_code) {
+                // Token not recognized by Hub — clear it so maybe_auto_onboard() can re-register.
+                error_log('Care Plugin: Hub returned 403 — token no registrado. Se limpia para re-onboarding.');
+                $opts = get_option('rpcare_options', []);
+                unset($opts['site_token']);
+                update_option('rpcare_options', $opts);
+                delete_transient('rpcare_onboard_attempt');
+            } else {
+                error_log('Care Plugin: Hub returned HTTP ' . $response_code);
+            }
+
             return false;
         }
         

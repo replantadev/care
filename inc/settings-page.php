@@ -1508,6 +1508,10 @@ class RP_Care_Settings_Page {
                     $options['hub_url'] = $br_body['hub_url'];
                 }
                 update_option( 'rpcare_options', $options );
+                // Store plan locally so get_current() doesn't need to call Hub immediately.
+                if ( ! empty( $br_body['plan'] ) && class_exists( 'RP_Care_Plan' ) ) {
+                    RP_Care_Plan::set_current( $br_body['plan'] );
+                }
                 delete_transient( 'rpcare_plan_cache' );
                 delete_transient( 'rpcare_hub_backoff' );
                 delete_option( 'rpcare_hub_failures' );

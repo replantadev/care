@@ -1467,6 +1467,12 @@ class RP_Care_REST {
         }
         update_option('rpcare_options', $options);
 
+        // Store plan sent by PC so Care doesn't need to call Hub immediately.
+        $plan = sanitize_key($request->get_param('plan') ?? '');
+        if ($plan && class_exists('RP_Care_Plan') && RP_Care_Plan::is_valid_plan($plan)) {
+            RP_Care_Plan::set_current($plan);
+        }
+
         // Clear plan cache — Care will re-fetch from Hub on next request
         delete_transient('rpcare_plan_cache');
         delete_transient('rpcare_hub_backoff');

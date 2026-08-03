@@ -118,7 +118,7 @@ class RP_Care_Environment {
 	}
 
 	/** Human-readable label for UI display. */
-	public static function label( string $type = null ): string {
+	public static function label( ?string $type = null ): string {
 		$type = $type ?? self::detect();
 		return match ( $type ) {
 			'cyberpanel' => 'CyberPanel',

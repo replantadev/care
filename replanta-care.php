@@ -3,7 +3,7 @@
  * Plugin Name: Replanta Care
  * Plugin URI: https://replanta.dev
  * Description: Plugin de mantenimiento WordPress automatizado para clientes de Replanta con integracion Hub
- * Version: 1.15.32
+ * Version: 1.15.33
  * Author: Replanta
  * Author URI: https://replanta.dev
  * License: GPL v2 or later
@@ -17,7 +17,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('RPCARE_VERSION', '1.15.32');
+define('RPCARE_VERSION', '1.15.33');
 define('RPCARE_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('RPCARE_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('RPCARE_PLUGIN_FILE', __FILE__);
@@ -44,29 +44,6 @@ if (file_exists($config_file)) {
     require_once $sample_file;
 }
 
-// Load Action Scheduler (bundled; defers to WooCommerce copy if newer)
-if (file_exists(RPCARE_PLUGIN_PATH . 'vendor/woocommerce/action-scheduler/action-scheduler.php')) {
-    require_once RPCARE_PLUGIN_PATH . 'vendor/woocommerce/action-scheduler/action-scheduler.php';
-}
-
-// Autoloader for Care's bundled AS namespace classes.
-// Beaver Builder ships an older ActionScheduler class whose autoload() silently
-// skips namespaced classes (Action_Scheduler\Migration\*, Action_Scheduler\WP_CLI\*).
-// When Care's AS version wins the version contest, those classes must be loadable.
-// Prepend so it fires before BB's broken autoloader can interfere.
-spl_autoload_register(static function ( string $class ): void {
-    if ( strncmp( $class, 'Action_Scheduler\\', 17 ) !== 0 ) {
-        return;
-    }
-    static $dir_map = [ 'Migration' => 'migration' ];
-    $parts    = explode( '\\', substr( $class, 17 ) );
-    $parts[0] = $dir_map[ $parts[0] ] ?? $parts[0];
-    $file     = RPCARE_PLUGIN_PATH . 'vendor/woocommerce/action-scheduler/classes/'
-              . implode( '/', $parts ) . '.php';
-    if ( file_exists( $file ) ) {
-        require_once $file;
-    }
-}, false, true ); // throw=false, prepend=true
 
 // Auto-updates via Hub (Hub fetches from GitHub and serves the zip ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â no token needed on client sites)
 if (file_exists(RPCARE_PLUGIN_PATH . 'vendor/autoload.php')) {

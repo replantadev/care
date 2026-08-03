@@ -3,7 +3,7 @@
  * Plugin Name: Replanta Care
  * Plugin URI: https://replanta.dev
  * Description: Plugin de mantenimiento WordPress automatizado para clientes de Replanta con integracion Hub
- * Version: 1.15.39
+ * Version: 1.15.40
  * Author: Replanta
  * Author URI: https://replanta.dev
  * License: GPL v2 or later
@@ -17,7 +17,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('RPCARE_VERSION', '1.15.39');
+define('RPCARE_VERSION', '1.15.40');
 define('RPCARE_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('RPCARE_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('RPCARE_PLUGIN_FILE', __FILE__);
@@ -46,20 +46,32 @@ if (file_exists($config_file)) {
 
 
 // Auto-updates via Hub (Hub fetches from GitHub and serves the zip ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â no token needed on client sites)
-if (file_exists(RPCARE_PLUGIN_PATH . 'vendor/autoload.php')) {
+if ( file_exists( RPCARE_PLUGIN_PATH . 'vendor/autoload.php' ) ) {
     require_once RPCARE_PLUGIN_PATH . 'vendor/autoload.php';
 
-    try {
-        if (class_exists('\\YahnisElsts\\PluginUpdateChecker\\v5\\PucFactory')) {
-            \YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
-                RPCARE_UPDATE_URL,
-                __FILE__,
-                'replanta-care'
-            );
-        }
-    } catch (\Throwable $e) {
-        if (defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
-            error_log('Replanta Care: Update checker failed - ' . $e->getMessage());
+    // PUC processes the update_plugins transient which can consume >100 MB on large sites.
+    // On bot requests, cron, AS, AJAX and REST the site is already near its memory limit
+    // before plugins load — initialising PUC here causes OOM and leaves MySQL in a broken
+    // state ("Commands out of sync"). Restrict to real admin page loads only.
+    $rpcare_should_init_puc = is_admin()
+        && ! ( defined( 'DOING_CRON' )   && DOING_CRON )
+        && ! ( defined( 'DOING_AJAX' )   && DOING_AJAX )
+        && ! ( defined( 'REST_REQUEST' ) && REST_REQUEST )
+        && ! ( defined( 'WP_CLI' )       && WP_CLI );
+
+    if ( $rpcare_should_init_puc ) {
+        try {
+            if ( class_exists( '\\YahnisElsts\\PluginUpdateChecker\\v5\\PucFactory' ) ) {
+                \YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
+                    RPCARE_UPDATE_URL,
+                    __FILE__,
+                    'replanta-care'
+                );
+            }
+        } catch ( \Throwable $e ) {
+            if ( defined( 'WP_DEBUG_LOG' ) && WP_DEBUG_LOG ) {
+                error_log( 'Replanta Care: Update checker failed - ' . $e->getMessage() );
+            }
         }
     }
 }

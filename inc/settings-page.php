@@ -536,7 +536,7 @@ class RP_Care_Settings_Page {
                         <?php elseif (!empty($options['license_key'])): ?>
                         <div class="rpc-hint warn" style="margin-top:8px;padding:8px 12px;border-radius:8px;background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.2);">
                             <span class="dashicons dashicons-clock" style="color:var(--rp-warn);"></span>
-                            License key guardada. Replanta la activará en breve desde el Hub.
+                            License key guardada. Pulsa &ldquo;Probar conexión&rdquo; para activar ahora.
                         </div>
                         <?php else: ?>
                         <div class="rpc-hint warn" style="margin-top:8px;padding:8px 12px;border-radius:8px;background:rgba(251,191,36,0.06);border:1px solid rgba(251,191,36,0.15);">
@@ -565,6 +565,12 @@ class RP_Care_Settings_Page {
                             Las tareas se ajustan automaticamente.
                         </div>
                         <input type="hidden" name="rpcare_options[plan]" value="<?php echo esc_attr($current_plan); ?>">
+                        <?php elseif (!empty($options['license_key'])): ?>
+                        <div class="rpc-hint" style="margin-bottom:12px;padding:8px 12px;border-radius:8px;background:rgba(251,191,36,0.06);border:1px solid rgba(251,191,36,0.15);">
+                            <span class="dashicons dashicons-clock" style="color:var(--rp-warn);"></span>
+                            El plan se detectará automáticamente al conectar con el Hub.
+                        </div>
+                        <input type="hidden" name="rpcare_options[plan]" value="<?php echo esc_attr($current_plan ?: 'semilla'); ?>">
                         <?php else: ?>
                         <div class="rpc-field">
                             <label class="rpc-label">Plan seleccionado</label>
@@ -1474,32 +1480,58 @@ class RP_Care_Settings_Page {
             return;
         }
 
-        $hub_url = $_POST['hub_url'] ?? '';
-        $site_token = $_POST['site_token'] ?? '';
-        
-        if (empty($hub_url) || empty($site_token)) {
-            wp_send_json_error('URL y token son requeridos');
+        $options     = get_option( 'rpcare_options', [] );
+        $license_key = trim( $options['license_key'] ?? '' );
+        $hub_url     = rtrim( $options['hub_url'] ?? get_option( 'rpcare_hub_url', 'https://replanta.net' ), '/' );
+        $site_token  = $options['site_token'] ?? '';
+
+        // Bootstrap: if no token yet but license key exists, call PC's onboard endpoint now.
+        // maybe_auto_onboard() can't run in AJAX context, so we trigger it inline.
+        if ( ! $site_token && $license_key ) {
+            delete_transient( 'rpcare_onboard_attempt' ); // clear throttle so PC accepts this request
+            $br = wp_remote_post( $hub_url . '/wp-json/replanta-hub/v1/care/onboard', [
+                'timeout' => 20,
+                'headers' => [ 'Content-Type' => 'application/json' ],
+                'body'    => wp_json_encode( [
+                    'license_key'  => $license_key,
+                    'site_url'     => get_site_url(),
+                    'care_version' => defined( 'RPCARE_VERSION' ) ? RPCARE_VERSION : '',
+                ] ),
+            ] );
+            // PC calls /set-token synchronously inside the request above — re-read options.
+            $options    = get_option( 'rpcare_options', [] );
+            $site_token = $options['site_token'] ?? '';
+            if ( ! $site_token ) {
+                $br_code = ! is_wp_error( $br ) ? (int) wp_remote_retrieve_response_code( $br ) : 0;
+                $br_body = ! is_wp_error( $br ) ? json_decode( wp_remote_retrieve_body( $br ), true ) : [];
+                $br_msg  = $br_body['message'] ?? ( is_wp_error( $br ) ? $br->get_error_message() : '' );
+                wp_send_json_error(
+                    429 === $br_code
+                        ? 'Demasiados intentos recientes. Espera unos minutos e inténtalo de nuevo.'
+                        : 'No se pudo activar la licencia' . ( $br_msg ? ': ' . esc_html( $br_msg ) : '. Verifica que la license key sea correcta.' )
+                );
+                return;
+            }
         }
-        
-        // Test connection to hub
-        // Clean and normalize hub URL
-        $hub_url = rtrim($hub_url, '/');
-        
-        // Remove common incorrect paths that users might add
-        $hub_url = preg_replace('#/(api/test-connection|wp-admin/admin-ajax\.php)$#', '', $hub_url);
-        
-        // Use only the WordPress AJAX endpoint for simplicity and reliability
+
+        if ( ! $hub_url || ! $site_token ) {
+            wp_send_json_error( 'Introduce la license key arriba y guarda antes de probar la conexión.' );
+            return;
+        }
+
+        // Clean and normalize hub URL for connection test
+        $hub_url  = rtrim( $hub_url, '/' );
+        $hub_url  = preg_replace( '#/(api/test-connection|wp-admin/admin-ajax\.php)$#', '', $hub_url );
         $endpoint = $hub_url . '/wp-admin/admin-ajax.php';
-        
-        // Test via WordPress AJAX
-        $response = wp_remote_post($endpoint, [
-            'body' => [
-                'action' => 'rphub_test_care_connection',
+
+        $response = wp_remote_post( $endpoint, [
+            'body'    => [
+                'action'     => 'rphub_test_care_connection',
                 'site_token' => $site_token,
-                'site_url' => site_url()
+                'site_url'   => site_url(),
             ],
-            'timeout' => 10
-        ]);
+            'timeout' => 10,
+        ] );
         
         if (!is_wp_error($response)) {
             $code = wp_remote_retrieve_response_code($response);

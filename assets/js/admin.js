@@ -82,10 +82,10 @@
             console.log('Hub URL:', hubUrl);
             console.log('Site Token:', siteToken ? 'PRESENTE' : 'VACÍO');
             
-            if (!hubUrl || !siteToken) {
-                const message = 'Por favor, introduce URL del Hub y Token del Sitio';
-                console.log(' Error:', message);
-                showNotification(message, 'error');
+            const licenseKey = $('input[name="rpcare_options[license_key]"]').val() || '';
+            // Allow empty siteToken when licenseKey is present — PHP will bootstrap
+            if (!siteToken && !licenseKey) {
+                showNotification('Introduce tu license key y guarda la configuración primero', 'error');
                 return;
             }
             
@@ -113,6 +113,8 @@
                     if (response.success) {
                         showConnectionStatus('success', response.data);
                         showNotification('Conexión exitosa con el Hub', 'success');
+                        // Reload to show connected state and updated plan
+                        setTimeout(function() { location.reload(); }, 1500);
                     } else {
                         showConnectionStatus('error', response.data);
                         showNotification('Error de conexión: ' + response.data, 'error');

@@ -3,7 +3,7 @@
  * Plugin Name: Replanta Care
  * Plugin URI: https://replanta.dev
  * Description: Plugin de mantenimiento WordPress automatizado para clientes de Replanta con integracion Hub
- * Version: 1.15.35
+ * Version: 1.15.36
  * Author: Replanta
  * Author URI: https://replanta.dev
  * License: GPL v2 or later
@@ -17,7 +17,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('RPCARE_VERSION', '1.15.35');
+define('RPCARE_VERSION', '1.15.36');
 define('RPCARE_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('RPCARE_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('RPCARE_PLUGIN_FILE', __FILE__);
@@ -517,8 +517,19 @@ class ReplantaCare {
         if (!is_wp_error($response) && 200 === (int) wp_remote_retrieve_response_code($response)) {
             $body = json_decode(wp_remote_retrieve_body($response), true);
             if (!empty($body['status']) && 'ok' === $body['status']) {
+                if (!empty($body['token'])) {
+                    // PC returns the token in the response body — store it directly.
+                    $opts = get_option('rpcare_options', []);
+                    $opts['site_token'] = $body['token'];
+                    if (!empty($body['hub_url'])) {
+                        $opts['hub_url'] = $body['hub_url'];
+                    }
+                    update_option('rpcare_options', $opts);
+                    delete_transient('rpcare_plan_cache');
+                    delete_transient('rpcare_hub_backoff');
+                    delete_option('rpcare_hub_failures');
+                }
                 RP_Care_Utils::log('onboard', 'success', 'Auto-onboarding con Hub completado.');
-                // Hub called /set-token, so token is now stored. Stop future attempts.
                 delete_transient('rpcare_onboard_attempt');
             }
         }

@@ -1498,20 +1498,35 @@ class RP_Care_Settings_Page {
                     'care_version' => defined( 'RPCARE_VERSION' ) ? RPCARE_VERSION : '',
                 ] ),
             ] );
-            // PC calls /set-token synchronously inside the request above — re-read options.
-            $options    = get_option( 'rpcare_options', [] );
-            $site_token = $options['site_token'] ?? '';
-            $hub_url    = rtrim( $options['hub_url'] ?? get_option( 'rpcare_hub_url', 'https://replanta.net' ), '/' );
-            if ( ! $site_token ) {
-                $br_code = ! is_wp_error( $br ) ? (int) wp_remote_retrieve_response_code( $br ) : 0;
-                $br_body = ! is_wp_error( $br ) ? json_decode( wp_remote_retrieve_body( $br ), true ) : [];
-                $br_msg  = $br_body['message'] ?? ( is_wp_error( $br ) ? $br->get_error_message() : '' );
-                wp_send_json_error(
-                    429 === $br_code
-                        ? 'Demasiados intentos recientes. Espera unos minutos e inténtalo de nuevo.'
-                        : 'No se pudo activar la licencia' . ( $br_msg ? ': ' . esc_html( $br_msg ) : '. Verifica que la license key sea correcta.' )
-                );
-                return;
+            $br_code = ! is_wp_error( $br ) ? (int) wp_remote_retrieve_response_code( $br ) : 0;
+            $br_body = ! is_wp_error( $br ) ? json_decode( wp_remote_retrieve_body( $br ), true ) : [];
+
+            if ( 200 === $br_code && 'ok' === ( $br_body['status'] ?? '' ) && ! empty( $br_body['token'] ) ) {
+                // PC returns token in the response body — store it directly (no /set-token push needed).
+                $options['site_token'] = $br_body['token'];
+                if ( ! empty( $br_body['hub_url'] ) ) {
+                    $options['hub_url'] = $br_body['hub_url'];
+                }
+                update_option( 'rpcare_options', $options );
+                delete_transient( 'rpcare_plan_cache' );
+                delete_transient( 'rpcare_hub_backoff' );
+                delete_option( 'rpcare_hub_failures' );
+                $site_token = $br_body['token'];
+                $hub_url    = rtrim( $options['hub_url'] ?? get_option( 'rpcare_hub_url', 'https://replanta.net' ), '/' );
+            } else {
+                // Fallback: older PC version called /set-token — re-read options.
+                $options    = get_option( 'rpcare_options', [] );
+                $site_token = $options['site_token'] ?? '';
+                $hub_url    = rtrim( $options['hub_url'] ?? get_option( 'rpcare_hub_url', 'https://replanta.net' ), '/' );
+                if ( ! $site_token ) {
+                    $br_msg = $br_body['message'] ?? ( is_wp_error( $br ) ? $br->get_error_message() : '' );
+                    wp_send_json_error(
+                        429 === $br_code
+                            ? 'Demasiados intentos recientes. Espera unos minutos e inténtalo de nuevo.'
+                            : 'No se pudo activar la licencia' . ( $br_msg ? ': ' . esc_html( $br_msg ) : '. Verifica que la license key sea correcta.' )
+                    );
+                    return;
+                }
             }
         }
 

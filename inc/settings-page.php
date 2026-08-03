@@ -1501,6 +1501,7 @@ class RP_Care_Settings_Page {
             // PC calls /set-token synchronously inside the request above — re-read options.
             $options    = get_option( 'rpcare_options', [] );
             $site_token = $options['site_token'] ?? '';
+            $hub_url    = rtrim( $options['hub_url'] ?? get_option( 'rpcare_hub_url', 'https://replanta.net' ), '/' );
             if ( ! $site_token ) {
                 $br_code = ! is_wp_error( $br ) ? (int) wp_remote_retrieve_response_code( $br ) : 0;
                 $br_body = ! is_wp_error( $br ) ? json_decode( wp_remote_retrieve_body( $br ), true ) : [];

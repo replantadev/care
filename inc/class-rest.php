@@ -1639,6 +1639,7 @@ class RP_Care_REST {
             'ssl_days_left'        => $ssl_days_left,
             'ttfb_ms'              => $ttfb_ms,
             'db_cleanup_last_at'   => get_option( 'rpcare_last_db_cleanup', [] )['at'] ?? '',
+            'as_failed_24h'        => class_exists( 'RP_Care_Plan' ) ? RP_Care_Plan::count_as_failures_24h() : 0,
             'notification_channels'=> $notif_channels,
         ], 200);
     }

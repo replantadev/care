@@ -215,7 +215,34 @@ class RP_Care_Plan {
     public static function is_valid_plan($plan) {
         return in_array($plan, [self::PLAN_BASIC, self::PLAN_ADVANCED, self::PLAN_PREMIUM, self::PLAN_SEMILLA, self::PLAN_RAIZ, self::PLAN_ECOSISTEMA]);
     }
-    
+
+    /**
+     * Count ActionScheduler failed/fatal_error jobs in the last 24 h.
+     * Uses a cached transient (TTL 10 min) to avoid repeated COUNT queries.
+     */
+    public static function count_as_failures_24h(): int {
+        $cache_key = 'rpcare_as_fail_count';
+        $cached    = get_transient( $cache_key );
+        if ( $cached !== false ) {
+            return (int) $cached;
+        }
+
+        global $wpdb;
+        $table = $wpdb->prefix . 'actionscheduler_actions';
+        if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $table ) ) !== $table ) {
+            set_transient( $cache_key, 0, 10 * MINUTE_IN_SECONDS );
+            return 0;
+        }
+
+        $count = (int) $wpdb->get_var(
+            "SELECT COUNT(*) FROM `{$table}`
+             WHERE status IN ('failed','fatal_error')
+             AND scheduled_date_gmt >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 24 HOUR)"
+        );
+        set_transient( $cache_key, $count, 10 * MINUTE_IN_SECONDS );
+        return $count;
+    }
+
     /**
      * Detect plan from Replanta hub
      */
@@ -297,6 +324,7 @@ class RP_Care_Plan {
                 'ssl_days_left'      => $ssl_days_left,
                 'ttfb_ms'            => $ttfb_ms,
                 'db_cleanup_last_at' => get_option( 'rpcare_last_db_cleanup', [] )['at'] ?? '',
+                'as_failed_24h'      => self::count_as_failures_24h(),
             ],
         ];
 

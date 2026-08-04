@@ -233,7 +233,12 @@ class RP_Care_Client_Portal {
 
             <?php if ($d['pending_updates'] > 0): ?>
             <div class="rcp-pending-notice">
-                <?php echo intval($d['pending_updates']); ?> actualizaci&oacute;n<?php echo $d['pending_updates'] > 1 ? 'es pendientes' : ' pendiente'; ?> &mdash; se aplicar&aacute; autom&aacute;ticamente esta semana
+                <?php echo intval($d['pending_updates']); ?> actualizaci&oacute;n<?php echo $d['pending_updates'] > 1 ? 'es pendientes' : ' pendiente'; ?>
+                <?php if ($d['hub_connected']): ?>
+                &mdash; se aplicar&aacute; autom&aacute;ticamente esta semana
+                <?php else: ?>
+                &mdash; <a href="<?php echo esc_url(admin_url('admin.php?page=replanta-care')); ?>">conecta con Replanta</a> para que se apliquen autom&aacute;ticamente
+                <?php endif; ?>
             </div>
             <?php endif; ?>
         </div>
@@ -664,10 +669,15 @@ class RP_Care_Client_Portal {
     }
 
     private function isHubConnected() {
-        $opts = get_option('rpcare_options', []);
-        $hub  = $opts['hub_url'] ?? get_option('rpcare_hub_url', '');
-        $tok  = get_option('rpcare_token', '');
-        return !empty($hub) && !empty($tok);
+        // New onboarding flow: Hub assigned site_token to Care and plan sync confirmed connection.
+        if ( get_option( 'rpcare_hub_connected', false ) && get_option( 'rpcare_plan', '' ) ) {
+            return true;
+        }
+        // Legacy manual-token flow (pre-onboarding): Care generated rpcare_token for Hub.
+        $opts = get_option( 'rpcare_options', [] );
+        $hub  = $opts['hub_url'] ?? get_option( 'rpcare_hub_url', '' );
+        $tok  = get_option( 'rpcare_token', '' );
+        return ! empty( $hub ) && ! empty( $tok );
     }
 
     private function humanTime($mysqlOrTs) {

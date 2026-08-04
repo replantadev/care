@@ -318,6 +318,7 @@ class RP_Care_Scheduler {
             'rpcare_task_checkout_monitor',
             'rpcare_task_peak_scheduler',
             'rpcare_task_revenue_anomaly',
+            'rpcare_task_retention',
         ];
 
         foreach ($hooks as $hook) {

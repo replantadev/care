@@ -3,7 +3,7 @@
  * Plugin Name: Replanta Care
  * Plugin URI: https://replanta.dev
  * Description: Plugin de mantenimiento WordPress automatizado para clientes de Replanta con integracion Hub
- * Version: 1.15.44
+ * Version: 1.15.46
  * Author: Replanta
  * Author URI: https://replanta.dev
  * License: GPL v2 or later
@@ -17,7 +17,9 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('RPCARE_VERSION', '1.15.44');
+if ( ! defined( 'RPCARE_VERSION' ) ) {
+    define( 'RPCARE_VERSION', '1.15.46' );
+}
 define('RPCARE_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('RPCARE_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('RPCARE_PLUGIN_FILE', __FILE__);
@@ -139,6 +141,9 @@ class ReplantaCare {
     }
     
     public function load_dependencies() {
+        if ( defined( 'RPCARE_TESTING' ) ) {
+            return;
+        }
         $required_files = [
             // Core classes
             'inc/class-environment.php',
@@ -568,7 +573,7 @@ class ReplantaCare {
                 empty($body['token']) ||
                 !is_string($body['token'])
             ) {
-                error_log('Care: auto-onboard response inválido: ' . wp_remote_retrieve_body($response));
+                error_log('Care: auto-onboard response inválido HTTP ' . $http_code);
                 return;
             }
 
@@ -709,10 +714,14 @@ class ReplantaCare {
     }
     
     public function is_activated() {
+        if (get_option('rpcare_hub_suspended', false)) {
+            return false;
+        }
+
         // Auto-activation through hub detection
         $plan = get_option('rpcare_plan', '');
         $hub_connected = get_option('rpcare_hub_connected', false);
-        
+
         if ($plan && $hub_connected) {
             return true;
         }
@@ -785,8 +794,10 @@ class ReplantaCare {
     }
 }
 
-// Initialize the plugin
-ReplantaCare::getInstance();
+// Initialize the plugin (skipped in test environments)
+if ( ! defined( 'RPCARE_TESTING' ) ) {
+    ReplantaCare::getInstance();
+}
 
 register_uninstall_hook(__FILE__, 'rpcare_uninstall');
 function rpcare_uninstall() {

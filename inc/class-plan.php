@@ -446,17 +446,22 @@ class RP_Care_Plan {
     public static function apply_hub_entitlements(string $status, string $plan, array $addons): void {
         $opts     = get_option('rpcare_options', []);
         $plan     = self::normalize_plan($plan);
-        $addons   = array_values(array_filter(array_map('sanitize_key', $addons), 'strlen'));
+        // Whitelist to known addon slugs and deduplicate
+        $addons = array_values(array_unique(array_intersect(
+            array_filter(array_map('sanitize_key', $addons), 'strlen'),
+            ['ecommerce']
+        )));
 
         if (self::is_valid_plan($plan)) {
             update_option('rpcare_detected_plan', $plan);
             $opts['plan'] = $plan;
         }
 
-        $old_addons = (array) ($opts['addons'] ?? []);
+        $old_addons  = (array) ($opts['addons'] ?? []);
         $opts['addons'] = $addons;
 
-        $suspended = in_array($status, ['suspended', 'expired', 'cancelled'], true);
+        $was_suspended = (bool) get_option('rpcare_hub_suspended', false);
+        $suspended     = in_array($status, ['suspended', 'expired', 'cancelled', 'verification_stale'], true);
         if ($suspended) {
             $opts['hub_suspended'] = true;
             update_option('rpcare_hub_suspended', true);
@@ -471,13 +476,28 @@ class RP_Care_Plan {
         update_option('rpcare_ecommerce_enabled', in_array('ecommerce', $addons, true));
 
         if (class_exists('RP_Care_Addon_Manager')) {
-            (new \RP_Care_Addon_Manager())->update($addons);
+            RP_Care_Addon_Manager::get()->update($addons);
         }
 
         sort($old_addons);
         $new_sorted = $addons; sort($new_sorted);
-        if ($old_addons !== $new_sorted) {
+        $addons_changed = ($old_addons !== $new_sorted);
+
+        if ($addons_changed) {
             do_action('rpcare_addons_synced', $addons, $old_addons);
+        }
+
+        if (class_exists('RP_Care_Scheduler')) {
+            $effective_plan = self::is_valid_plan($plan) ? $plan : (string) get_option('rpcare_detected_plan', '');
+            if ($effective_plan) {
+                $scheduler = new \RP_Care_Scheduler($effective_plan);
+                if ($suspended) {
+                    $scheduler->clear_all();
+                } elseif ($addons_changed || $was_suspended) {
+                    $scheduler->clear_all();
+                    $scheduler->ensure();
+                }
+            }
         }
 
         delete_transient('rpcare_plan_cache');

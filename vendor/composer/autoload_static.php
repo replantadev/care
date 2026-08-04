@@ -11,14 +11,14 @@ class ComposerStaticInita89890190f6307ff4f1175904c4510d9
     );
 
     public static $prefixLengthsPsr4 = array (
-        'R' => 
+        'R' =>
         array (
             'ReplantaCare\\' => 13,
         ),
     );
 
     public static $prefixDirsPsr4 = array (
-        'ReplantaCare\\' => 
+        'ReplantaCare\\' =>
         array (
             0 => __DIR__ . '/../..' . '/inc',
         ),

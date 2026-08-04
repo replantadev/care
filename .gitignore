@@ -39,3 +39,6 @@ ehthumbs.db
 
 # Local secure config
 config.php
+
+# PHPUnit artifacts
+.phpunit.result.cache

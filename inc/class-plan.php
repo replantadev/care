@@ -20,6 +20,9 @@ class RP_Care_Plan {
     const PLAN_ADVANCED = 'advanced';
     const PLAN_PREMIUM = 'premium';
 
+    // Reentrancy guard: prevents get_current() → detect_plan_from_hub() → get_current() loops.
+    private static bool $detecting = false;
+
     /**
      * Normalize any plan slug to the canonical (Spanish) name.
      */
@@ -247,6 +250,19 @@ class RP_Care_Plan {
      * Detect plan from Replanta hub
      */
     public static function detect_plan_from_hub($hub_url = null, $site_token = null) {
+        // Defense-in-depth: if get_current() already triggered us, bail immediately.
+        if ( self::$detecting ) {
+            return false;
+        }
+        self::$detecting = true;
+        try {
+            return self::do_detect_plan_from_hub( $hub_url, $site_token );
+        } finally {
+            self::$detecting = false;
+        }
+    }
+
+    private static function do_detect_plan_from_hub($hub_url = null, $site_token = null) {
         // Check if we should skip hub detection temporarily (backoff)
         $backoff_key = 'rpcare_hub_backoff';
         $backoff_time = get_transient($backoff_key);
@@ -299,8 +315,12 @@ class RP_Care_Plan {
         $ttfb_raw = get_transient( 'rpcare_ttfb' );
         $ttfb_ms  = $ttfb_raw !== false ? (int) $ttfb_raw : null;
 
-        $plan_local  = self::get_current() ?: 'semilla';
-        $stale_cfg   = self::get_plan_config( $plan_local )['backup_stale_threshold_h'] ?? 192;
+        // Read the local plan directly from DB — never call get_current() here because
+        // this method is already running inside get_current(), which would recurse infinitely.
+        $plan_local = get_option( 'rpcare_detected_plan', '' )
+                   ?: get_option( 'rpcare_plan', '' )
+                   ?: 'semilla';
+        $stale_cfg  = self::get_plan_config( $plan_local )['backup_stale_threshold_h'] ?? 192;
         $backup_stale = false;
         if ( $backup_last_at ) {
             $backup_stale = ( time() - strtotime( $backup_last_at ) ) / HOUR_IN_SECONDS > $stale_cfg;

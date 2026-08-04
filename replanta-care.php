@@ -3,7 +3,7 @@
  * Plugin Name: Replanta Care
  * Plugin URI: https://replanta.dev
  * Description: Plugin de mantenimiento WordPress automatizado para clientes de Replanta con integracion Hub
- * Version: 1.15.42
+ * Version: 1.15.43
  * Author: Replanta
  * Author URI: https://replanta.dev
  * License: GPL v2 or later
@@ -17,7 +17,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('RPCARE_VERSION', '1.15.42');
+define('RPCARE_VERSION', '1.15.43');
 define('RPCARE_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('RPCARE_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('RPCARE_PLUGIN_FILE', __FILE__);
@@ -48,33 +48,45 @@ if (file_exists($config_file)) {
 // Auto-updates via Hub (Hub fetches from GitHub and serves the zip ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â no token needed on client sites)
 if ( file_exists( RPCARE_PLUGIN_PATH . 'vendor/autoload.php' ) ) {
     require_once RPCARE_PLUGIN_PATH . 'vendor/autoload.php';
+}
 
-    // PUC processes the update_plugins transient which can consume >100 MB on large sites.
-    // On bot requests, cron, and AS the site is already near its memory limit before plugins
-    // load — initialising PUC here causes OOM and "Commands out of sync" MySQL errors.
-    // REST is allowed: our do_self_update() endpoint explicitly calls wp_update_plugins() and
-    // needs PUC registered; in all other REST calls wp_update_plugins() is never triggered so
-    // the overhead of initialising PUC is negligible.
-    $rpcare_should_init_puc = is_admin()
-        && ! ( defined( 'DOING_CRON' ) && DOING_CRON )
-        && ! ( defined( 'DOING_AJAX' ) && DOING_AJAX )
-        && ! ( defined( 'WP_CLI' )     && WP_CLI );
-
-    if ( $rpcare_should_init_puc ) {
-        try {
-            if ( class_exists( '\\YahnisElsts\\PluginUpdateChecker\\v5\\PucFactory' ) ) {
-                \YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
-                    RPCARE_UPDATE_URL,
-                    __FILE__,
-                    'replanta-care'
-                );
-            }
-        } catch ( \Throwable $e ) {
-            if ( defined( 'WP_DEBUG_LOG' ) && WP_DEBUG_LOG ) {
-                error_log( 'Replanta Care: Update checker failed - ' . $e->getMessage() );
-            }
-        }
+/**
+ * Initialize PUC -- idempotent, safe to call multiple times per request.
+ * Uses a static flag so buildUpdateChecker() only runs once even when
+ * do_self_update() (REST context) also needs PUC registered.
+ */
+function rpcare_init_puc(): bool {
+    static $done = false;
+    if ( $done ) {
+        return true;
     }
+    if ( ! class_exists( '\\YahnisElsts\\PluginUpdateChecker\\v5\\PucFactory' ) ) {
+        return false;
+    }
+    try {
+        \YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
+            RPCARE_UPDATE_URL,
+            RPCARE_PLUGIN_FILE,
+            'replanta-care'
+        );
+        $done = true;
+        return true;
+    } catch ( \Throwable $e ) {
+        if ( defined( 'WP_DEBUG_LOG' ) && WP_DEBUG_LOG ) {
+            error_log( 'Replanta Care: PUC init failed -- ' . $e->getMessage() );
+        }
+        return false;
+    }
+}
+
+// Initialize PUC on real admin page loads only (not frontend, cron, AS, AJAX).
+// PUC processes update_plugins transient (>100 MB on heavy sites) -- loading it on
+// bot requests or cron causes OOM. do_self_update() calls rpcare_init_puc() directly.
+if ( is_admin()
+    && ! ( defined( 'DOING_CRON' ) && DOING_CRON )
+    && ! ( defined( 'DOING_AJAX' ) && DOING_AJAX )
+    && ! ( defined( 'WP_CLI' )     && WP_CLI ) ) {
+    rpcare_init_puc();
 }
 
 // Main plugin class

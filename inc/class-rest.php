@@ -546,15 +546,18 @@ class RP_Care_REST {
 
         $before = defined('RPCARE_VERSION') ? RPCARE_VERSION : '';
 
+        // Ensure PUC is registered — it is NOT initialized during REST requests by the
+        // bootstrap (is_admin() is false for /wp-json/ requests). rpcare_init_puc() is
+        // idempotent: calling it here is safe even if bootstrap already ran it.
+        rpcare_init_puc();
+
         // Bust PUC + WP plugin transient so the next check hits the Hub
         delete_site_transient('update_plugins');
         delete_site_transient('puc_request_info_replanta-care');
         wp_clean_plugins_cache(true);
 
-        // Trigger PUC to refetch metadata immediately
-        if (class_exists('\\YahnisElsts\\PluginUpdateChecker\\v5\\PucFactory')) {
-            do_action('puc_request_info_replanta-care');
-        }
+        // Trigger PUC to refetch metadata immediately, then run WP's full check
+        do_action( 'puc_request_info_replanta-care' );
         wp_update_plugins();
 
         $transient = get_site_transient('update_plugins');

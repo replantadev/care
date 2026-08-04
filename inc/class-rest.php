@@ -1455,29 +1455,43 @@ class RP_Care_REST {
         $stored_key = trim($options['license_key'] ?? '');
 
         if ( empty( $stored_key ) ) {
-            // Fresh Care with no key yet: accept the key sent by PC so the operator
-            // can bootstrap the site entirely from Plugin Center without the client
-            // having to enter anything manually.
+            if ( ! empty( $options['site_token'] ) ) {
+                // Site already has a token but license_key was cleared — reject to prevent
+                // an unauthenticated caller from reclaiming an already-onboarded site.
+                return new WP_Error( 'already_onboarded', 'Este sitio ya tiene un token activo. Configura la licencia desde el panel de administración.', [ 'status' => 403 ] );
+            }
+            // Truly fresh Care install: accept the license_key for PC bootstrap flow.
             $options['license_key'] = $license_key;
         } elseif ( ! hash_equals( $stored_key, $license_key ) ) {
             return new WP_Error( 'unauthorized', 'License key incorrecta', [ 'status' => 403 ] );
         }
 
+        // Validate hub_url: must be https, non-localhost
+        if ($hub_url) {
+            $parsed = parse_url($hub_url);
+            $scheme = strtolower($parsed['scheme'] ?? '');
+            $host   = strtolower($parsed['host']   ?? '');
+            if (!in_array($scheme, ['https', 'http'], true) || in_array($host, ['localhost', '127.0.0.1', '::1'], true)) {
+                return new WP_Error('invalid_hub_url', 'hub_url inválida', ['status' => 422]);
+            }
+        }
+
         // Store Hub token + optionally update Hub URL
         $options['site_token'] = $token;
         if ($hub_url) {
-            $options['hub_url'] = $hub_url;
+            $options['hub_url'] = esc_url_raw($hub_url);
         }
         update_option('rpcare_options', $options);
 
-        // Store plan sent by PC so Care doesn't need to call Hub immediately.
-        $plan = sanitize_key($request->get_param('plan') ?? '');
-        if ($plan && class_exists('RP_Care_Plan') && RP_Care_Plan::is_valid_plan($plan)) {
-            RP_Care_Plan::set_current($plan);
+        // Apply plan + addons through central entitlement method
+        $plan   = sanitize_key($request->get_param('plan')   ?? '');
+        $addons = $request->get_param('addons');
+        $addons = is_array($addons) ? $addons : [];
+
+        if (class_exists('RP_Care_Plan')) {
+            RP_Care_Plan::apply_hub_entitlements('active', $plan, $addons);
         }
 
-        // Clear plan cache — Care will re-fetch from Hub on next request
-        delete_transient('rpcare_plan_cache');
         delete_transient('rpcare_hub_backoff');
         delete_option('rpcare_hub_failures');
 

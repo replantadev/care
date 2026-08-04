@@ -539,28 +539,61 @@ class ReplantaCare {
             'sslverify' => !(defined('WP_DEBUG') && WP_DEBUG),
         ]);
 
-        if (!is_wp_error($response) && 200 === (int) wp_remote_retrieve_response_code($response)) {
-            $body = json_decode(wp_remote_retrieve_body($response), true);
-            if (!empty($body['status']) && 'ok' === $body['status']) {
-                if (!empty($body['token'])) {
-                    // PC returns the token in the response body — store it directly.
-                    $opts = get_option('rpcare_options', []);
-                    $opts['site_token'] = $body['token'];
-                    if (!empty($body['hub_url'])) {
-                        $opts['hub_url'] = $body['hub_url'];
-                    }
-                    update_option('rpcare_options', $opts);
-                    // Store plan locally so get_current() doesn't need to call Hub immediately.
-                    if (!empty($body['plan']) && class_exists('RP_Care_Plan')) {
-                        RP_Care_Plan::set_current($body['plan']);
-                    }
-                    delete_transient('rpcare_plan_cache');
-                    delete_transient('rpcare_hub_backoff');
-                    delete_option('rpcare_hub_failures');
-                }
-                RP_Care_Utils::log('onboard', 'success', 'Auto-onboarding con Hub completado.');
-                delete_transient('rpcare_onboard_attempt');
+        $http_code = is_wp_error($response) ? 0 : (int) wp_remote_retrieve_response_code($response);
+
+        if (is_wp_error($response) || ($http_code >= 500 && $http_code < 600)) {
+            // 5xx / network error — infrastructure issue, retry in 1 h (transient already set)
+            if (is_wp_error($response)) {
+                error_log('Care: auto-onboard network error: ' . $response->get_error_message());
+            } else {
+                error_log('Care: auto-onboard hub returned HTTP ' . $http_code . ' — will retry in 1 h');
             }
+            return;
+        }
+
+        if (403 === $http_code) {
+            // License rejected by Hub — stop retrying for 24 h so we don't hammer the API.
+            set_transient('rpcare_onboard_attempt', 1, 24 * HOUR_IN_SECONDS);
+            error_log('Care: auto-onboard 403 — licencia no válida. Retry bloqueado 24 h.');
+            return;
+        }
+
+        if (200 === $http_code) {
+            $body = json_decode(wp_remote_retrieve_body($response), true);
+
+            // Validate full response before saving anything
+            if (
+                !is_array($body) ||
+                ($body['status'] ?? '') !== 'ok' ||
+                empty($body['token']) ||
+                !is_string($body['token'])
+            ) {
+                error_log('Care: auto-onboard response inválido: ' . wp_remote_retrieve_body($response));
+                return;
+            }
+
+            $opts = get_option('rpcare_options', []);
+            $opts['site_token'] = $body['token'];
+            if (!empty($body['hub_url'])) {
+                $opts['hub_url'] = esc_url_raw($body['hub_url']);
+            }
+            update_option('rpcare_options', $opts);
+
+            // Apply plan + addons + status through the central entitlement method
+            if (class_exists('RP_Care_Plan')) {
+                $plan   = (string) ($body['plan']   ?? '');
+                $status = (string) ($body['status_lic'] ?? 'active'); // license status ≠ response status
+                $addons = is_array($body['addons'] ?? null) ? $body['addons'] : [];
+                RP_Care_Plan::apply_hub_entitlements($status, $plan, $addons);
+            }
+
+            delete_transient('rpcare_hub_backoff');
+            delete_option('rpcare_hub_failures');
+
+            if (class_exists('RP_Care_Utils')) {
+                RP_Care_Utils::log('onboard', 'success', 'Auto-onboarding con Hub completado.');
+            }
+            delete_transient('rpcare_onboard_attempt');
         }
     }
 

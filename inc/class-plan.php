@@ -412,29 +412,77 @@ class RP_Care_Plan {
             return false;
         }
         
-        // Handle WordPress AJAX response format
         if (isset($data['success']) && $data['success'] && isset($data['data']['plan'])) {
-            $plan = $data['data']['plan'];
+            $d      = $data['data'];
+            $plan   = (string) ($d['plan']   ?? '');
+            $status = (string) ($d['status'] ?? 'active');
+            $addons = is_array($d['addons'] ?? null) ? $d['addons'] : [];
+
             if (self::is_valid_plan($plan)) {
-                // Mark as activated automatically
                 update_option('rpcare_activated', true);
-                update_option('rpcare_hub_connected', true);
-                update_option('rpcare_detected_plan', $plan);
-                update_option('rpcare_hub_last_check', current_time('mysql'));
-                
+                self::apply_hub_entitlements($status, $plan, $addons);
+
                 if (defined('WP_DEBUG') && WP_DEBUG) {
-                    error_log('Care Plugin: Successfully detected plan ' . $plan . ' for site ' . $site_url);
+                    error_log('Care Plugin: Plan detected from Hub — status=' . $status . ' plan=' . $plan . ' site=' . $site_url);
                 }
                 return $plan;
             }
         }
-        
+
         if (defined('WP_DEBUG') && WP_DEBUG) {
             error_log('Care Plugin: Invalid plan response from hub: ' . print_r($data, true));
         }
         return false;
     }
-    
+
+    /**
+     * Central entitlement applier — single source of truth for plan + addons + suspension state.
+     * Called from detect_plan_from_hub(), maybe_auto_onboard(), and set_hub_token().
+     *
+     * @param string   $status   'active' | 'suspended' | 'expired' | 'cancelled'
+     * @param string   $plan     plan slug, e.g. 'semilla'
+     * @param string[] $addons   e.g. ['ecommerce']
+     */
+    public static function apply_hub_entitlements(string $status, string $plan, array $addons): void {
+        $opts     = get_option('rpcare_options', []);
+        $plan     = self::normalize_plan($plan);
+        $addons   = array_values(array_filter(array_map('sanitize_key', $addons), 'strlen'));
+
+        if (self::is_valid_plan($plan)) {
+            update_option('rpcare_detected_plan', $plan);
+            $opts['plan'] = $plan;
+        }
+
+        $old_addons = (array) ($opts['addons'] ?? []);
+        $opts['addons'] = $addons;
+
+        $suspended = in_array($status, ['suspended', 'expired', 'cancelled'], true);
+        if ($suspended) {
+            $opts['hub_suspended'] = true;
+            update_option('rpcare_hub_suspended', true);
+        } else {
+            unset($opts['hub_suspended']);
+            delete_option('rpcare_hub_suspended');
+        }
+
+        update_option('rpcare_options', $opts);
+        update_option('rpcare_hub_connected', true);
+        update_option('rpcare_hub_last_check', current_time('mysql'));
+        update_option('rpcare_ecommerce_enabled', in_array('ecommerce', $addons, true));
+
+        if (class_exists('RP_Care_Addon_Manager')) {
+            (new \RP_Care_Addon_Manager())->update($addons);
+        }
+
+        sort($old_addons);
+        $new_sorted = $addons; sort($new_sorted);
+        if ($old_addons !== $new_sorted) {
+            do_action('rpcare_addons_synced', $addons, $old_addons);
+        }
+
+        delete_transient('rpcare_plan_cache');
+    }
+
     public static function get_plan_config($plan = null) {
         if ($plan === null) {
             $plan = self::get_current();

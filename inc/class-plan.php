@@ -229,7 +229,7 @@ class RP_Care_Plan {
 
         global $wpdb;
         $table = $wpdb->prefix . 'actionscheduler_actions';
-        if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $table ) ) !== $table ) {
+        if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $wpdb->esc_like( $table ) ) ) !== $table ) {
             set_transient( $cache_key, 0, 10 * MINUTE_IN_SECONDS );
             return 0;
         }

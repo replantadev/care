@@ -3,7 +3,7 @@
  * Plugin Name: Replanta Care
  * Plugin URI: https://replanta.dev
  * Description: Plugin de mantenimiento WordPress automatizado para clientes de Replanta con integracion Hub
- * Version: 1.15.40
+ * Version: 1.15.41
  * Author: Replanta
  * Author URI: https://replanta.dev
  * License: GPL v2 or later
@@ -17,7 +17,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('RPCARE_VERSION', '1.15.40');
+define('RPCARE_VERSION', '1.15.41');
 define('RPCARE_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('RPCARE_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('RPCARE_PLUGIN_FILE', __FILE__);
@@ -50,14 +50,15 @@ if ( file_exists( RPCARE_PLUGIN_PATH . 'vendor/autoload.php' ) ) {
     require_once RPCARE_PLUGIN_PATH . 'vendor/autoload.php';
 
     // PUC processes the update_plugins transient which can consume >100 MB on large sites.
-    // On bot requests, cron, AS, AJAX and REST the site is already near its memory limit
-    // before plugins load — initialising PUC here causes OOM and leaves MySQL in a broken
-    // state ("Commands out of sync"). Restrict to real admin page loads only.
+    // On bot requests, cron, and AS the site is already near its memory limit before plugins
+    // load — initialising PUC here causes OOM and "Commands out of sync" MySQL errors.
+    // REST is allowed: our do_self_update() endpoint explicitly calls wp_update_plugins() and
+    // needs PUC registered; in all other REST calls wp_update_plugins() is never triggered so
+    // the overhead of initialising PUC is negligible.
     $rpcare_should_init_puc = is_admin()
-        && ! ( defined( 'DOING_CRON' )   && DOING_CRON )
-        && ! ( defined( 'DOING_AJAX' )   && DOING_AJAX )
-        && ! ( defined( 'REST_REQUEST' ) && REST_REQUEST )
-        && ! ( defined( 'WP_CLI' )       && WP_CLI );
+        && ! ( defined( 'DOING_CRON' ) && DOING_CRON )
+        && ! ( defined( 'DOING_AJAX' ) && DOING_AJAX )
+        && ! ( defined( 'WP_CLI' )     && WP_CLI );
 
     if ( $rpcare_should_init_puc ) {
         try {

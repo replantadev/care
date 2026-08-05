@@ -3,7 +3,7 @@
         'name' => 'replantadev/care',
         'pretty_version' => 'dev-main',
         'version' => 'dev-main',
-        'reference' => '98094d0f1b8ca4554c26da199d1bd6b338bfe144',
+        'reference' => '41487059bbff70258345f378b6a932b3c6389244',
         'type' => 'wordpress-plugin',
         'install_path' => __DIR__ . '/../../',
         'aliases' => array(),
@@ -13,7 +13,7 @@
         'replantadev/care' => array(
             'pretty_version' => 'dev-main',
             'version' => 'dev-main',
-            'reference' => '98094d0f1b8ca4554c26da199d1bd6b338bfe144',
+            'reference' => '41487059bbff70258345f378b6a932b3c6389244',
             'type' => 'wordpress-plugin',
             'install_path' => __DIR__ . '/../../',
             'aliases' => array(),

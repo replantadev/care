@@ -3,7 +3,7 @@
  * Plugin Name: Replanta Care
  * Plugin URI: https://replanta.dev
  * Description: Plugin de mantenimiento WordPress automatizado para clientes de Replanta con integracion Hub
- * Version: 1.15.46
+ * Version: 1.15.47
  * Author: Replanta
  * Author URI: https://replanta.dev
  * License: GPL v2 or later
@@ -18,7 +18,7 @@ if (!defined('ABSPATH')) {
 
 // Define plugin constants
 if ( ! defined( 'RPCARE_VERSION' ) ) {
-    define( 'RPCARE_VERSION', '1.15.46' );
+    define( 'RPCARE_VERSION', '1.15.47' );
 }
 define('RPCARE_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('RPCARE_PLUGIN_PATH', plugin_dir_path(__FILE__));
@@ -185,6 +185,14 @@ class ReplantaCare {
             
             // Admin pages (portal must load before settings-page registers its submenu)
             'inc/class-client-portal.php',
+
+            // Staging-First Update Pipeline
+            'inc/class-pipeline-client.php',
+            'inc/class-inventory-snapshot.php',
+            'inc/class-isolation-checker.php',
+            'inc/class-staging-provider.php',
+            'inc/class-test-runner.php',
+            'inc/class-approval-screen.php',
         ];
 
         foreach ($required_files as $file) {
@@ -253,6 +261,15 @@ class ReplantaCare {
                 if (class_exists('RP_Care_Settings_Page')) {
                     RP_Care_Settings_Page::get_instance();
                 }
+                // Approval screen for the Staging-First Pipeline.
+                if (class_exists('RP_Care_Approval_Screen')) {
+                    RP_Care_Approval_Screen::init();
+                }
+            }
+
+            // Cloned-environment quarantine check (runs on every non-cron request).
+            if ( class_exists( 'RP_Care_Pipeline_Client' ) ) {
+                RP_Care_Pipeline_Client::maybe_detect_cloned_environment();
             }
         } catch (Exception $e) {
             error_log('Replanta Care: Component initialization error - ' . $e->getMessage());
@@ -611,6 +628,7 @@ class ReplantaCare {
             'rpcare_task_maintenance', 'rpcare_task_db_cleanup', 'rpcare_task_report', 'rpcare_task_cwv',
             'rpcare_task_retention',
             'rpcare_task_anomaly',
+            'rpcare_task_pipeline_poll',
             'rpcare_daily_check', 'rpcare_hourly_monitor', 'rpcare_clear_cache',
         ];
         foreach ($hooks as $hook) {

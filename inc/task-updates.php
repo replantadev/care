@@ -11,6 +11,13 @@ if (!defined('ABSPATH')) {
 class RP_Care_Task_Updates {
     
     public static function run($args = []) {
+        // When the Staging-First Pipeline is managing updates, block direct Care updates.
+        if ( class_exists( 'RP_Care_Pipeline_Client' ) && RP_Care_Pipeline_Client::blocks_direct_updates() ) {
+            $msg = 'Pipeline de staging activo — actualizaciones directas bloqueadas hasta aprobación humana.';
+            RP_Care_Utils::log( 'updates', 'info', $msg );
+            return [ 'success' => true, 'pipeline_blocked' => true, 'message' => $msg, 'skipped' => true ];
+        }
+
         // When Hub/WP Toolkit Pro manages updates for this site, skip Care's own task
         if (get_option('rpcare_update_managed', false)) {
             $msg = 'Actualizaciones gestionadas por Replanta Hub vía WP Toolkit Pro';

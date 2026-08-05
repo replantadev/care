@@ -27,6 +27,11 @@ class RP_Care_Scheduler {
             'display' => __('Cada minuto', 'replanta-care')
         ];
 
+        $schedules['five_minutes'] = [
+            'interval' => 5 * MINUTE_IN_SECONDS,
+            'display' => __('Cada 5 minutos', 'replanta-care'),
+        ];
+
         $schedules['fifteen_minutes'] = [
             'interval' => 15 * MINUTE_IN_SECONDS,
             'display' => __('Cada 15 minutos', 'replanta-care')
@@ -119,7 +124,12 @@ class RP_Care_Scheduler {
         
         // Schedule reports based on plan
         $this->maybe_schedule('rpcare_task_report', 'monthly');
-        
+
+        // Pipeline poll — only when the pipeline is enabled.
+        if ( class_exists( 'RP_Care_Pipeline_Client' ) && RP_Care_Pipeline_Client::is_pipeline_enabled() ) {
+            $this->maybe_schedule( 'rpcare_task_pipeline_poll', 'five_minutes' );
+        }
+
         // Register action hooks for all tasks
         $this->register_task_hooks();
     }
@@ -297,6 +307,13 @@ class RP_Care_Scheduler {
         add_filter('rpcare_task_checkout_monitor', ['RP_Care_Task_Checkout_Monitor', 'run']);
         add_filter('rpcare_task_peak_scheduler', ['RP_Care_Task_Peak_Scheduler', 'run']);
         add_filter('rpcare_task_revenue_anomaly', ['RP_Care_Task_Revenue_Anomaly', 'run']);
+
+        // Pipeline poll — executes the pull-model command loop.
+        add_action('rpcare_task_pipeline_poll', static function() {
+            if ( class_exists( 'RP_Care_Pipeline_Client' ) && RP_Care_Pipeline_Client::is_pipeline_enabled() ) {
+                RP_Care_Pipeline_Client::poll_and_execute();
+            }
+        });
     }
     
     public function clear_all() {
@@ -319,6 +336,7 @@ class RP_Care_Scheduler {
             'rpcare_task_peak_scheduler',
             'rpcare_task_revenue_anomaly',
             'rpcare_task_retention',
+            'rpcare_task_pipeline_poll',
         ];
 
         foreach ($hooks as $hook) {

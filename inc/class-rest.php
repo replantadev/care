@@ -421,6 +421,81 @@ class RP_Care_REST {
             'callback'            => [$this, 'get_sa_issues'],
             'permission_callback' => [$this, 'check_permissions'],
         ]);
+
+        // ── Staging-First Pipeline: Care-side endpoints ───────────────────────
+
+        // GET /pipeline/commands — Care polls for pending commands from PC.
+        register_rest_route($this->control_ns, '/pipeline/commands', [
+            'methods'             => 'GET',
+            'callback'            => [$this, 'pipeline_poll_commands'],
+            'permission_callback' => [$this, 'check_permissions'],
+        ]);
+
+        // POST /pipeline/command-ack — Care acknowledges a completed or failed command to PC (forwarded).
+        register_rest_route($this->control_ns, '/pipeline/command-ack', [
+            'methods'             => 'POST',
+            'callback'            => [$this, 'pipeline_command_ack'],
+            'permission_callback' => [$this, 'check_permissions'],
+        ]);
+
+        // POST /pipeline/pairing — Begin or complete a pairing flow from Care admin UI.
+        register_rest_route($this->control_ns, '/pipeline/pairing', [
+            'methods'             => 'POST',
+            'callback'            => [$this, 'pipeline_pairing'],
+            'permission_callback' => [$this, 'check_permissions'],
+        ]);
+
+        // POST /pipeline/approval-request — Operator submits approval from the Care admin approval screen.
+        register_rest_route($this->control_ns, '/pipeline/approval-request', [
+            'methods'             => 'POST',
+            'callback'            => [$this, 'pipeline_approval_request'],
+            'permission_callback' => [$this, 'check_permissions'],
+        ]);
+    }
+
+    // ── Pipeline endpoint handlers ────────────────────────────────────────────
+
+    public function pipeline_poll_commands( WP_REST_Request $request ) {
+        if ( ! class_exists( 'RP_Care_Pipeline_Client' ) || ! RP_Care_Pipeline_Client::is_pipeline_enabled() ) {
+            return new WP_REST_Response( [ 'ok' => false, 'message' => 'Pipeline not enabled.' ], 200 );
+        }
+
+        $result = RP_Care_Pipeline_Client::poll_and_execute();
+        return new WP_REST_Response( $result, 200 );
+    }
+
+    public function pipeline_command_ack( WP_REST_Request $request ) {
+        if ( ! class_exists( 'RP_Care_Pipeline_Client' ) ) {
+            return new WP_REST_Response( [ 'ok' => false ], 200 );
+        }
+        // Forward the ACK to PC's REST endpoint.
+        $body   = $request->get_json_params();
+        $result = RP_Care_Pipeline_Client::forward_ack( $body );
+        return new WP_REST_Response( $result, 200 );
+    }
+
+    public function pipeline_pairing( WP_REST_Request $request ) {
+        if ( ! class_exists( 'RP_Care_Pipeline_Client' ) ) {
+            return new WP_REST_Response( [ 'ok' => false, 'message' => 'Pipeline client not loaded.' ], 200 );
+        }
+        $body   = $request->get_json_params();
+        $result = RP_Care_Pipeline_Client::handle_pairing_request( $body );
+        if ( is_wp_error( $result ) ) {
+            return new WP_REST_Response( [ 'ok' => false, 'message' => $result->get_error_message() ], 422 );
+        }
+        return new WP_REST_Response( array_merge( [ 'ok' => true ], $result ), 200 );
+    }
+
+    public function pipeline_approval_request( WP_REST_Request $request ) {
+        if ( ! class_exists( 'RP_Care_Approval_Screen' ) ) {
+            return new WP_REST_Response( [ 'ok' => false, 'message' => 'Approval module not loaded.' ], 200 );
+        }
+        $body   = $request->get_json_params();
+        $result = RP_Care_Approval_Screen::handle_rest_approval( $body );
+        if ( is_wp_error( $result ) ) {
+            return new WP_REST_Response( [ 'ok' => false, 'message' => $result->get_error_message() ], 422 );
+        }
+        return new WP_REST_Response( array_merge( [ 'ok' => true ], $result ), 200 );
     }
     
     public function check_permissions($request) {

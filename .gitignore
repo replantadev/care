@@ -44,8 +44,11 @@ config.php
 .phpunit.result.cache
 
 # Dev-only vendor packages — not committed; installed locally via `composer install`
-# Production runtime files (vendor/composer/*.php, installed.*) ARE tracked.
+# Production runtime autoload files ARE tracked (autoload_*.php, installed.json).
+# installed.php is excluded because it embeds the repo's own HEAD hash and changes
+# on every commit. It is not required for autoloading (autoload_real.php does not require it).
 vendor/bin/
+vendor/composer/installed.php
 vendor/myclabs/
 vendor/nikic/
 vendor/phar-io/

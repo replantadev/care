@@ -174,20 +174,23 @@ class PipelineTest extends TestCase {
         string $instance_id,
         string $command_type,
         array  $payload,
-        string $expires_at
+        string $expires_at,
+        string $target_environment = 'production'
     ): array {
-        $payload_hash    = hash( 'sha256', json_encode( $payload ) );
-        $hmac_payload    = implode( '|', [ $command_id, $instance_id, $command_type, $payload_hash, $expires_at ] );
-        $hmac            = hash_hmac( 'sha256', $hmac_payload, $secret );
+        $payload_hash = hash( 'sha256', json_encode( $payload ) );
+        // target_environment is now bound into the HMAC so staging cannot replay production commands.
+        $hmac_payload = implode( '|', [ $command_id, $instance_id, $command_type, $payload_hash, $expires_at, $target_environment ] );
+        $hmac         = hash_hmac( 'sha256', $hmac_payload, $secret );
 
         return [
-            'command_id'   => $command_id,
-            'instance_id'  => $instance_id,
-            'command_type' => $command_type,
-            'payload'      => $payload,
-            'payload_hash' => $payload_hash,
-            'expires_at'   => $expires_at,
-            'hmac'         => $hmac,
+            'command_id'         => $command_id,
+            'instance_id'        => $instance_id,
+            'command_type'       => $command_type,
+            'payload'            => $payload,
+            'payload_hash'       => $payload_hash,
+            'expires_at'         => $expires_at,
+            'target_environment' => $target_environment,
+            'hmac'               => $hmac,
         ];
     }
 

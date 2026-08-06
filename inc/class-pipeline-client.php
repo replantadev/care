@@ -337,13 +337,16 @@ class RP_Care_Pipeline_Client {
             return new WP_Error( 'expired', 'Command has expired.' );
         }
 
-        // HMAC (timing-safe).
+        // HMAC (timing-safe). target_environment is bound so staging cannot accept
+        // a command signed for production and vice versa. Empty string is valid
+        // for legacy commands that pre-date this field; PC now always sets it.
         $hmac_payload = implode( '|', [
             $command['command_id'],
             $command['instance_id'],
             $command['command_type'],
             $command['payload_hash'],
             $command['expires_at'],
+            $command['target_environment'] ?? '',
         ] );
         $expected_hmac = hash_hmac( 'sha256', $hmac_payload, $secret );
 

@@ -553,6 +553,58 @@ class RP_Care_Pipeline_Client {
         );
     }
 
+    // ── Public credential accessors (used by RP_Care_Approval_Screen) ────────
+
+    public static function get_hub_url_public(): string {
+        return self::get_hub_url();
+    }
+
+    public static function get_token_public(): string {
+        return self::get_raw_token();
+    }
+
+    // ── AS action-hook registration ──────────────────────────────────────────
+
+    /**
+     * Register add_action callbacks for the three AS async actions enqueued by
+     * handle_apply_update_batch(), handle_apply_production_batch(), and
+     * handle_rollback_batch().  Must be called early (init hook) so AS can
+     * dispatch them.
+     */
+    public static function register_as_callbacks(): void {
+        add_action(
+            'rpcare_pipeline_apply_staging_batch',
+            static function ( string $batch_id ): void {
+                if ( ! class_exists( 'RP_Care_Task_Updates' ) ) {
+                    return;
+                }
+                RP_Care_Task_Updates::apply_staging_batch( $batch_id );
+            }
+        );
+
+        add_action(
+            'rpcare_pipeline_apply_production_batch',
+            static function ( string $batch_id, string $manifest_hash = '', string $approval_id = '' ): void {
+                if ( ! class_exists( 'RP_Care_Task_Updates' ) ) {
+                    return;
+                }
+                RP_Care_Task_Updates::apply_production_batch( $batch_id, $manifest_hash, $approval_id );
+            },
+            10,
+            3
+        );
+
+        add_action(
+            'rpcare_pipeline_rollback_batch',
+            static function ( string $batch_id ): void {
+                if ( ! class_exists( 'RP_Care_Task_Updates' ) ) {
+                    return;
+                }
+                RP_Care_Task_Updates::rollback_batch( $batch_id );
+            }
+        );
+    }
+
     // ── Credential helpers ───────────────────────────────────────────────────
 
     private static function get_raw_token(): string {

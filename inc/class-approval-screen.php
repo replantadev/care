@@ -359,6 +359,9 @@ class RP_Care_Approval_Screen {
     // ── Notify PC ────────────────────────────────────────────────────────────
 
     private static function send_approval_to_pc( array $approval ): void {
+        if ( ! class_exists( 'RP_Care_Pipeline_Client' ) ) {
+            return;
+        }
         $hub_url = RP_Care_Pipeline_Client::get_hub_url_public();
         $token   = RP_Care_Pipeline_Client::get_token_public();
 
@@ -463,21 +466,7 @@ class RP_Care_Approval_Screen {
         set_transient( 'rpcare_pending_approval_' . $batch_id, $pending, 48 * HOUR_IN_SECONDS );
 
         // Forward to PC.
-        self::send_approval_to_pc( $batch_id, $approval );
+        self::send_approval_to_pc( $approval );
     }
 }
 
-// ── Add public-facing static helpers to pipeline client ──────────────────
-// (Can't modify RP_Care_Pipeline_Client mid-file, so we use a static helper in this file.)
-
-if ( ! method_exists( 'RP_Care_Pipeline_Client', 'get_hub_url_public' ) ) {
-    // The pipeline client already has the private helpers; expose them via standalone functions.
-    function rpcare_pipeline_get_hub_url(): string {
-        $opts = get_option( 'rpcare_options', [] );
-        return rtrim( $opts['hub_url'] ?? (string) get_option( 'rpcare_hub_url', '' ), '/' );
-    }
-    function rpcare_pipeline_get_token(): string {
-        $opts = get_option( 'rpcare_options', [] );
-        return $opts['site_token'] ?? (string) get_option( 'rpcare_site_token', '' );
-    }
-}

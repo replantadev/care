@@ -158,14 +158,15 @@ class PipelineTest extends TestCase {
     // ── HMAC command verification ─────────────────────────────────────────────
 
     /**
-     * Encrypt a raw secret string into the enc1: format that get_raw_secret() expects.
-     * Mirrors the AES-256-CBC scheme used by RP_Care_Pipeline_Client::get_raw_secret().
+     * Encrypt a raw secret string into the care1: format that get_raw_secret() expects.
+     * Mirrors the AES-256-CBC scheme used by RP_Care_Pipeline_Client::decrypt_local().
+     * Uses Care's local key derivation (care-pipeline-local-v1), NOT PC's enc1: scheme.
      */
     private function make_enc1_secret( string $secret ): string {
-        $key = hash( 'sha256', wp_salt( 'auth' ) . 'pc-pipeline-secret-v1', true );
+        $key = hash( 'sha256', wp_salt( 'auth' ) . 'care-pipeline-local-v1', true );
         $iv  = str_repeat( "\x00", 16 ); // deterministic IV for tests
         $cipher = openssl_encrypt( $secret, 'AES-256-CBC', $key, OPENSSL_RAW_DATA, $iv );
-        return 'enc1:' . base64_encode( $iv . $cipher );
+        return 'care1:' . base64_encode( $iv . $cipher );
     }
 
     private function make_signed_command(
@@ -175,12 +176,18 @@ class PipelineTest extends TestCase {
         string $command_type,
         array  $payload,
         string $expires_at,
-        string $target_environment = 'production'
+        string $target_environment = 'production',
+        string $batch_id           = 'test-batch-default',
+        string $issued_at          = ''
     ): array {
+        $issued_at    = $issued_at ?: gmdate( 'c' );
         $payload_hash = hash( 'sha256', json_encode( $payload ) );
-        // target_environment is now bound into the HMAC so staging cannot replay production commands.
-        $hmac_payload = implode( '|', [ $command_id, $instance_id, $command_type, $payload_hash, $expires_at, $target_environment ] );
-        $hmac         = hash_hmac( 'sha256', $hmac_payload, $secret );
+        // New HMAC format: command_id|instance_id|target_environment|command_type|batch_id|payload_hash|issued_at|expires_at
+        $hmac_payload = implode( '|', [
+            $command_id, $instance_id, $target_environment, $command_type,
+            $batch_id, $payload_hash, $issued_at, $expires_at,
+        ] );
+        $hmac = hash_hmac( 'sha256', $hmac_payload, $secret );
 
         return [
             'command_id'         => $command_id,
@@ -188,8 +195,10 @@ class PipelineTest extends TestCase {
             'command_type'       => $command_type,
             'payload'            => $payload,
             'payload_hash'       => $payload_hash,
+            'issued_at'          => $issued_at,
             'expires_at'         => $expires_at,
             'target_environment' => $target_environment,
+            'batch_id'           => $batch_id,
             'hmac'               => $hmac,
         ];
     }

@@ -948,4 +948,787 @@ class RP_Care_Task_Updates {
         
         return $updates;
     }
+
+    // =========================================================================
+    // Staging-first pipeline batch apply / rollback
+    // =========================================================================
+
+    /**
+     * Apply an update batch on the staging environment.
+     * Called by the rpcare_pipeline_apply_staging_batch AS action.
+     */
+    public static function apply_staging_batch( string $batch_id ): array {
+        if ( ! class_exists( 'RP_Care_Pipeline_Client' ) || ! RP_Care_Pipeline_Client::is_pipeline_enabled() ) {
+            self::report_batch_to_pc( $batch_id, 'staging_failed', [] );
+            return [ 'success' => false, 'error' => 'pipeline_disabled' ];
+        }
+
+        if ( ! RP_Care_Pipeline_Client::is_staging() ) {
+            self::report_batch_to_pc( $batch_id, 'staging_failed', [] );
+            return [ 'success' => false, 'error' => 'not_staging_instance' ];
+        }
+
+        if ( RP_Care_Pipeline_Client::is_in_quarantine() ) {
+            self::report_batch_to_pc( $batch_id, 'staging_failed', [] );
+            return [ 'success' => false, 'error' => 'in_quarantine' ];
+        }
+
+        if ( get_option( 'rpcare_staging_batch_done_' . $batch_id ) ) {
+            return [ 'success' => true, 'idempotent' => true, 'batch_id' => $batch_id ];
+        }
+
+        if ( ! self::acquire_batch_lock( $batch_id ) ) {
+            return [ 'success' => false, 'error' => 'batch_already_running' ];
+        }
+
+        $item_results = [];
+        try {
+            $manifest_data = self::fetch_manifest_from_pc( $batch_id );
+            if ( is_wp_error( $manifest_data ) ) {
+                self::report_batch_to_pc( $batch_id, 'staging_failed', [] );
+                self::release_batch_lock( $batch_id );
+                return [ 'success' => false, 'error' => $manifest_data->get_error_message() ];
+            }
+
+            $item_results = self::apply_manifest_items( $manifest_data['manifest'], $batch_id, 'staging' );
+            $success      = empty( array_filter( $item_results, static function ( $r ) { return empty( $r['success'] ); } ) );
+
+            self::report_batch_to_pc( $batch_id, $success ? 'staging_done' : 'staging_failed', $item_results );
+
+            if ( $success ) {
+                update_option( 'rpcare_staging_batch_done_' . $batch_id, time() );
+            }
+
+            self::release_batch_lock( $batch_id );
+            return [ 'success' => $success, 'batch_id' => $batch_id, 'item_results' => $item_results ];
+
+        } catch ( \Throwable $e ) {
+            if ( class_exists( 'RP_Care_Utils' ) ) {
+                RP_Care_Utils::log( 'pipeline', 'error', 'apply_staging_batch exception: ' . $e->getMessage(), [ 'batch_id' => $batch_id ] );
+            }
+            self::report_batch_to_pc( $batch_id, 'staging_failed', $item_results );
+            self::release_batch_lock( $batch_id );
+            return [ 'success' => false, 'error' => $e->getMessage() ];
+        }
+    }
+
+    /**
+     * Apply an approved update batch to the production environment.
+     * Called by the rpcare_pipeline_apply_production_batch AS action.
+     */
+    public static function apply_production_batch( string $batch_id, string $manifest_hash, string $approval_id ): array {
+        if ( ! class_exists( 'RP_Care_Pipeline_Client' ) || ! RP_Care_Pipeline_Client::is_pipeline_enabled() ) {
+            self::report_batch_to_pc( $batch_id, 'production_failed', [] );
+            return [ 'success' => false, 'error' => 'pipeline_disabled' ];
+        }
+
+        if ( RP_Care_Pipeline_Client::is_staging() ) {
+            self::report_batch_to_pc( $batch_id, 'production_failed', [] );
+            return [ 'success' => false, 'error' => 'not_production_instance' ];
+        }
+
+        if ( RP_Care_Pipeline_Client::is_in_quarantine() ) {
+            self::report_batch_to_pc( $batch_id, 'production_failed', [] );
+            return [ 'success' => false, 'error' => 'in_quarantine' ];
+        }
+
+        if ( empty( $batch_id ) || empty( $manifest_hash ) || empty( $approval_id ) ) {
+            return [ 'success' => false, 'error' => 'missing_required_params' ];
+        }
+
+        if ( get_option( 'rpcare_prod_batch_done_' . $batch_id ) ) {
+            return [ 'success' => true, 'idempotent' => true, 'batch_id' => $batch_id ];
+        }
+
+        if ( ! self::acquire_batch_lock( $batch_id ) ) {
+            return [ 'success' => false, 'error' => 'batch_already_running' ];
+        }
+
+        $item_results = [];
+        try {
+            $manifest_data = self::fetch_manifest_from_pc( $batch_id );
+            if ( is_wp_error( $manifest_data ) ) {
+                self::report_batch_to_pc( $batch_id, 'production_failed', [] );
+                self::release_batch_lock( $batch_id );
+                return [ 'success' => false, 'error' => $manifest_data->get_error_message() ];
+            }
+
+            // CRITICAL: verify manifest hash matches what was approved
+            if ( ! hash_equals( $manifest_hash, $manifest_data['manifest_hash'] ) ) {
+                self::report_batch_to_pc( $batch_id, 'production_failed', [ [ 'error' => 'manifest_hash_mismatch' ] ] );
+                self::release_batch_lock( $batch_id );
+                return [ 'success' => false, 'error' => 'manifest_hash_mismatch' ];
+            }
+
+            // CRITICAL: create backup FIRST — do NOT proceed on failure
+            $backup_id = self::create_pipeline_backup( $batch_id );
+            if ( is_wp_error( $backup_id ) ) {
+                self::report_batch_to_pc( $batch_id, 'production_failed', [ [ 'error' => 'backup_failed: ' . $backup_id->get_error_message() ] ] );
+                self::release_batch_lock( $batch_id );
+                return [ 'success' => false, 'error' => 'backup_failed: ' . $backup_id->get_error_message() ];
+            }
+
+            update_option( 'rpcare_prod_batch_backup_' . $batch_id, $backup_id );
+
+            $item_results = self::apply_manifest_items( $manifest_data['manifest'], $batch_id, 'production' );
+            $success      = empty( array_filter( $item_results, static function ( $r ) { return empty( $r['success'] ); } ) );
+
+            self::report_batch_to_pc( $batch_id, $success ? 'production_done' : 'production_failed', $item_results );
+
+            if ( $success ) {
+                update_option( 'rpcare_prod_batch_done_' . $batch_id, time() );
+            }
+
+            self::release_batch_lock( $batch_id );
+            return [ 'success' => $success, 'batch_id' => $batch_id, 'item_results' => $item_results ];
+
+        } catch ( \Throwable $e ) {
+            if ( class_exists( 'RP_Care_Utils' ) ) {
+                RP_Care_Utils::log( 'pipeline', 'error', 'apply_production_batch exception: ' . $e->getMessage(), [ 'batch_id' => $batch_id ] );
+            }
+            self::report_batch_to_pc( $batch_id, 'production_failed', $item_results );
+            self::release_batch_lock( $batch_id );
+            return [ 'success' => false, 'error' => $e->getMessage() ];
+        }
+    }
+
+    /**
+     * Roll back a production batch to its pre-update state via the stored backup.
+     */
+    public static function rollback_batch( string $batch_id ): array {
+        if ( ! class_exists( 'RP_Care_Pipeline_Client' ) || ! RP_Care_Pipeline_Client::is_pipeline_enabled() ) {
+            self::report_batch_to_pc( $batch_id, 'rollback_failed', [] );
+            return [ 'success' => false, 'error' => 'pipeline_disabled' ];
+        }
+
+        if ( RP_Care_Pipeline_Client::is_staging() ) {
+            self::report_batch_to_pc( $batch_id, 'rollback_failed', [] );
+            return [ 'success' => false, 'error' => 'not_applicable_on_staging' ];
+        }
+
+        $backup_id = get_option( 'rpcare_prod_batch_backup_' . $batch_id );
+        if ( empty( $backup_id ) ) {
+            self::report_batch_to_pc( $batch_id, 'rollback_failed', [ [ 'error' => 'no_backup_found' ] ] );
+            return [ 'success' => false, 'error' => 'no_backup_found_for_batch' ];
+        }
+
+        $restore_result = self::restore_pipeline_backup( (string) $backup_id, $batch_id );
+        if ( is_wp_error( $restore_result ) ) {
+            self::report_batch_to_pc( $batch_id, 'rollback_failed', [ [ 'error' => $restore_result->get_error_message() ] ] );
+            return [ 'success' => false, 'error' => $restore_result->get_error_message() ];
+        }
+
+        delete_option( 'rpcare_prod_batch_done_' . $batch_id );
+        self::report_batch_to_pc( $batch_id, 'rolled_back', [] );
+
+        return [ 'success' => true, 'batch_id' => $batch_id, 'backup_id' => $backup_id ];
+    }
+
+    // ── Pipeline manifest helpers ─────────────────────────────────────────────
+
+    private static function fetch_manifest_from_pc( string $batch_id ): array|\WP_Error {
+        if ( ! class_exists( 'RP_Care_Pipeline_Client' ) ) {
+            return new \WP_Error( 'pipeline_client_missing', 'RP_Care_Pipeline_Client not available.' );
+        }
+
+        $hub_url     = RP_Care_Pipeline_Client::get_hub_url_public();
+        $token       = RP_Care_Pipeline_Client::get_token_public();
+        $instance_id = (string) get_option( RP_Care_Pipeline_Client::OPT_INSTANCE_ID, '' );
+
+        if ( empty( $hub_url ) || empty( $token ) || empty( $instance_id ) ) {
+            return new \WP_Error( 'not_configured', 'Pipeline client not fully configured.' );
+        }
+
+        $response = wp_remote_get(
+            trailingslashit( $hub_url ) . 'wp-json/replanta-pc/v1/pipeline/manifest/' . rawurlencode( $batch_id ),
+            [
+                'timeout' => 20,
+                'headers' => [
+                    'X-Pipeline-Token' => $token,
+                    'X-Instance-ID'    => $instance_id,
+                ],
+            ]
+        );
+
+        if ( is_wp_error( $response ) ) {
+            return $response;
+        }
+
+        $code = wp_remote_retrieve_response_code( $response );
+        if ( $code !== 200 ) {
+            return new \WP_Error( 'http_error', "Manifest fetch returned HTTP $code." );
+        }
+
+        $body = json_decode( wp_remote_retrieve_body( $response ), true );
+        if ( ! is_array( $body ) || ! isset( $body['manifest'] ) || ! isset( $body['manifest_hash'] ) ) {
+            return new \WP_Error( 'invalid_manifest', 'Manifest response missing required keys.' );
+        }
+
+        $manifest = is_array( $body['manifest'] ) ? $body['manifest'] : json_decode( (string) $body['manifest'], true );
+        if ( ! is_array( $manifest ) ) {
+            return new \WP_Error( 'invalid_manifest', 'Manifest could not be decoded.' );
+        }
+
+        return [
+            'manifest'      => $manifest,
+            'manifest_hash' => (string) $body['manifest_hash'],
+        ];
+    }
+
+    private static function apply_manifest_items( array $manifest, string $batch_id, string $env ): array {
+        $results  = [];
+        $proposed = $manifest['proposed_updates'] ?? [];
+
+        foreach ( $proposed['plugins'] ?? [] as $item ) {
+            $results[] = self::apply_pipeline_plugin( $item, $manifest, $batch_id, $env );
+        }
+
+        foreach ( $proposed['themes'] ?? [] as $item ) {
+            $results[] = self::apply_pipeline_theme( $item, $manifest, $batch_id, $env );
+        }
+
+        if ( ! empty( $proposed['core'] ) ) {
+            $core_item = isset( $proposed['core'][0] ) ? $proposed['core'][0] : $proposed['core'];
+            $results[] = self::apply_pipeline_core( (array) $core_item, $manifest, $batch_id );
+        }
+
+        foreach ( $proposed['translations'] ?? [] as $item ) {
+            $results[] = [
+                'slug'         => $item['slug'] ?? '',
+                'type'         => 'translation',
+                'success'      => true,
+                'from_version' => $item['from_version'] ?? '',
+                'to_version'   => $item['to_version'] ?? '',
+            ];
+        }
+
+        return $results;
+    }
+
+    private static function apply_pipeline_plugin( array $item, array $manifest, string $batch_id, string $env ): array {
+        $slug         = $item['slug'] ?? '';
+        $from_version = $item['from_version'] ?? '';
+        $to_version   = $item['to_version'] ?? '';
+        $result_base  = [
+            'slug'         => $slug,
+            'type'         => 'plugin',
+            'success'      => false,
+            'from_version' => $from_version,
+            'to_version'   => $to_version,
+        ];
+
+        if ( empty( $slug ) ) {
+            $result_base['error'] = 'missing_slug';
+            return $result_base;
+        }
+
+        $artifact = null;
+        foreach ( $manifest['artifacts'] ?? [] as $a ) {
+            if ( ( $a['slug'] ?? '' ) === $slug ) {
+                $artifact = $a;
+                break;
+            }
+        }
+
+        $sha256      = $artifact['sha256'] ?? null;
+        $package_url = null;
+
+        if ( $artifact ) {
+            $hub_url     = RP_Care_Pipeline_Client::get_hub_url_public();
+            $token       = RP_Care_Pipeline_Client::get_token_public();
+            $instance_id = (string) get_option( RP_Care_Pipeline_Client::OPT_INSTANCE_ID, '' );
+
+            $tmp_file = self::download_artifact_package( $artifact, $hub_url, $token, $instance_id );
+            if ( is_wp_error( $tmp_file ) ) {
+                $result_base['error'] = $tmp_file->get_error_message();
+                return $result_base;
+            }
+            $package_url = $tmp_file;
+        } else {
+            // FAIL CLOSED: no artifact — only proceed if WP transient matches exact to_version
+            $update_plugins = get_site_transient( 'update_plugins' );
+            $wp_package     = null;
+            if ( $update_plugins && ! empty( $update_plugins->response ) ) {
+                foreach ( $update_plugins->response as $plugin_file => $plugin_data ) {
+                    $plugin_slug = dirname( $plugin_file );
+                    if ( $plugin_slug === $slug || $plugin_file === $slug ) {
+                        if ( isset( $plugin_data->new_version ) && $plugin_data->new_version === $to_version ) {
+                            $wp_package = $plugin_data->package ?? null;
+                        }
+                        break;
+                    }
+                }
+            }
+
+            if ( $wp_package === null ) {
+                $result_base['error'] = 'no_artifact_and_no_wp_package_for_version';
+                return $result_base;
+            }
+            $package_url = $wp_package;
+        }
+
+        try {
+            if ( ! class_exists( 'Plugin_Upgrader' ) ) {
+                require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
+            }
+
+            $skin     = class_exists( 'WP_Ajax_Upgrader_Skin' ) ? new WP_Ajax_Upgrader_Skin() : new WP_Upgrader_Skin();
+            $upgrader = new Plugin_Upgrader( $skin );
+            $result   = $upgrader->install( $package_url, [ 'overwrite_package' => true ] );
+
+            if ( $artifact && is_string( $package_url ) && file_exists( $package_url ) ) {
+                @unlink( $package_url );
+            }
+
+            if ( is_wp_error( $result ) ) {
+                $result_base['error'] = $result->get_error_message();
+                return $result_base;
+            }
+
+            $result_base['success'] = true;
+            if ( $sha256 ) {
+                $result_base['sha256'] = $sha256;
+            }
+            return $result_base;
+
+        } catch ( \Throwable $e ) {
+            if ( $artifact && is_string( $package_url ) && file_exists( $package_url ) ) {
+                @unlink( $package_url );
+            }
+            $result_base['error'] = $e->getMessage();
+            return $result_base;
+        }
+    }
+
+    private static function apply_pipeline_theme( array $item, array $manifest, string $batch_id, string $env ): array {
+        $slug         = $item['slug'] ?? '';
+        $from_version = $item['from_version'] ?? '';
+        $to_version   = $item['to_version'] ?? '';
+        $result_base  = [
+            'slug'         => $slug,
+            'type'         => 'theme',
+            'success'      => false,
+            'from_version' => $from_version,
+            'to_version'   => $to_version,
+        ];
+
+        if ( empty( $slug ) ) {
+            $result_base['error'] = 'missing_slug';
+            return $result_base;
+        }
+
+        $artifact = null;
+        foreach ( $manifest['artifacts'] ?? [] as $a ) {
+            if ( ( $a['slug'] ?? '' ) === $slug ) {
+                $artifact = $a;
+                break;
+            }
+        }
+
+        $sha256      = $artifact['sha256'] ?? null;
+        $package_url = null;
+
+        if ( $artifact ) {
+            $hub_url     = RP_Care_Pipeline_Client::get_hub_url_public();
+            $token       = RP_Care_Pipeline_Client::get_token_public();
+            $instance_id = (string) get_option( RP_Care_Pipeline_Client::OPT_INSTANCE_ID, '' );
+
+            $tmp_file = self::download_artifact_package( $artifact, $hub_url, $token, $instance_id );
+            if ( is_wp_error( $tmp_file ) ) {
+                $result_base['error'] = $tmp_file->get_error_message();
+                return $result_base;
+            }
+            $package_url = $tmp_file;
+        } else {
+            $update_themes = get_site_transient( 'update_themes' );
+            $wp_package    = null;
+            if ( $update_themes && isset( $update_themes->response[ $slug ] ) ) {
+                $theme_data = $update_themes->response[ $slug ];
+                if ( isset( $theme_data['new_version'] ) && $theme_data['new_version'] === $to_version ) {
+                    $wp_package = $theme_data['package'] ?? null;
+                }
+            }
+
+            if ( $wp_package === null ) {
+                $result_base['error'] = 'no_artifact_and_no_wp_package_for_version';
+                return $result_base;
+            }
+            $package_url = $wp_package;
+        }
+
+        try {
+            if ( ! class_exists( 'Theme_Upgrader' ) ) {
+                require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
+            }
+
+            $skin     = class_exists( 'WP_Ajax_Upgrader_Skin' ) ? new WP_Ajax_Upgrader_Skin() : new WP_Upgrader_Skin();
+            $upgrader = new Theme_Upgrader( $skin );
+            $result   = $upgrader->install( $package_url, [ 'overwrite_package' => true ] );
+
+            if ( $artifact && is_string( $package_url ) && file_exists( $package_url ) ) {
+                @unlink( $package_url );
+            }
+
+            if ( is_wp_error( $result ) ) {
+                $result_base['error'] = $result->get_error_message();
+                return $result_base;
+            }
+
+            $result_base['success'] = true;
+            if ( $sha256 ) {
+                $result_base['sha256'] = $sha256;
+            }
+            return $result_base;
+
+        } catch ( \Throwable $e ) {
+            if ( $artifact && is_string( $package_url ) && file_exists( $package_url ) ) {
+                @unlink( $package_url );
+            }
+            $result_base['error'] = $e->getMessage();
+            return $result_base;
+        }
+    }
+
+    private static function apply_pipeline_core( array $item, array $manifest, string $batch_id ): array {
+        $from_version = $item['from_version'] ?? '';
+        $to_version   = $item['to_version'] ?? '';
+        $result_base  = [
+            'slug'         => 'wordpress',
+            'type'         => 'core',
+            'success'      => false,
+            'from_version' => $from_version,
+            'to_version'   => $to_version,
+        ];
+
+        try {
+            if ( ! function_exists( 'get_core_updates' ) ) {
+                require_once ABSPATH . 'wp-admin/includes/update.php';
+            }
+            if ( ! class_exists( 'Core_Upgrader' ) ) {
+                require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
+            }
+
+            delete_site_transient( 'update_core' );
+            wp_version_check();
+
+            $updates = get_core_updates();
+            if ( empty( $updates ) || ! isset( $updates[0] ) || $updates[0]->response !== 'upgrade' ) {
+                if ( $to_version && get_bloginfo( 'version' ) === $to_version ) {
+                    $result_base['success'] = true;
+                    $result_base['note']    = 'already_at_target_version';
+                    return $result_base;
+                }
+                $result_base['error'] = 'no_core_update_available';
+                return $result_base;
+            }
+
+            $update = $updates[0];
+            if ( $to_version && $update->current !== $to_version ) {
+                $result_base['error'] = "wp_reports_version_{$update->current}_not_{$to_version}";
+                return $result_base;
+            }
+
+            $skin     = class_exists( 'WP_Ajax_Upgrader_Skin' ) ? new WP_Ajax_Upgrader_Skin() : new WP_Upgrader_Skin();
+            $upgrader = new Core_Upgrader( $skin );
+            $result   = $upgrader->upgrade( $update );
+
+            if ( is_wp_error( $result ) ) {
+                $result_base['error'] = $result->get_error_message();
+                return $result_base;
+            }
+
+            $result_base['success']    = true;
+            $result_base['to_version'] = $update->current;
+            return $result_base;
+
+        } catch ( \Throwable $e ) {
+            $result_base['error'] = $e->getMessage();
+            return $result_base;
+        }
+    }
+
+    /**
+     * Fetch a signed download URL from PC, download the artifact to a temp file,
+     * and verify SHA-256. Returns the local temp path or WP_Error.
+     */
+    private static function download_artifact_package( array $artifact, string $hub_url, string $token, string $instance_id ): string|\WP_Error {
+        $artifact_id = $artifact['id'] ?? '';
+        if ( empty( $artifact_id ) ) {
+            return new \WP_Error( 'missing_artifact_id', 'Artifact ID is missing.' );
+        }
+
+        $url_response = wp_remote_get(
+            trailingslashit( $hub_url ) . 'wp-json/replanta-pc/v1/artifact-url/' . rawurlencode( $artifact_id ),
+            [
+                'timeout' => 15,
+                'headers' => [
+                    'X-Pipeline-Token' => $token,
+                    'X-Instance-ID'    => $instance_id,
+                ],
+            ]
+        );
+
+        if ( is_wp_error( $url_response ) ) {
+            return $url_response;
+        }
+
+        $code = wp_remote_retrieve_response_code( $url_response );
+        if ( $code !== 200 ) {
+            return new \WP_Error( 'artifact_url_http_error', "Artifact URL fetch returned HTTP $code." );
+        }
+
+        $url_data = json_decode( wp_remote_retrieve_body( $url_response ), true );
+        if ( ! is_array( $url_data ) || empty( $url_data['download_url'] ) ) {
+            return new \WP_Error( 'artifact_url_invalid', 'Artifact URL response missing download_url.' );
+        }
+
+        $download_url    = $url_data['download_url'];
+        $expected_sha256 = $url_data['sha256'] ?? ( $artifact['sha256'] ?? '' );
+
+        $tmp_file = wp_tempnam( 'rpcare-artifact-' );
+        if ( ! $tmp_file ) {
+            return new \WP_Error( 'tmp_file_failed', 'Could not create temporary file for artifact download.' );
+        }
+
+        $dl_response = wp_remote_get( $download_url, [
+            'timeout'  => 120,
+            'stream'   => true,
+            'filename' => $tmp_file,
+        ] );
+
+        if ( is_wp_error( $dl_response ) ) {
+            @unlink( $tmp_file );
+            return $dl_response;
+        }
+
+        $dl_code = wp_remote_retrieve_response_code( $dl_response );
+        if ( $dl_code !== 200 ) {
+            @unlink( $tmp_file );
+            return new \WP_Error( 'artifact_download_http_error', "Artifact download returned HTTP $dl_code." );
+        }
+
+        if ( ! file_exists( $tmp_file ) || filesize( $tmp_file ) === 0 ) {
+            @unlink( $tmp_file );
+            return new \WP_Error( 'artifact_empty', 'Downloaded artifact file is empty.' );
+        }
+
+        // SHA-256 verification — fail closed on mismatch
+        if ( ! empty( $expected_sha256 ) ) {
+            $actual_sha256 = hash_file( 'sha256', $tmp_file );
+            if ( ! hash_equals( $expected_sha256, (string) $actual_sha256 ) ) {
+                @unlink( $tmp_file );
+                return new \WP_Error( 'sha256_mismatch', 'Artifact SHA-256 verification failed.' );
+            }
+        }
+
+        return $tmp_file;
+    }
+
+    /**
+     * Create a pre-update backup using the best available method.
+     * Returns a backup_id string or WP_Error.
+     */
+    private static function create_pipeline_backup( string $batch_id ): string|\WP_Error {
+        $backup_id = 'pipeline_' . sanitize_file_name( $batch_id ) . '_' . gmdate( 'YmdHis' );
+
+        // 1. Try UpdraftPlus
+        if ( class_exists( 'RP_Care_Task_Backup' ) && RP_Care_Task_Backup::is_updraftplus_active() ) {
+            $udp = $GLOBALS['updraftplus'] ?? null;
+            if ( $udp && method_exists( $udp, 'boot_backup' ) ) {
+                try {
+                    $udp->boot_backup( 1, 1, false, false, get_option( 'updraft_service', '' ), 'pipeline_pre_update' );
+                    update_option( 'rpcare_pipeline_backup_' . $batch_id, [
+                        'backup_id' => $backup_id,
+                        'method'    => 'updraftplus',
+                        'timestamp' => time(),
+                        'batch_id'  => $batch_id,
+                    ] );
+                    return $backup_id;
+                } catch ( \Throwable $e ) {
+                    // Fall through to next method
+                }
+            }
+        }
+
+        // 2. Try B2 backup
+        if ( class_exists( 'RP_Care_Task_Backup' ) && RP_Care_Task_Backup::is_b2_configured_public() ) {
+            $b2_result = RP_Care_Task_Backup::create_b2_backup( [
+                'reason' => 'pipeline_pre_update',
+                'scopes' => [ 'database', 'plugins', 'themes' ],
+            ] );
+            if ( ! empty( $b2_result['success'] ) ) {
+                $backup_id = $b2_result['backup_id'] ?? $backup_id;
+                update_option( 'rpcare_pipeline_backup_' . $batch_id, [
+                    'backup_id' => $backup_id,
+                    'method'    => 'b2',
+                    'timestamp' => time(),
+                    'batch_id'  => $batch_id,
+                    'prefix'    => $b2_result['prefix'] ?? '',
+                ] );
+                return $backup_id;
+            }
+        }
+
+        // 3. Fallback: filesystem snapshot of plugins + themes
+        $snapshot_dir = self::get_snapshot_dir() . '/pipeline-batch-' . sanitize_file_name( $batch_id ) . '-' . time();
+        if ( ! wp_mkdir_p( $snapshot_dir ) ) {
+            return new \WP_Error( 'snapshot_dir_failed', 'Could not create pipeline backup snapshot directory.' );
+        }
+
+        $plugins_ok = self::copy_directory( WP_PLUGIN_DIR, $snapshot_dir . '/plugins' );
+        $themes_ok  = self::copy_directory( get_theme_root(), $snapshot_dir . '/themes' );
+
+        if ( ! $plugins_ok && ! $themes_ok ) {
+            self::remove_dir_recursive( $snapshot_dir );
+            return new \WP_Error( 'snapshot_failed', 'Filesystem snapshot failed for both plugins and themes.' );
+        }
+
+        update_option( 'rpcare_pipeline_backup_' . $batch_id, [
+            'backup_id'    => $backup_id,
+            'method'       => 'filesystem_snapshot',
+            'snapshot_dir' => $snapshot_dir,
+            'timestamp'    => time(),
+            'batch_id'     => $batch_id,
+        ] );
+
+        return $backup_id;
+    }
+
+    /**
+     * Restore a backup created by create_pipeline_backup().
+     * Returns true on success, WP_Error on failure.
+     */
+    private static function restore_pipeline_backup( string $backup_id, string $batch_id ): true|\WP_Error {
+        $record = get_option( 'rpcare_pipeline_backup_' . $batch_id );
+        if ( ! is_array( $record ) ) {
+            return new \WP_Error( 'backup_record_missing', 'No backup record found for batch.' );
+        }
+
+        $method = $record['method'] ?? '';
+
+        if ( $method === 'filesystem_snapshot' ) {
+            $snapshot_dir = $record['snapshot_dir'] ?? '';
+            if ( empty( $snapshot_dir ) || ! is_dir( $snapshot_dir ) ) {
+                return new \WP_Error( 'snapshot_dir_missing', 'Snapshot directory not found.' );
+            }
+
+            $plugins_snap = $snapshot_dir . '/plugins';
+            $themes_snap  = $snapshot_dir . '/themes';
+
+            if ( is_dir( $plugins_snap ) ) {
+                self::remove_dir_recursive( WP_PLUGIN_DIR );
+                if ( ! self::copy_directory( $plugins_snap, WP_PLUGIN_DIR ) ) {
+                    return new \WP_Error( 'plugins_restore_failed', 'Failed to restore plugins from snapshot.' );
+                }
+            }
+
+            if ( is_dir( $themes_snap ) ) {
+                self::remove_dir_recursive( get_theme_root() );
+                if ( ! self::copy_directory( $themes_snap, get_theme_root() ) ) {
+                    return new \WP_Error( 'themes_restore_failed', 'Failed to restore themes from snapshot.' );
+                }
+            }
+
+            self::remove_dir_recursive( $snapshot_dir );
+            return true;
+        }
+
+        if ( $method === 'b2' ) {
+            if ( ! class_exists( 'RP_Care_Task_Backup' ) ) {
+                return new \WP_Error( 'backup_class_missing', 'RP_Care_Task_Backup not available.' );
+            }
+            $restore = RP_Care_Task_Backup::restore_b2_backup( $backup_id, [ 'database', 'plugins', 'themes' ] );
+            if ( is_wp_error( $restore ) ) {
+                return $restore;
+            }
+            if ( empty( $restore['success'] ) ) {
+                return new \WP_Error( 'b2_restore_failed', 'B2 restore reported failure.' );
+            }
+            return true;
+        }
+
+        if ( $method === 'updraftplus' ) {
+            if ( ! class_exists( 'RP_Care_Task_Backup' ) ) {
+                return new \WP_Error( 'backup_class_missing', 'RP_Care_Task_Backup not available.' );
+            }
+            $restore = RP_Care_Task_Backup::restore_updraftplus_backup( $backup_id, [ 'database', 'plugins', 'themes' ] );
+            if ( is_wp_error( $restore ) ) {
+                return $restore;
+            }
+            if ( empty( $restore['success'] ) ) {
+                return new \WP_Error( 'udp_restore_failed', 'UpdraftPlus restore reported failure.' );
+            }
+            return true;
+        }
+
+        return new \WP_Error( 'unknown_backup_method', "Unknown backup method: $method" );
+    }
+
+    /**
+     * POST a batch status update to Plugin Center. Non-throwing.
+     */
+    private static function report_batch_to_pc( string $batch_id, string $status, array $item_results ): void {
+        if ( ! class_exists( 'RP_Care_Pipeline_Client' ) ) {
+            return;
+        }
+
+        $hub_url     = RP_Care_Pipeline_Client::get_hub_url_public();
+        $token       = RP_Care_Pipeline_Client::get_token_public();
+        $instance_id = (string) get_option( RP_Care_Pipeline_Client::OPT_INSTANCE_ID, '' );
+
+        if ( empty( $hub_url ) || empty( $token ) || empty( $instance_id ) ) {
+            return;
+        }
+
+        $response = wp_remote_post(
+            trailingslashit( $hub_url ) . 'wp-json/replanta-pc/v1/pipeline/batch-status',
+            [
+                'timeout' => 15,
+                'headers' => [
+                    'Content-Type'     => 'application/json',
+                    'X-Pipeline-Token' => $token,
+                    'X-Instance-ID'    => $instance_id,
+                ],
+                'body'    => wp_json_encode( [
+                    'batch_id'     => $batch_id,
+                    'instance_id'  => $instance_id,
+                    'status'       => $status,
+                    'item_results' => $item_results,
+                ] ),
+            ]
+        );
+
+        if ( is_wp_error( $response ) && class_exists( 'RP_Care_Utils' ) ) {
+            RP_Care_Utils::log( 'pipeline', 'warning', 'report_batch_to_pc failed: ' . $response->get_error_message(), [
+                'batch_id' => $batch_id,
+                'status'   => $status,
+            ] );
+        }
+    }
+
+    /**
+     * Release the global batch concurrency lock, but only if it belongs to $batch_id.
+     */
+    private static function release_batch_lock( string $batch_id ): void {
+        $current = (string) get_option( 'rpcare_batch_lock', '' );
+        if ( $current === $batch_id ) {
+            delete_option( 'rpcare_batch_lock' );
+        }
+    }
+
+    /**
+     * Try to acquire the global batch concurrency lock.
+     * Returns true if the lock was acquired (or is already held by this batch).
+     * Returns false if held by a different batch.
+     */
+    private static function acquire_batch_lock( string $batch_id ): bool {
+        $current = (string) get_option( 'rpcare_batch_lock', '' );
+        if ( ! empty( $current ) && $current !== $batch_id ) {
+            return false;
+        }
+        update_option( 'rpcare_batch_lock', $batch_id );
+        // Read-back verification for basic race protection
+        return ( (string) get_option( 'rpcare_batch_lock', '' ) ) === $batch_id;
+    }
 }
+

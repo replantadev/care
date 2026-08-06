@@ -295,6 +295,9 @@ class RP_Care_Pipeline_Client {
             case 'cancel_batch':
                 return self::handle_cancel_batch( $command );
 
+            case 'approval_required':
+                return self::handle_approval_required( $command );
+
             default:
                 return [ 'success' => false, 'error' => "Unknown command type: $command_type" ];
         }
@@ -466,6 +469,25 @@ class RP_Care_Pipeline_Client {
         return [ 'success' => true, 'batch_id' => $batch_id ];
     }
 
+    private static function handle_approval_required( array $cmd ): array {
+        $batch_id                  = $cmd['payload']['batch_id'] ?? '';
+        $manifest_hash             = $cmd['payload']['manifest_hash'] ?? '';
+        $production_inventory_hash = $cmd['payload']['production_inventory_hash'] ?? '';
+        $test_severity             = $cmd['payload']['test_severity'] ?? '';
+
+        if ( class_exists( 'RP_Care_Approval_Screen' ) ) {
+            RP_Care_Approval_Screen::store_pending_approval( [
+                'batch_id'                  => $batch_id,
+                'manifest_hash'             => $manifest_hash,
+                'production_inventory_hash' => $production_inventory_hash,
+                'test_severity'             => $test_severity,
+                'expires_at'                => gmdate( 'c', time() + 48 * 3600 ),
+            ] );
+        }
+
+        return [ 'success' => true, 'batch_id' => $batch_id ];
+    }
+
     // ── Replay protection ────────────────────────────────────────────────────
 
     public static function is_replayed( string $command_id ): bool {
@@ -628,7 +650,7 @@ class RP_Care_Pipeline_Client {
             $plain = openssl_decrypt( substr( $data, 16 ), 'AES-256-CBC', $key, OPENSSL_RAW_DATA, $iv );
             return $plain !== false ? $plain : '';
         }
-        return (string) base64_decode( $enc );
+        return ''; // enc1: prefix required — plaintext/base64 secrets are not accepted
     }
 
     private static function get_hub_url(): string {

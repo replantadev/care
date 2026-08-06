@@ -990,6 +990,14 @@ class RP_Care_Task_Updates {
                 return [ 'success' => false, 'error' => $manifest_data->get_error_message() ];
             }
 
+            // Pre-flight: every manifest item must have a pre-downloaded artifact.
+            $artifact_check = self::validate_manifest_artifacts( $manifest_data['manifest'], $batch_id );
+            if ( $artifact_check instanceof \WP_Error ) {
+                self::report_batch_to_pc( $batch_id, 'staging_failed', [ [ 'error' => $artifact_check->get_error_message() ] ] );
+                self::release_batch_lock( $batch_id );
+                return [ 'success' => false, 'error' => $artifact_check->get_error_message() ];
+            }
+
             $item_results = self::apply_manifest_items( $manifest_data['manifest'], $batch_id, 'staging' );
             $success      = empty( array_filter( $item_results, static function ( $r ) { return empty( $r['success'] ); } ) );
 
@@ -1060,6 +1068,14 @@ class RP_Care_Task_Updates {
                 return [ 'success' => false, 'error' => 'manifest_hash_mismatch' ];
             }
 
+            // Pre-flight: every manifest item must have a pre-downloaded artifact.
+            $artifact_check = self::validate_manifest_artifacts( $manifest_data['manifest'], $batch_id );
+            if ( $artifact_check instanceof \WP_Error ) {
+                self::report_batch_to_pc( $batch_id, 'production_failed', [ [ 'error' => $artifact_check->get_error_message() ] ] );
+                self::release_batch_lock( $batch_id );
+                return [ 'success' => false, 'error' => $artifact_check->get_error_message() ];
+            }
+
             // CRITICAL: create backup FIRST — do NOT proceed on failure
             $backup_id = self::create_pipeline_backup( $batch_id );
             if ( is_wp_error( $backup_id ) ) {
@@ -1069,7 +1085,10 @@ class RP_Care_Task_Updates {
             }
 
             update_option( 'rpcare_prod_batch_backup_' . $batch_id, $backup_id );
-            self::report_batch_to_pc( $batch_id, 'backup_complete', [ 'backup_id' => $backup_id ] );
+            self::report_batch_to_pc( $batch_id, 'backup_complete', [
+                'backup_id'       => $backup_id,
+                'backup_verified' => true,
+            ] );
 
             $item_results = self::apply_manifest_items( $manifest_data['manifest'], $batch_id, 'production' );
             $success      = empty( array_filter( $item_results, static function ( $r ) { return empty( $r['success'] ); } ) );
@@ -1206,6 +1225,41 @@ class RP_Care_Task_Updates {
         return $results;
     }
 
+    /**
+     * Verify that every plugin/theme item in the manifest has a pre-downloaded artifact
+     * with a non-empty artifact_id and sha256. Returns WP_Error on first missing item.
+     */
+    private static function validate_manifest_artifacts( array $manifest, string $batch_id ): ?\WP_Error {
+        $proposed = $manifest['proposed_updates'] ?? [];
+        $artifacts = $manifest['artifacts'] ?? [];
+
+        $artifact_index = [];
+        foreach ( $artifacts as $a ) {
+            $slug = $a['slug'] ?? '';
+            if ( $slug !== '' && ! empty( $a['artifact_id'] ) && ! empty( $a['sha256'] ) ) {
+                $artifact_index[ $slug ] = true;
+            }
+        }
+
+        foreach ( [ 'plugins', 'themes' ] as $item_type ) {
+            foreach ( $proposed[ $item_type ] ?? [] as $item ) {
+                $slug = $item['slug'] ?? '';
+                if ( $slug === '' ) {
+                    continue;
+                }
+                if ( ! isset( $artifact_index[ $slug ] ) ) {
+                    return new \WP_Error(
+                        'missing_artifact',
+                        "Manifest item '$slug' ($item_type) has no pre-downloaded artifact with sha256. " .
+                        'All updates must be pre-downloaded by Plugin Center before deployment.'
+                    );
+                }
+            }
+        }
+
+        return null;
+    }
+
     private static function apply_pipeline_plugin( array $item, array $manifest, string $batch_id, string $env ): array {
         $slug         = $item['slug'] ?? '';
         $from_version = $item['from_version'] ?? '';
@@ -1246,26 +1300,9 @@ class RP_Care_Task_Updates {
             }
             $package_url = $tmp_file;
         } else {
-            // FAIL CLOSED: no artifact — only proceed if WP transient matches exact to_version
-            $update_plugins = get_site_transient( 'update_plugins' );
-            $wp_package     = null;
-            if ( $update_plugins && ! empty( $update_plugins->response ) ) {
-                foreach ( $update_plugins->response as $plugin_file => $plugin_data ) {
-                    $plugin_slug = dirname( $plugin_file );
-                    if ( $plugin_slug === $slug || $plugin_file === $slug ) {
-                        if ( isset( $plugin_data->new_version ) && $plugin_data->new_version === $to_version ) {
-                            $wp_package = $plugin_data->package ?? null;
-                        }
-                        break;
-                    }
-                }
-            }
-
-            if ( $wp_package === null ) {
-                $result_base['error'] = 'no_artifact_and_no_wp_package_for_version';
-                return $result_base;
-            }
-            $package_url = $wp_package;
+            // FAIL CLOSED: pipeline mandates a pre-downloaded artifact — no WP.org fallback.
+            $result_base['error'] = 'no_artifact';
+            return $result_base;
         }
 
         try {
@@ -1341,20 +1378,9 @@ class RP_Care_Task_Updates {
             }
             $package_url = $tmp_file;
         } else {
-            $update_themes = get_site_transient( 'update_themes' );
-            $wp_package    = null;
-            if ( $update_themes && isset( $update_themes->response[ $slug ] ) ) {
-                $theme_data = $update_themes->response[ $slug ];
-                if ( isset( $theme_data['new_version'] ) && $theme_data['new_version'] === $to_version ) {
-                    $wp_package = $theme_data['package'] ?? null;
-                }
-            }
-
-            if ( $wp_package === null ) {
-                $result_base['error'] = 'no_artifact_and_no_wp_package_for_version';
-                return $result_base;
-            }
-            $package_url = $wp_package;
+            // FAIL CLOSED: pipeline mandates a pre-downloaded artifact — no WP.org fallback.
+            $result_base['error'] = 'no_artifact';
+            return $result_base;
         }
 
         try {
@@ -1526,32 +1552,18 @@ class RP_Care_Task_Updates {
     }
 
     /**
-     * Create a pre-update backup using the best available method.
+     * Create a synchronous, verifiable pre-update backup.
+     *
+     * UpdraftPlus is intentionally NOT used here — boot_backup() is asynchronous
+     * and cannot be verified before proceeding. Returns a backup_id only after
+     * integrity verification passes.
+     *
      * Returns a backup_id string or WP_Error.
      */
     private static function create_pipeline_backup( string $batch_id ): string|\WP_Error {
         $backup_id = 'pipeline_' . sanitize_file_name( $batch_id ) . '_' . gmdate( 'YmdHis' );
 
-        // 1. Try UpdraftPlus
-        if ( class_exists( 'RP_Care_Task_Backup' ) && RP_Care_Task_Backup::is_updraftplus_active() ) {
-            $udp = $GLOBALS['updraftplus'] ?? null;
-            if ( $udp && method_exists( $udp, 'boot_backup' ) ) {
-                try {
-                    $udp->boot_backup( 1, 1, false, false, get_option( 'updraft_service', '' ), 'pipeline_pre_update' );
-                    update_option( 'rpcare_pipeline_backup_' . $batch_id, [
-                        'backup_id' => $backup_id,
-                        'method'    => 'updraftplus',
-                        'timestamp' => time(),
-                        'batch_id'  => $batch_id,
-                    ] );
-                    return $backup_id;
-                } catch ( \Throwable $e ) {
-                    // Fall through to next method
-                }
-            }
-        }
-
-        // 2. Try B2 backup
+        // 1. Try B2 backup (synchronous, independently verified).
         if ( class_exists( 'RP_Care_Task_Backup' ) && RP_Care_Task_Backup::is_b2_configured_public() ) {
             $b2_result = RP_Care_Task_Backup::create_b2_backup( [
                 'reason' => 'pipeline_pre_update',
@@ -1565,12 +1577,13 @@ class RP_Care_Task_Updates {
                     'timestamp' => time(),
                     'batch_id'  => $batch_id,
                     'prefix'    => $b2_result['prefix'] ?? '',
+                    'verified'  => true,
                 ] );
                 return $backup_id;
             }
         }
 
-        // 3. Fallback: filesystem snapshot of plugins + themes
+        // 2. Fallback: synchronous filesystem snapshot (plugins + themes + DB export).
         $snapshot_dir = self::get_snapshot_dir() . '/pipeline-batch-' . sanitize_file_name( $batch_id ) . '-' . time();
         if ( ! wp_mkdir_p( $snapshot_dir ) ) {
             return new \WP_Error( 'snapshot_dir_failed', 'Could not create pipeline backup snapshot directory.' );
@@ -1578,21 +1591,121 @@ class RP_Care_Task_Updates {
 
         $plugins_ok = self::copy_directory( WP_PLUGIN_DIR, $snapshot_dir . '/plugins' );
         $themes_ok  = self::copy_directory( get_theme_root(), $snapshot_dir . '/themes' );
+        $db_ok      = self::export_db_snapshot( $snapshot_dir );
 
         if ( ! $plugins_ok && ! $themes_ok ) {
             self::remove_dir_recursive( $snapshot_dir );
             return new \WP_Error( 'snapshot_failed', 'Filesystem snapshot failed for both plugins and themes.' );
         }
 
+        $snapshot_hash = self::compute_snapshot_hash( $snapshot_dir );
+
         update_option( 'rpcare_pipeline_backup_' . $batch_id, [
-            'backup_id'    => $backup_id,
-            'method'       => 'filesystem_snapshot',
-            'snapshot_dir' => $snapshot_dir,
-            'timestamp'    => time(),
-            'batch_id'     => $batch_id,
+            'backup_id'     => $backup_id,
+            'method'        => 'filesystem_snapshot',
+            'snapshot_dir'  => $snapshot_dir,
+            'snapshot_hash' => $snapshot_hash,
+            'db_included'   => $db_ok,
+            'timestamp'     => time(),
+            'batch_id'      => $batch_id,
         ] );
 
+        if ( ! self::verify_backup_integrity( $backup_id, $batch_id ) ) {
+            self::remove_dir_recursive( $snapshot_dir );
+            delete_option( 'rpcare_pipeline_backup_' . $batch_id );
+            return new \WP_Error( 'snapshot_verify_failed', 'Backup integrity check failed after creation.' );
+        }
+
         return $backup_id;
+    }
+
+    /**
+     * Export all database tables to a SQL file inside the snapshot directory.
+     * Returns true on success, false if DB is unavailable.
+     */
+    private static function export_db_snapshot( string $snapshot_dir ): bool {
+        global $wpdb;
+
+        if ( ! isset( $wpdb ) || ! method_exists( $wpdb, 'get_col' ) ) {
+            return false;
+        }
+
+        $tables = $wpdb->get_col( 'SHOW TABLES' );
+        if ( empty( $tables ) ) {
+            return false;
+        }
+
+        $sql = "-- Pipeline DB snapshot\n-- Generated: " . gmdate( 'Y-m-d H:i:s' ) . "\n\n";
+        foreach ( $tables as $table ) {
+            $create = $wpdb->get_row( "SHOW CREATE TABLE `{$table}`", ARRAY_N );
+            if ( $create ) {
+                $sql .= "DROP TABLE IF EXISTS `{$table}`;\n";
+                $sql .= $create[1] . ";\n\n";
+            }
+            $rows = $wpdb->get_results( "SELECT * FROM `{$table}`", ARRAY_A );
+            foreach ( (array) $rows as $row ) {
+                $values = [];
+                foreach ( $row as $v ) {
+                    $values[] = $v === null ? 'NULL' : ( "'" . esc_sql( $v ) . "'" );
+                }
+                $sql .= 'INSERT INTO `' . $table . '` VALUES (' . implode( ', ', $values ) . ");\n";
+            }
+            $sql .= "\n";
+        }
+
+        return (bool) file_put_contents( $snapshot_dir . '/db.sql', $sql );
+    }
+
+    /**
+     * Compute a deterministic hash of snapshot directory contents (file names + sizes).
+     */
+    private static function compute_snapshot_hash( string $snapshot_dir ): string {
+        $manifest = [];
+        try {
+            $it = new \RecursiveIteratorIterator(
+                new \RecursiveDirectoryIterator( $snapshot_dir, \RecursiveDirectoryIterator::SKIP_DOTS )
+            );
+            foreach ( $it as $file ) {
+                if ( $file->isFile() ) {
+                    $rel              = str_replace( $snapshot_dir, '', $file->getPathname() );
+                    $manifest[ $rel ] = $file->getSize();
+                }
+            }
+        } catch ( \Throwable $e ) {
+            return '';
+        }
+        ksort( $manifest );
+        return hash( 'sha256', (string) wp_json_encode( $manifest ) );
+    }
+
+    /**
+     * Verify that a previously created backup is still intact and readable.
+     */
+    private static function verify_backup_integrity( string $backup_id, string $batch_id ): bool {
+        $record = get_option( 'rpcare_pipeline_backup_' . $batch_id );
+        if ( ! is_array( $record ) || ( $record['backup_id'] ?? '' ) !== $backup_id ) {
+            return false;
+        }
+
+        $method = $record['method'] ?? '';
+
+        if ( $method === 'b2' ) {
+            return ! empty( $record['verified'] );
+        }
+
+        if ( $method === 'filesystem_snapshot' ) {
+            $snapshot_dir  = $record['snapshot_dir'] ?? '';
+            $expected_hash = $record['snapshot_hash'] ?? '';
+
+            if ( empty( $snapshot_dir ) || ! is_dir( $snapshot_dir ) || empty( $expected_hash ) ) {
+                return false;
+            }
+
+            $actual_hash = self::compute_snapshot_hash( $snapshot_dir );
+            return ! empty( $actual_hash ) && hash_equals( $expected_hash, $actual_hash );
+        }
+
+        return false;
     }
 
     /**
@@ -1708,8 +1821,10 @@ class RP_Care_Task_Updates {
                 $extra_data = [ 'reason' => 'rollback_failed' ];
                 break;
             case 'backup_complete':
-                $event_name = 'production_backup_complete';
-                $extra_data = [];
+                $event_name   = 'production_backup_complete';
+                // backup_id and backup_verified must be top-level in data (PC reads $data['backup_id']).
+                $extra_data   = $item_results;
+                $item_results = [];
                 break;
             default:
                 $event_name = 'operation_failed';

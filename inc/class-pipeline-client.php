@@ -334,6 +334,11 @@ class RP_Care_Pipeline_Client {
             return new WP_Error( 'missing_field', 'Command missing field: batch_id' );
         }
 
+        // manifest_hash key must be present (value may be empty for commands without a batch).
+        if ( ! array_key_exists( 'manifest_hash', $command ) ) {
+            return new WP_Error( 'missing_field', 'Command missing field: manifest_hash' );
+        }
+
         // instance_id must match.
         if ( $command['instance_id'] !== $expected_instance_id ) {
             return new WP_Error( 'instance_mismatch', 'Command instance_id does not match.' );
@@ -360,6 +365,7 @@ class RP_Care_Pipeline_Client {
             $command['command_type'],
             $command['batch_id'] ?? '',
             $command['payload_hash'],
+            $command['manifest_hash'] ?? '',
             $command['issued_at'] ?? '',
             $command['expires_at'],
         ] );
@@ -509,14 +515,24 @@ class RP_Care_Pipeline_Client {
         $production_inventory_hash = $cmd['payload']['production_inventory_hash'] ?? '';
         $test_severity             = $cmd['payload']['test_severity'] ?? '';
 
+        if ( empty( $batch_id ) || empty( $manifest_hash ) || empty( $production_inventory_hash ) ) {
+            return [ 'success' => false, 'error' => 'approval_required payload missing required fields' ];
+        }
+
+        $approval_data = [
+            'batch_id'                  => $batch_id,
+            'manifest_hash'             => $manifest_hash,
+            'production_inventory_hash' => $production_inventory_hash,
+            'test_severity'             => $test_severity,
+            'expires_at'                => gmdate( 'c', time() + 48 * 3600 ),
+        ];
+
+        // Always persist in a WP option — authoritative store for retries if the ACK to PC fails.
+        update_option( 'rpcare_pipeline_pending_approval_' . $batch_id, $approval_data );
+
+        // Also notify the approval screen UI if the module is available.
         if ( class_exists( 'RP_Care_Approval_Screen' ) ) {
-            RP_Care_Approval_Screen::store_pending_approval( [
-                'batch_id'                  => $batch_id,
-                'manifest_hash'             => $manifest_hash,
-                'production_inventory_hash' => $production_inventory_hash,
-                'test_severity'             => $test_severity,
-                'expires_at'                => gmdate( 'c', time() + 48 * 3600 ),
-            ] );
+            RP_Care_Approval_Screen::store_pending_approval( $approval_data );
         }
 
         return [ 'success' => true, 'batch_id' => $batch_id ];

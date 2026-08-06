@@ -82,18 +82,20 @@ class CarePipelineContractTest extends TestCase {
     private function make_valid_command(
         string $secret,
         string $instance_id,
-        string $environment = 'production',
-        string $batch_id    = 'batch-care-ct'
+        string $environment   = 'production',
+        string $batch_id      = 'batch-care-ct',
+        string $manifest_hash = ''
     ): array {
-        $now        = gmdate( 'c', time() );
-        $expires    = gmdate( 'c', time() + 300 );
-        $payload    = [];
-        $p_hash     = hash( 'sha256', json_encode( $payload ) );
-        $cmd_id     = 'care-ct-cmd-' . substr( md5( $secret . $instance_id ), 0, 8 );
+        $now     = gmdate( 'c', time() );
+        $expires = gmdate( 'c', time() + 300 );
+        $payload = [];
+        $p_hash  = hash( 'sha256', json_encode( $payload ) );
+        $cmd_id  = 'care-ct-cmd-' . substr( md5( $secret . $instance_id ), 0, 8 );
 
+        // HMAC: command_id|instance_id|env|type|batch_id|payload_hash|manifest_hash|issued_at|expires_at
         $hmac_payload = implode( '|', [
             $cmd_id, $instance_id, $environment, 'report_inventory',
-            $batch_id, $p_hash, $now, $expires,
+            $batch_id, $p_hash, $manifest_hash, $now, $expires,
         ] );
         $hmac = hash_hmac( 'sha256', $hmac_payload, $secret );
 
@@ -107,6 +109,7 @@ class CarePipelineContractTest extends TestCase {
             'expires_at'         => $expires,
             'target_environment' => $environment,
             'batch_id'           => $batch_id,
+            'manifest_hash'      => $manifest_hash,
             'hmac'               => $hmac,
         ];
     }
@@ -298,6 +301,61 @@ class CarePipelineContractTest extends TestCase {
         $this->assertFalse(
             RP_Care_Pipeline_Client::verify_command_public( $cmd ),
             'verify_command_public must return false when batch_id key is completely absent'
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // CC-007: verify_command_public rejects command without manifest_hash key
+    // ─────────────────────────────────────────────────────────────────────────
+
+    public function test_verify_command_requires_manifest_hash_key(): void {
+        $secret      = 'cc007-verify-secret';
+        $instance_id = 'cc007-instance';
+
+        update_option( RP_Care_Pipeline_Client::OPT_SECRET,      $this->care_encrypt( $secret ) );
+        update_option( RP_Care_Pipeline_Client::OPT_INSTANCE_ID, $instance_id );
+        update_option( RP_Care_Pipeline_Client::OPT_ENVIRONMENT,  'production' );
+
+        $cmd = $this->make_valid_command( $secret, $instance_id );
+
+        // Remove manifest_hash key entirely.
+        unset( $cmd['manifest_hash'] );
+
+        $this->assertFalse(
+            RP_Care_Pipeline_Client::verify_command_public( $cmd ),
+            'verify_command_public must return false when manifest_hash key is completely absent'
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // CC-008: manifest_hash is bound into HMAC — tampering invalidates signature
+    // ─────────────────────────────────────────────────────────────────────────
+
+    public function test_verify_command_manifest_hash_bound_in_hmac(): void {
+        $secret      = 'cc008-verify-secret';
+        $instance_id = 'cc008-instance';
+
+        update_option( RP_Care_Pipeline_Client::OPT_SECRET,      $this->care_encrypt( $secret ) );
+        update_option( RP_Care_Pipeline_Client::OPT_INSTANCE_ID, $instance_id );
+        update_option( RP_Care_Pipeline_Client::OPT_ENVIRONMENT,  'production' );
+
+        // Build a command signed with a specific manifest_hash.
+        $original_hash = hash( 'sha256', 'original-manifest-content' );
+        $cmd = $this->make_valid_command( $secret, $instance_id, 'production', 'batch-cc008', $original_hash );
+
+        // Valid: original manifest_hash → should verify.
+        $this->assertTrue(
+            RP_Care_Pipeline_Client::verify_command_public( $cmd ),
+            'Command with correct manifest_hash must pass verification'
+        );
+
+        // Tamper: replace manifest_hash with a different hash, keep same HMAC.
+        $tampered = $cmd;
+        $tampered['manifest_hash'] = hash( 'sha256', 'tampered-manifest-content' );
+
+        $this->assertFalse(
+            RP_Care_Pipeline_Client::verify_command_public( $tampered ),
+            'Command with tampered manifest_hash must fail HMAC verification'
         );
     }
 

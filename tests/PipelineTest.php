@@ -178,14 +178,15 @@ class PipelineTest extends TestCase {
         string $expires_at,
         string $target_environment = 'production',
         string $batch_id           = 'test-batch-default',
-        string $issued_at          = ''
+        string $issued_at          = '',
+        string $manifest_hash      = ''
     ): array {
         $issued_at    = $issued_at ?: gmdate( 'c' );
         $payload_hash = hash( 'sha256', json_encode( $payload ) );
-        // New HMAC format: command_id|instance_id|target_environment|command_type|batch_id|payload_hash|issued_at|expires_at
+        // HMAC: command_id|instance_id|target_environment|command_type|batch_id|payload_hash|manifest_hash|issued_at|expires_at
         $hmac_payload = implode( '|', [
             $command_id, $instance_id, $target_environment, $command_type,
-            $batch_id, $payload_hash, $issued_at, $expires_at,
+            $batch_id, $payload_hash, $manifest_hash, $issued_at, $expires_at,
         ] );
         $hmac = hash_hmac( 'sha256', $hmac_payload, $secret );
 
@@ -199,6 +200,7 @@ class PipelineTest extends TestCase {
             'expires_at'         => $expires_at,
             'target_environment' => $target_environment,
             'batch_id'           => $batch_id,
+            'manifest_hash'      => $manifest_hash,
             'hmac'               => $hmac,
         ];
     }

@@ -455,14 +455,15 @@ class RP_Care_Pipeline_Client {
         $batch_id      = $cmd['payload']['batch_id'] ?? '';
         $manifest_hash = $cmd['payload']['manifest_hash'] ?? '';
         $approval_id   = $cmd['payload']['approval_id'] ?? '';
+        $backup_id     = $cmd['payload']['backup_id'] ?? '';
 
         // Production must not be staging.
         if ( self::is_staging() ) {
             return [ 'success' => false, 'error' => 'apply_production_batch sent to staging instance.' ];
         }
 
-        if ( empty( $batch_id ) || empty( $manifest_hash ) || empty( $approval_id ) ) {
-            return [ 'success' => false, 'error' => 'Missing batch_id, manifest_hash, or approval_id.' ];
+        if ( empty( $batch_id ) || empty( $manifest_hash ) || empty( $approval_id ) || empty( $backup_id ) ) {
+            return [ 'success' => false, 'error' => 'Missing batch_id, manifest_hash, approval_id, or backup_id.' ];
         }
 
         if ( function_exists( 'as_enqueue_async_action' ) ) {
@@ -472,6 +473,7 @@ class RP_Care_Pipeline_Client {
                     'batch_id'      => $batch_id,
                     'manifest_hash' => $manifest_hash,
                     'approval_id'   => $approval_id,
+                    'backup_id'     => $backup_id,
                 ],
                 'replanta-care'
             );
@@ -479,6 +481,82 @@ class RP_Care_Pipeline_Client {
         }
 
         return [ 'success' => false, 'error' => 'Action Scheduler not available.' ];
+    }
+
+    /**
+     * Send a human approval decision to Plugin Center.
+     *
+     * Returns true on success. Returns WP_Error on any failure.
+     * - On timeout / 429 / 5xx: preserves the pending approval for retry (idempotent).
+     * - On 4xx: preserves an error record visible to the operator.
+     * - Only deletes the pending option after HTTP 2xx with a valid approval_id in the body.
+     *
+     * @param array $approval_data  Must include 'batch_id' and the full approval payload.
+     * @return true|\WP_Error
+     */
+    public static function send_approval_to_pc( array $approval_data ): true|\WP_Error {
+        if ( ! self::is_pipeline_enabled() ) {
+            return new \WP_Error( 'pipeline_disabled', 'Pipeline is not enabled.' );
+        }
+
+        $hub_url     = self::get_hub_url_public();
+        $token       = self::get_token_public();
+        $instance_id = (string) get_option( self::OPT_INSTANCE_ID, '' );
+
+        if ( empty( $hub_url ) || empty( $token ) || empty( $instance_id ) ) {
+            return new \WP_Error( 'not_configured', 'Pipeline client not fully configured.' );
+        }
+
+        $batch_id = (string) ( $approval_data['batch_id'] ?? '' );
+        if ( empty( $batch_id ) ) {
+            return new \WP_Error( 'missing_batch_id', 'approval_data must include batch_id.' );
+        }
+
+        $response = wp_remote_post(
+            trailingslashit( $hub_url ) . 'wp-json/replanta-pc/v1/pipeline/batch-approval',
+            [
+                'timeout' => 15,
+                'headers' => [
+                    'Content-Type'     => 'application/json',
+                    'X-Pipeline-Token' => $token,
+                    'X-Instance-ID'    => $instance_id,
+                ],
+                'body' => wp_json_encode( $approval_data ),
+            ]
+        );
+
+        $code = is_wp_error( $response ) ? 0 : (int) wp_remote_retrieve_response_code( $response );
+
+        // On timeout, network error, 429, or 5xx — preserve pending approval for retry.
+        if ( is_wp_error( $response ) || $code === 0 || $code === 429 || $code >= 500 ) {
+            $err = is_wp_error( $response ) ? $response->get_error_message() : "HTTP $code";
+            update_option( 'rpcare_pipeline_pending_approval_' . $batch_id, $approval_data );
+            return new \WP_Error( 'retry_later', "Approval submission failed (retryable): $err" );
+        }
+
+        // On 4xx — preserve an error record visible to the operator; do NOT fake success.
+        if ( $code >= 400 ) {
+            $err_body = wp_remote_retrieve_body( $response );
+            update_option( 'rpcare_pipeline_approval_error_' . $batch_id, [
+                'error'    => "HTTP $code",
+                'body'     => substr( $err_body, 0, 500 ),
+                'time'     => time(),
+                'approval' => $approval_data,
+            ] );
+            return new \WP_Error( 'rejected', "PC rejected approval (HTTP $code)." );
+        }
+
+        // 2xx — verify approval_id returned by PC.
+        $body = json_decode( wp_remote_retrieve_body( $response ), true );
+        if ( empty( $body['approval_id'] ) ) {
+            // Keep pending — we need the approval_id to continue.
+            update_option( 'rpcare_pipeline_pending_approval_' . $batch_id, $approval_data );
+            return new \WP_Error( 'missing_approval_id', 'PC returned 2xx but did not include approval_id.' );
+        }
+
+        // Only delete the pending option after confirmed 2xx with valid approval_id.
+        delete_option( 'rpcare_pipeline_pending_approval_' . $batch_id );
+        return true;
     }
 
     private static function handle_verify_production( array $cmd ): array {
@@ -656,14 +734,14 @@ class RP_Care_Pipeline_Client {
 
         add_action(
             'rpcare_pipeline_apply_production_batch',
-            static function ( string $batch_id, string $manifest_hash = '', string $approval_id = '' ): void {
+            static function ( string $batch_id, string $manifest_hash = '', string $approval_id = '', string $backup_id = '' ): void {
                 if ( ! class_exists( 'RP_Care_Task_Updates' ) ) {
                     return;
                 }
-                RP_Care_Task_Updates::apply_production_batch( $batch_id, $manifest_hash, $approval_id );
+                RP_Care_Task_Updates::apply_production_batch( $batch_id, $manifest_hash, $approval_id, $backup_id );
             },
             10,
-            3
+            4
         );
 
         add_action(

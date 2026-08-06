@@ -1,7 +1,7 @@
 <?php
 // Minimal bootstrap for offline unit tests — no WP or DB required.
 define( 'ABSPATH', __DIR__ . '/../' );
-define( 'RPCARE_VERSION', '1.15.46' );
+define( 'RPCARE_VERSION', '1.15.54' );
 define( 'RPCARE_TESTING', true );
 
 // ── WP option store ────────────────────────────────────────────────────────
@@ -109,14 +109,27 @@ if ( ! class_exists( 'WP_Error' ) ) {
             $this->message = $message;
         }
         public function get_error_message(): string { return (string) $this->message; }
+        public function get_error_code()            { return $this->code; }
     }
 }
 if ( ! function_exists( 'is_wp_error' ) ) {
     function is_wp_error( $v ): bool { return $v instanceof WP_Error; }
 }
 
+// ── add_option (atomic INSERT — returns false if key already exists) ──────────
+if ( ! function_exists( 'add_option' ) ) {
+    function add_option( string $k, $v, string $deprecated = '', $autoload = 'yes' ): bool {
+        if ( array_key_exists( $k, $GLOBALS['_wp_options'] ) ) {
+            return false;
+        }
+        $GLOBALS['_wp_options'][ $k ] = $v;
+        return true;
+    }
+}
+
 // ── Action Scheduler stubs ─────────────────────────────────────────────────
-$GLOBALS['_as_pending'] = [];
+$GLOBALS['_as_pending']  = [];
+$GLOBALS['_as_enqueued'] = [];
 if ( ! function_exists( 'as_next_scheduled_action' ) ) {
     function as_next_scheduled_action( string $hook, array $args = [], string $group = '' ): int|bool {
         return $GLOBALS['_as_pending'][ $hook ] ?? false;
@@ -127,6 +140,18 @@ if ( ! function_exists( 'as_next_scheduled_action' ) ) {
     }
     function as_unschedule_all_actions( string $hook, array $args = [], string $group = '' ): void {
         unset( $GLOBALS['_as_pending'][ $hook ] );
+    }
+}
+if ( ! function_exists( 'as_schedule_single_action' ) ) {
+    function as_schedule_single_action( int $ts, string $hook, array $args = [], string $group = '', bool $unique = false ): int {
+        $GLOBALS['_as_pending'][ $hook ] = [ 'ts' => $ts, 'args' => $args, 'group' => $group ];
+        return 1;
+    }
+}
+if ( ! function_exists( 'as_enqueue_async_action' ) ) {
+    function as_enqueue_async_action( string $hook, array $args = [], string $group = '', bool $unique = false ): int {
+        $GLOBALS['_as_enqueued'][] = [ 'hook' => $hook, 'args' => $args, 'group' => $group ];
+        return 1;
     }
 }
 

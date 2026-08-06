@@ -954,6 +954,57 @@ class RP_Care_Task_Updates {
     // =========================================================================
 
     /**
+     * AS callback for 'rpcare_create_production_backup'.
+     * Scheduled by handle_prepare_production(). Creates exactly one backup per batch,
+     * verifies integrity, and reports production_backup_complete to PC.
+     * Idempotent: re-running for the same batch_id reports the already-created backup.
+     */
+    public static function do_create_production_backup( string $batch_id ): void {
+        if ( empty( $batch_id ) ) {
+            return;
+        }
+
+        if ( ! class_exists( 'RP_Care_Pipeline_Client' ) || ! RP_Care_Pipeline_Client::is_pipeline_enabled() ) {
+            self::report_batch_to_pc( $batch_id, 'production_failed', [ 'error' => 'pipeline_disabled' ] );
+            return;
+        }
+
+        if ( RP_Care_Pipeline_Client::is_staging() ) {
+            self::report_batch_to_pc( $batch_id, 'production_failed', [ 'error' => 'not_production' ] );
+            return;
+        }
+
+        if ( RP_Care_Pipeline_Client::is_in_quarantine() ) {
+            self::report_batch_to_pc( $batch_id, 'production_failed', [ 'error' => 'in_quarantine' ] );
+            return;
+        }
+
+        // Idempotency: only create one backup per batch.
+        $existing_id = (string) get_option( 'rpcare_prod_backup_done_' . $batch_id, '' );
+        if ( ! empty( $existing_id ) ) {
+            self::report_batch_to_pc( $batch_id, 'backup_complete', [
+                'backup_id'       => $existing_id,
+                'backup_verified' => true,
+            ] );
+            return;
+        }
+
+        $backup_result = self::create_pipeline_backup( $batch_id );
+        if ( is_wp_error( $backup_result ) ) {
+            self::report_batch_to_pc( $batch_id, 'production_failed', [ 'error' => 'backup_failed: ' . $backup_result->get_error_message() ] );
+            return;
+        }
+
+        // Persist so apply_production_batch can verify the backup_id from the command.
+        update_option( 'rpcare_prod_backup_done_' . $batch_id, $backup_result );
+
+        self::report_batch_to_pc( $batch_id, 'backup_complete', [
+            'backup_id'       => $backup_result,
+            'backup_verified' => true,
+        ] );
+    }
+
+    /**
      * Apply an update batch on the staging environment.
      * Called by the rpcare_pipeline_apply_staging_batch AS action.
      */
@@ -1023,8 +1074,9 @@ class RP_Care_Task_Updates {
     /**
      * Apply an approved update batch to the production environment.
      * Called by the rpcare_pipeline_apply_production_batch AS action.
+     * $backup_id must match the backup created by do_create_production_backup().
      */
-    public static function apply_production_batch( string $batch_id, string $manifest_hash, string $approval_id ): array {
+    public static function apply_production_batch( string $batch_id, string $manifest_hash, string $approval_id, string $backup_id = '' ): array {
         if ( ! class_exists( 'RP_Care_Pipeline_Client' ) || ! RP_Care_Pipeline_Client::is_pipeline_enabled() ) {
             self::report_batch_to_pc( $batch_id, 'production_failed', [] );
             return [ 'success' => false, 'error' => 'pipeline_disabled' ];
@@ -1044,6 +1096,19 @@ class RP_Care_Task_Updates {
             return [ 'success' => false, 'error' => 'missing_required_params' ];
         }
 
+        // backup_id is required — it proves the backup callback ran before this command was sent.
+        if ( empty( $backup_id ) ) {
+            self::report_batch_to_pc( $batch_id, 'production_failed', [ [ 'error' => 'missing_backup_id' ] ] );
+            return [ 'success' => false, 'error' => 'missing_backup_id_in_command' ];
+        }
+
+        // Verify the backup_id from the command matches what we recorded locally.
+        $stored_backup_id = (string) get_option( 'rpcare_prod_backup_done_' . $batch_id, '' );
+        if ( empty( $stored_backup_id ) || ! hash_equals( $stored_backup_id, $backup_id ) ) {
+            self::report_batch_to_pc( $batch_id, 'production_failed', [ [ 'error' => 'backup_id_mismatch' ] ] );
+            return [ 'success' => false, 'error' => 'backup_id_mismatch' ];
+        }
+
         if ( get_option( 'rpcare_prod_batch_done_' . $batch_id ) ) {
             return [ 'success' => true, 'idempotent' => true, 'batch_id' => $batch_id ];
         }
@@ -1061,7 +1126,7 @@ class RP_Care_Task_Updates {
                 return [ 'success' => false, 'error' => $manifest_data->get_error_message() ];
             }
 
-            // CRITICAL: verify manifest hash matches what was approved
+            // CRITICAL: verify manifest hash matches what was approved.
             if ( ! hash_equals( $manifest_hash, $manifest_data['manifest_hash'] ) ) {
                 self::report_batch_to_pc( $batch_id, 'production_failed', [ [ 'error' => 'manifest_hash_mismatch' ] ] );
                 self::release_batch_lock( $batch_id );
@@ -1076,19 +1141,8 @@ class RP_Care_Task_Updates {
                 return [ 'success' => false, 'error' => $artifact_check->get_error_message() ];
             }
 
-            // CRITICAL: create backup FIRST — do NOT proceed on failure
-            $backup_id = self::create_pipeline_backup( $batch_id );
-            if ( is_wp_error( $backup_id ) ) {
-                self::report_batch_to_pc( $batch_id, 'production_failed', [ [ 'error' => 'backup_failed: ' . $backup_id->get_error_message() ] ] );
-                self::release_batch_lock( $batch_id );
-                return [ 'success' => false, 'error' => 'backup_failed: ' . $backup_id->get_error_message() ];
-            }
-
+            // Record backup_id for rollback_batch to use.
             update_option( 'rpcare_prod_batch_backup_' . $batch_id, $backup_id );
-            self::report_batch_to_pc( $batch_id, 'backup_complete', [
-                'backup_id'       => $backup_id,
-                'backup_verified' => true,
-            ] );
 
             $item_results = self::apply_manifest_items( $manifest_data['manifest'], $batch_id, 'production' );
             $success      = empty( array_filter( $item_results, static function ( $r ) { return empty( $r['success'] ); } ) );
@@ -1189,10 +1243,64 @@ class RP_Care_Task_Updates {
             return new \WP_Error( 'invalid_manifest', 'Manifest could not be decoded.' );
         }
 
+        // Locally recalculate hash to verify PC is not sending a tampered manifest.
+        $recalculated = self::compute_manifest_hash_local( $manifest );
+        if ( ! hash_equals( $recalculated, (string) $body['manifest_hash'] ) ) {
+            return new \WP_Error( 'manifest_hash_mismatch', 'Locally recalculated manifest hash does not match the value returned by PC.' );
+        }
+
+        // Verify artifact_set_hash if present.
+        $artifacts          = $manifest['artifacts'] ?? [];
+        $stored_aset_hash   = $manifest['artifact_set_hash'] ?? '';
+        if ( ! empty( $artifacts ) && ! empty( $stored_aset_hash ) ) {
+            $computed_aset_hash = self::compute_artifact_set_hash_local( $artifacts );
+            if ( ! hash_equals( $stored_aset_hash, $computed_aset_hash ) ) {
+                return new \WP_Error( 'artifact_set_hash_mismatch', 'artifact_set_hash in manifest does not match locally computed value.' );
+            }
+        }
+
         return [
             'manifest'      => $manifest,
             'manifest_hash' => (string) $body['manifest_hash'],
         ];
+    }
+
+    /**
+     * Locally reproduce the canonical manifest hash that PC_Manifest::hash() would compute.
+     * Uses ksort-recursive + JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES to match PC exactly.
+     */
+    private static function compute_manifest_hash_local( array $manifest ): string {
+        $canonical = self::sort_keys_recursive_local( $manifest );
+        $json      = wp_json_encode( $canonical, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES );
+        return hash( 'sha256', (string) $json );
+    }
+
+    private static function sort_keys_recursive_local( array $arr ): array {
+        ksort( $arr );
+        foreach ( $arr as &$v ) {
+            if ( is_array( $v ) ) {
+                $v = self::sort_keys_recursive_local( $v );
+            }
+        }
+        unset( $v );
+        return $arr;
+    }
+
+    /**
+     * Reproduce PC_Manifest::compute_artifact_set_hash() locally.
+     * Sorts tuples id:sha256 and hashes the pipe-separated list.
+     */
+    private static function compute_artifact_set_hash_local( array $artifacts ): string {
+        $tuples = [];
+        foreach ( $artifacts as $a ) {
+            $id     = $a['id'] ?? $a['artifact_id'] ?? '';
+            $sha256 = $a['sha256'] ?? '';
+            if ( $id && $sha256 ) {
+                $tuples[] = "$id:$sha256";
+            }
+        }
+        sort( $tuples );
+        return hash( 'sha256', implode( '|', $tuples ) );
     }
 
     private static function apply_manifest_items( array $manifest, string $batch_id, string $env ): array {
@@ -1213,12 +1321,12 @@ class RP_Care_Task_Updates {
         }
 
         foreach ( $proposed['translations'] ?? [] as $item ) {
+            // Translations are not yet implemented — fail closed rather than pretend success.
             $results[] = [
-                'slug'         => $item['slug'] ?? '',
-                'type'         => 'translation',
-                'success'      => true,
-                'from_version' => $item['from_version'] ?? '',
-                'to_version'   => $item['to_version'] ?? '',
+                'slug'    => $item['slug'] ?? '',
+                'type'    => 'translation',
+                'success' => false,
+                'error'   => 'translations_not_implemented',
             ];
         }
 
@@ -1485,7 +1593,7 @@ class RP_Care_Task_Updates {
         }
 
         $url_response = wp_remote_get(
-            trailingslashit( $hub_url ) . 'wp-json/replanta-pc/v1/artifact-url/' . rawurlencode( $artifact_id ),
+            trailingslashit( $hub_url ) . 'wp-json/replanta-pc/v1/pipeline/artifact-url/' . rawurlencode( $artifact_id ),
             [
                 'timeout' => 15,
                 'headers' => [
@@ -1598,6 +1706,12 @@ class RP_Care_Task_Updates {
             return new \WP_Error( 'snapshot_failed', 'Filesystem snapshot failed for both plugins and themes.' );
         }
 
+        // A backup without a DB export is incomplete and must not be accepted for production.
+        if ( ! $db_ok ) {
+            self::remove_dir_recursive( $snapshot_dir );
+            return new \WP_Error( 'db_export_failed', 'Database export failed — filesystem snapshot without DB is not accepted for production backup.' );
+        }
+
         $snapshot_hash = self::compute_snapshot_hash( $snapshot_dir );
 
         update_option( 'rpcare_pipeline_backup_' . $batch_id, [
@@ -1657,7 +1771,8 @@ class RP_Care_Task_Updates {
     }
 
     /**
-     * Compute a deterministic hash of snapshot directory contents (file names + sizes).
+     * Compute a deterministic hash of snapshot directory contents using SHA-256 of file contents.
+     * A file rename-only or size-preserving content change both invalidate the hash.
      */
     private static function compute_snapshot_hash( string $snapshot_dir ): string {
         $manifest = [];
@@ -1668,7 +1783,7 @@ class RP_Care_Task_Updates {
             foreach ( $it as $file ) {
                 if ( $file->isFile() ) {
                     $rel              = str_replace( $snapshot_dir, '', $file->getPathname() );
-                    $manifest[ $rel ] = $file->getSize();
+                    $manifest[ $rel ] = hash_file( 'sha256', $file->getPathname() ) ?: '0';
                 }
             }
         } catch ( \Throwable $e ) {
@@ -1740,6 +1855,15 @@ class RP_Care_Task_Updates {
                 self::remove_dir_recursive( get_theme_root() );
                 if ( ! self::copy_directory( $themes_snap, get_theme_root() ) ) {
                     return new \WP_Error( 'themes_restore_failed', 'Failed to restore themes from snapshot.' );
+                }
+            }
+
+            // Restore DB from SQL dump — required for a complete rollback.
+            $db_sql_file = $snapshot_dir . '/db.sql';
+            if ( ( $record['db_included'] ?? false ) && is_file( $db_sql_file ) ) {
+                $db_result = self::restore_db_from_snapshot( $db_sql_file );
+                if ( is_wp_error( $db_result ) ) {
+                    return $db_result;
                 }
             }
 
@@ -1869,18 +1993,57 @@ class RP_Care_Task_Updates {
     }
 
     /**
-     * Try to acquire the global batch concurrency lock.
+     * Try to acquire the global batch concurrency lock atomically.
+     * Uses add_option() (INSERT-on-no-conflict) to prevent TOCTOU races.
      * Returns true if the lock was acquired (or is already held by this batch).
-     * Returns false if held by a different batch.
      */
     private static function acquire_batch_lock( string $batch_id ): bool {
-        $current = (string) get_option( 'rpcare_batch_lock', '' );
-        if ( ! empty( $current ) && $current !== $batch_id ) {
-            return false;
+        // add_option() maps to INSERT IGNORE — fails atomically if key already exists.
+        if ( add_option( 'rpcare_batch_lock', $batch_id, '', 'no' ) ) {
+            return true;
         }
-        update_option( 'rpcare_batch_lock', $batch_id );
-        // Read-back verification for basic race protection
-        return ( (string) get_option( 'rpcare_batch_lock', '' ) ) === $batch_id;
+        $current = (string) get_option( 'rpcare_batch_lock', '' );
+        return $current === $batch_id; // already held by this batch (idempotent)
+    }
+
+    /**
+     * Register Action Scheduler callbacks for the pipeline.
+     * Called once from the plugin init hook (replanta-care.php).
+     */
+    public static function register_pipeline_hooks(): void {
+        add_action( 'rpcare_create_production_backup', [ self::class, 'do_create_production_backup' ] );
+    }
+
+    /**
+     * Restore a DB snapshot from a SQL dump file via wpdb.
+     * Returns true on success, WP_Error on failure.
+     */
+    private static function restore_db_from_snapshot( string $sql_file ): true|\WP_Error {
+        global $wpdb;
+
+        if ( ! isset( $wpdb ) || ! method_exists( $wpdb, 'query' ) ) {
+            return new \WP_Error( 'db_unavailable', 'wpdb is not available for DB restore.' );
+        }
+
+        $sql = file_get_contents( $sql_file );
+        if ( $sql === false ) {
+            return new \WP_Error( 'db_restore_failed', 'Could not read DB snapshot SQL file.' );
+        }
+
+        // Execute each statement (split on ";\n" which matches our export format).
+        $statements = explode( ";\n", $sql );
+        foreach ( $statements as $stmt ) {
+            $stmt = trim( $stmt );
+            if ( empty( $stmt ) || str_starts_with( $stmt, '--' ) ) {
+                continue;
+            }
+            $result = $wpdb->query( $stmt );
+            if ( $result === false && ! empty( $wpdb->last_error ) ) {
+                return new \WP_Error( 'db_restore_query_failed', 'DB restore failed: ' . $wpdb->last_error );
+            }
+        }
+
+        return true;
     }
 }
 

@@ -1069,6 +1069,7 @@ class RP_Care_Task_Updates {
             }
 
             update_option( 'rpcare_prod_batch_backup_' . $batch_id, $backup_id );
+            self::report_batch_to_pc( $batch_id, 'backup_complete', [ 'backup_id' => $backup_id ] );
 
             $item_results = self::apply_manifest_items( $manifest_data['manifest'], $batch_id, 'production' );
             $success      = empty( array_filter( $item_results, static function ( $r ) { return empty( $r['success'] ); } ) );
@@ -1680,6 +1681,42 @@ class RP_Care_Task_Updates {
             return;
         }
 
+        // Map internal status strings to PC event names.
+        switch ( $status ) {
+            case 'staging_done':
+                $event_name = 'staging_updated';
+                $extra_data = [];
+                break;
+            case 'staging_failed':
+                $event_name = 'operation_failed';
+                $extra_data = [ 'reason' => 'staging_failed' ];
+                break;
+            case 'production_done':
+                $event_name = 'production_updated';
+                $extra_data = [];
+                break;
+            case 'production_failed':
+                $event_name = 'operation_failed';
+                $extra_data = [ 'reason' => 'production_failed' ];
+                break;
+            case 'rolled_back':
+                $event_name = 'rollback_complete';
+                $extra_data = [];
+                break;
+            case 'rollback_failed':
+                $event_name = 'operation_failed';
+                $extra_data = [ 'reason' => 'rollback_failed' ];
+                break;
+            case 'backup_complete':
+                $event_name = 'production_backup_complete';
+                $extra_data = [];
+                break;
+            default:
+                $event_name = 'operation_failed';
+                $extra_data = [ 'reason' => $status ];
+                break;
+        }
+
         $response = wp_remote_post(
             trailingslashit( $hub_url ) . 'wp-json/replanta-pc/v1/pipeline/batch-status',
             [
@@ -1690,10 +1727,10 @@ class RP_Care_Task_Updates {
                     'X-Instance-ID'    => $instance_id,
                 ],
                 'body'    => wp_json_encode( [
-                    'batch_id'     => $batch_id,
-                    'instance_id'  => $instance_id,
-                    'status'       => $status,
-                    'item_results' => $item_results,
+                    'batch_id'    => $batch_id,
+                    'event'       => $event_name,
+                    'data'        => array_merge( [ 'item_results' => $item_results ], $extra_data ),
+                    'instance_id' => $instance_id,
                 ] ),
             ]
         );

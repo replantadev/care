@@ -30,7 +30,8 @@ class RP_Care_Pipeline_Client {
     const OPT_INSTANCE_ID    = 'rpcare_pipeline_instance_id';
     const OPT_GROUP_ID       = 'rpcare_pipeline_group_id';
     const OPT_ENVIRONMENT    = 'rpcare_pipeline_environment';
-    const OPT_SECRET         = 'rpcare_pipeline_secret'; // encrypted
+    const OPT_TOKEN          = 'rpcare_pipeline_token';  // encrypted with Care's local key
+    const OPT_SECRET         = 'rpcare_pipeline_secret'; // encrypted with Care's local key
     const OPT_LAST_POLL      = 'rpcare_pipeline_last_poll';
 
     // Replay-protection option (bounded FIFO of processed command IDs).
@@ -298,6 +299,9 @@ class RP_Care_Pipeline_Client {
             case 'approval_required':
                 return self::handle_approval_required( $command );
 
+            case 'prepare_production':
+                return self::handle_prepare_production( $command );
+
             default:
                 return [ 'success' => false, 'error' => "Unknown command type: $command_type" ];
         }
@@ -313,11 +317,21 @@ class RP_Care_Pipeline_Client {
     ): bool|\WP_Error {
 
         // Required fields.
-        $required = [ 'command_id', 'instance_id', 'command_type', 'payload_hash', 'expires_at', 'hmac' ];
+        $required = [ 'command_id', 'instance_id', 'command_type', 'payload_hash', 'expires_at', 'hmac', 'issued_at' ];
         foreach ( $required as $field ) {
             if ( empty( $command[ $field ] ) ) {
                 return new WP_Error( 'missing_field', "Command missing field: $field" );
             }
+        }
+
+        // target_environment key must be present (value may be empty for legacy, but key must exist).
+        if ( ! array_key_exists( 'target_environment', $command ) ) {
+            return new WP_Error( 'missing_field', 'Command missing field: target_environment' );
+        }
+
+        // batch_id key must be present (value may be null/empty, but key must exist).
+        if ( ! array_key_exists( 'batch_id', $command ) ) {
+            return new WP_Error( 'missing_field', 'Command missing field: batch_id' );
         }
 
         // instance_id must match.
@@ -337,16 +351,17 @@ class RP_Care_Pipeline_Client {
             return new WP_Error( 'expired', 'Command has expired.' );
         }
 
-        // HMAC (timing-safe). target_environment is bound so staging cannot accept
-        // a command signed for production and vice versa. Empty string is valid
-        // for legacy commands that pre-date this field; PC now always sets it.
+        // HMAC (timing-safe). All fields bound so neither staging nor production
+        // can accept a command signed for the other environment.
         $hmac_payload = implode( '|', [
             $command['command_id'],
             $command['instance_id'],
-            $command['command_type'],
-            $command['payload_hash'],
-            $command['expires_at'],
             $command['target_environment'] ?? '',
+            $command['command_type'],
+            $command['batch_id'] ?? '',
+            $command['payload_hash'],
+            $command['issued_at'] ?? '',
+            $command['expires_at'],
         ] );
         $expected_hmac = hash_hmac( 'sha256', $hmac_payload, $secret );
 
@@ -372,6 +387,22 @@ class RP_Care_Pipeline_Client {
             return [ 'success' => true, 'inventory' => $inv ];
         }
         return [ 'success' => false, 'error' => 'Inventory snapshot not available.' ];
+    }
+
+    private static function handle_prepare_production( array $cmd ): array {
+        $batch_id = $cmd['payload']['batch_id'] ?? '';
+        if ( empty( $batch_id ) ) {
+            return [ 'success' => false, 'error' => 'missing_batch_id' ];
+        }
+        // Must be production environment.
+        if ( self::is_staging() ) {
+            return [ 'success' => false, 'error' => 'not_applicable_on_staging' ];
+        }
+        // Schedule AS action for the backup.
+        if ( function_exists( 'as_schedule_single_action' ) ) {
+            as_schedule_single_action( time(), 'rpcare_create_production_backup', [ $batch_id ], 'pipeline' );
+        }
+        return [ 'success' => true, 'batch_id' => $batch_id, 'event' => 'prepare_production_scheduled' ];
     }
 
     private static function handle_prepare_staging( array $cmd ): array {
@@ -633,8 +664,8 @@ class RP_Care_Pipeline_Client {
     // ── Credential helpers ───────────────────────────────────────────────────
 
     private static function get_raw_token(): string {
-        $opts = get_option( 'rpcare_options', [] );
-        return $opts['site_token'] ?? (string) get_option( 'rpcare_site_token', '' );
+        $enc = (string) get_option( self::OPT_TOKEN, '' );
+        return self::decrypt_local( $enc );
     }
 
     private static function get_raw_secret(): string {
@@ -642,18 +673,52 @@ class RP_Care_Pipeline_Client {
         if ( empty( $enc ) ) {
             return '';
         }
-        // Simple decrypt: if it starts with enc1: use AES-256-CBC (same scheme as PC_Pairing).
-        if ( str_starts_with( $enc, 'enc1:' ) && extension_loaded( 'openssl' ) ) {
-            $key  = hash( 'sha256', wp_salt( 'auth' ) . 'pc-pipeline-secret-v1', true );
-            $data = base64_decode( substr( $enc, 5 ) );
-            if ( strlen( $data ) < 17 ) {
-                return '';
-            }
-            $iv    = substr( $data, 0, 16 );
-            $plain = openssl_decrypt( substr( $data, 16 ), 'AES-256-CBC', $key, OPENSSL_RAW_DATA, $iv );
-            return $plain !== false ? $plain : '';
+        // Decrypt using Care's local key (care1: prefix). Does NOT accept enc1: or plain base64.
+        return self::decrypt_local( $enc );
+    }
+
+    /**
+     * Encrypt a plaintext string with Care's local key.
+     * Stored value is prefixed with 'care1:' to distinguish from PC's 'enc1:' scheme.
+     *
+     * @param string $plaintext
+     * @return string Encrypted value, or '' if openssl unavailable or plaintext is empty.
+     */
+    private static function encrypt_local( string $plaintext ): string {
+        if ( ! extension_loaded( 'openssl' ) || $plaintext === '' ) {
+            return '';
         }
-        return ''; // enc1: prefix required — plaintext/base64 secrets are not accepted
+        $key = hash( 'sha256', wp_salt( 'auth' ) . 'care-pipeline-local-v1', true );
+        $iv  = openssl_random_pseudo_bytes( 16 );
+        $enc = openssl_encrypt( $plaintext, 'AES-256-CBC', $key, OPENSSL_RAW_DATA, $iv );
+        if ( $enc === false ) {
+            return '';
+        }
+        return 'care1:' . base64_encode( $iv . $enc );
+    }
+
+    /**
+     * Decrypt a 'care1:' prefixed value encrypted by encrypt_local().
+     * Fail-closed: returns '' for any value not starting with 'care1:'.
+     *
+     * @param string $encrypted
+     * @return string Decrypted plaintext, or '' on any failure.
+     */
+    private static function decrypt_local( string $encrypted ): string {
+        if ( ! str_starts_with( $encrypted, 'care1:' ) ) {
+            return ''; // fail closed; does not accept enc1: or plain base64
+        }
+        if ( ! extension_loaded( 'openssl' ) ) {
+            return '';
+        }
+        $key  = hash( 'sha256', wp_salt( 'auth' ) . 'care-pipeline-local-v1', true );
+        $data = base64_decode( substr( $encrypted, 6 ) );
+        if ( strlen( $data ) < 17 ) {
+            return '';
+        }
+        $iv    = substr( $data, 0, 16 );
+        $plain = openssl_decrypt( substr( $data, 16 ), 'AES-256-CBC', $key, OPENSSL_RAW_DATA, $iv );
+        return $plain !== false ? $plain : '';
     }
 
     private static function get_hub_url(): string {
@@ -762,6 +827,24 @@ class RP_Care_Pipeline_Client {
             if ( $code !== 200 || empty( $data['ok'] ) ) {
                 update_option( self::OPT_PAIRING_STATUS, self::STATUS_UNPAIRED );
                 return new \WP_Error( 'pairing_failed', 'Pairing rejected by PC.' );
+            }
+
+            // Validate that the response includes credentials.
+            $api_token  = $data['token'] ?? '';
+            $api_secret = $data['secret'] ?? '';
+
+            if ( empty( $api_token ) || empty( $api_secret ) ) {
+                update_option( self::OPT_PAIRING_STATUS, self::STATUS_UNPAIRED );
+                return new \WP_Error( 'missing_credentials', 'Pairing response missing token or secret.' );
+            }
+
+            // Persist credentials encrypted with Care's local key BEFORE marking pairing ready.
+            $token_saved  = update_option( self::OPT_TOKEN, self::encrypt_local( $api_token ) );
+            $secret_saved = update_option( self::OPT_SECRET, self::encrypt_local( $api_secret ) );
+
+            if ( ! $token_saved || ! $secret_saved ) {
+                update_option( self::OPT_PAIRING_STATUS, self::STATUS_UNPAIRED );
+                return new \WP_Error( 'credential_save_failed', 'Failed to persist pipeline credentials.' );
             }
 
             update_option( self::OPT_PAIRING_STATUS, self::STATUS_READY );

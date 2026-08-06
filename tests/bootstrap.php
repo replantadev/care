@@ -71,8 +71,31 @@ if ( ! function_exists( 'wp_json_encode' ) ) {
     function wp_json_encode( $data ): string|false { return json_encode( $data ); }
 }
 if ( ! function_exists( 'wp_remote_post' ) ) {
-    function wp_remote_post( string $url, array $args = [] ): array|WP_Error {
-        return new WP_Error( 'not_implemented', 'wp_remote_post stub — configure $GLOBALS[_wp_http_mock]' );
+    function wp_remote_post( string $url, array $args = [] ): array|\WP_Error {
+        if ( isset( $GLOBALS['_wp_remote_post_mock'] ) ) {
+            $m = $GLOBALS['_wp_remote_post_mock'];
+            return is_callable( $m ) ? $m( $url, $args ) : $m;
+        }
+        return new \WP_Error( 'not_implemented', 'wp_remote_post stub — configure $GLOBALS[_wp_remote_post_mock]' );
+    }
+}
+if ( ! function_exists( 'wp_remote_retrieve_response_code' ) ) {
+    function wp_remote_retrieve_response_code( $response ): int {
+        return is_array( $response ) ? (int) ( $response['response']['code'] ?? 200 ) : 0;
+    }
+}
+if ( ! function_exists( 'wp_remote_retrieve_body' ) ) {
+    function wp_remote_retrieve_body( $response ): string {
+        return is_array( $response ) ? (string) ( $response['body'] ?? '' ) : '';
+    }
+}
+if ( ! function_exists( 'add_query_arg' ) ) {
+    function add_query_arg( $args, string $url = '' ): string {
+        if ( is_array( $args ) ) {
+            $query = http_build_query( $args );
+            return $url . ( str_contains( $url, '?' ) ? '&' : '?' ) . $query;
+        }
+        return $url;
     }
 }
 

@@ -157,6 +157,17 @@ class PipelineTest extends TestCase {
 
     // ── HMAC command verification ─────────────────────────────────────────────
 
+    /**
+     * Encrypt a raw secret string into the enc1: format that get_raw_secret() expects.
+     * Mirrors the AES-256-CBC scheme used by RP_Care_Pipeline_Client::get_raw_secret().
+     */
+    private function make_enc1_secret( string $secret ): string {
+        $key = hash( 'sha256', wp_salt( 'auth' ) . 'pc-pipeline-secret-v1', true );
+        $iv  = str_repeat( "\x00", 16 ); // deterministic IV for tests
+        $cipher = openssl_encrypt( $secret, 'AES-256-CBC', $key, OPENSSL_RAW_DATA, $iv );
+        return 'enc1:' . base64_encode( $iv . $cipher );
+    }
+
     private function make_signed_command(
         string $secret,
         string $command_id,
@@ -189,7 +200,7 @@ class PipelineTest extends TestCase {
         $cmd = $this->make_signed_command( $correct_secret, 'cmd-abc123', $instance_id, 'report_inventory', [ 'foo' => 'bar' ], $expires_at );
 
         // Store the wrong secret.
-        update_option( RP_Care_Pipeline_Client::OPT_SECRET, base64_encode( $wrong_secret ) );
+        update_option( RP_Care_Pipeline_Client::OPT_SECRET, $this->make_enc1_secret( $wrong_secret ) );
         update_option( RP_Care_Pipeline_Client::OPT_INSTANCE_ID, $instance_id );
 
         $this->assertFalse( RP_Care_Pipeline_Client::verify_command_public( $cmd ) );
@@ -202,7 +213,7 @@ class PipelineTest extends TestCase {
 
         $cmd = $this->make_signed_command( $secret, 'cmd-abc123', $instance_id, 'report_inventory', [ 'foo' => 'bar' ], $expires_at );
 
-        update_option( RP_Care_Pipeline_Client::OPT_SECRET, base64_encode( $secret ) );
+        update_option( RP_Care_Pipeline_Client::OPT_SECRET, $this->make_enc1_secret( $secret ) );
         update_option( RP_Care_Pipeline_Client::OPT_INSTANCE_ID, $instance_id );
 
         $this->assertTrue( RP_Care_Pipeline_Client::verify_command_public( $cmd ) );
@@ -215,7 +226,7 @@ class PipelineTest extends TestCase {
 
         $cmd = $this->make_signed_command( $secret, 'cmd-expired', $instance_id, 'report_inventory', [], $expires_at );
 
-        update_option( RP_Care_Pipeline_Client::OPT_SECRET, base64_encode( $secret ) );
+        update_option( RP_Care_Pipeline_Client::OPT_SECRET, $this->make_enc1_secret( $secret ) );
         update_option( RP_Care_Pipeline_Client::OPT_INSTANCE_ID, $instance_id );
 
         $this->assertFalse( RP_Care_Pipeline_Client::verify_command_public( $cmd ) );

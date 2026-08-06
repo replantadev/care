@@ -133,6 +133,13 @@ if ( ! defined( 'WP_DEBUG_LOG' ) )       define( 'WP_DEBUG_LOG',       false );
 if ( ! defined( 'DOING_CRON' ) )         define( 'DOING_CRON',         false );
 if ( ! defined( 'DOING_AJAX' ) )         define( 'DOING_AJAX',         false );
 
+// ── WP crypto stubs ───────────────────────────────────────────────────────
+if ( ! function_exists( 'wp_salt' ) ) {
+    function wp_salt( string $scheme = 'auth' ): string {
+        return 'test-wp-salt-for-unit-tests-only';
+    }
+}
+
 // ── RP_Care_Utils stub ─────────────────────────────────────────────────────
 if ( ! class_exists( 'RP_Care_Utils' ) ) {
     class RP_Care_Utils {

@@ -92,6 +92,32 @@ if ( ! function_exists( 'wp_remote_get' ) ) {
 if ( ! function_exists( 'esc_sql' ) ) {
     function esc_sql( $data ): string { return addslashes( (string) $data ); }
 }
+if ( ! function_exists( 'get_plugins' ) ) {
+    function get_plugins(): array { return []; }
+}
+if ( ! function_exists( 'get_plugin_updates' ) ) {
+    function get_plugin_updates(): array { return []; }
+}
+if ( ! function_exists( 'wp_get_themes' ) ) {
+    function wp_get_themes( array $args = [] ): array { return []; }
+}
+if ( ! function_exists( 'get_stylesheet' ) ) {
+    function get_stylesheet(): string { return ''; }
+}
+if ( ! function_exists( 'wp_get_installed_translations' ) ) {
+    function wp_get_installed_translations( string $type ): array { return []; }
+}
+if ( ! function_exists( 'get_bloginfo' ) ) {
+    function get_bloginfo( string $show = '', string $filter = 'raw' ): string {
+        return $show === 'version' ? '6.5' : '';
+    }
+}
+if ( ! function_exists( 'get_locale' ) ) {
+    function get_locale(): string { return 'en_US'; }
+}
+if ( ! function_exists( 'wp_get_available_translations' ) ) {
+    function wp_get_available_translations(): array { return []; }
+}
 
 // ── Load Care pipeline classes ────────────────────────────────────────────────
 
@@ -1439,5 +1465,54 @@ class CarePipelineContractTest extends TestCase {
             'try_deliver_one must return WP_Error when a prior undelivered event exists for the same batch' );
         $this->assertSame( 'blocked_by_prior_event', $result->get_error_code(),
             'Error code must be blocked_by_prior_event' );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // CC-S25: handle_report_inventory POSTs inventory to PC /inventory-report
+    //         when a batch_id is present (product fix: drift check gate)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    public function test_handle_report_inventory_posts_inventory_to_pc_when_batch_id_present(): void {
+        $enc_token = $this->care_encrypt( 'test-pc-token-cc-s25' );
+        update_option( 'rpcare_options',                         [ 'hub_url' => 'http://pc.s25.test' ] );
+        update_option( RP_Care_Pipeline_Client::OPT_TOKEN,       $enc_token );
+        update_option( RP_Care_Pipeline_Client::OPT_INSTANCE_ID, 'inst-cc-s25' );
+
+        $captured_url  = null;
+        $captured_body = null;
+        $GLOBALS['_wp_remote_post_mock'] = static function ( string $url, array $args ) use ( &$captured_url, &$captured_body ) {
+            $captured_url  = $url;
+            $captured_body = json_decode( $args['body'] ?? '{}', true );
+            return [ 'response' => [ 'code' => 200 ], 'body' => '{}' ];
+        };
+
+        $ref = new ReflectionMethod( RP_Care_Pipeline_Client::class, 'handle_report_inventory' );
+        $ref->setAccessible( true );
+
+        $result = $ref->invoke( null, [
+            'type'    => 'report_inventory',
+            'payload' => [ 'batch_id' => 'cc-s25-batch' ],
+        ] );
+
+        $GLOBALS['_wp_remote_post_mock'] = null;
+
+        $this->assertTrue( $result['success'] ?? false,
+            'handle_report_inventory must return success=true' );
+        $this->assertArrayHasKey( 'inventory', $result,
+            'handle_report_inventory must include inventory in the returned array' );
+
+        $this->assertNotNull( $captured_url,
+            'handle_report_inventory must call wp_remote_post when batch_id is present and credentials are set' );
+        $this->assertStringEndsWith( '/pipeline/inventory-report', $captured_url,
+            'wp_remote_post URL must end with /pipeline/inventory-report' );
+
+        $this->assertIsArray( $captured_body,
+            'wp_remote_post body must be a valid JSON object' );
+        $this->assertArrayHasKey( 'inventory', $captured_body,
+            'POSTed body must include inventory key' );
+        $this->assertArrayHasKey( 'batch_id', $captured_body,
+            'POSTed body must include batch_id key' );
+        $this->assertSame( 'cc-s25-batch', $captured_body['batch_id'],
+            'POSTed batch_id must match the command payload batch_id' );
     }
 }

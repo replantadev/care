@@ -484,11 +484,41 @@ class RP_Care_Pipeline_Client {
     // ── Command handlers ─────────────────────────────────────────────────────
 
     private static function handle_report_inventory( array $cmd ): array {
-        if ( class_exists( 'RP_Care_Inventory_Snapshot' ) ) {
-            $inv = RP_Care_Inventory_Snapshot::capture();
-            return [ 'success' => true, 'inventory' => $inv ];
+        if ( ! class_exists( 'RP_Care_Inventory_Snapshot' ) ) {
+            return [ 'success' => false, 'error' => 'Inventory snapshot not available.' ];
         }
-        return [ 'success' => false, 'error' => 'Inventory snapshot not available.' ];
+
+        $inv      = RP_Care_Inventory_Snapshot::capture();
+        $batch_id = $cmd['payload']['batch_id'] ?? '';
+
+        // POST inventory to PC's drift-check endpoint when a batch_id is present.
+        // The command ACK only carries scalar event data; inventory must reach PC via
+        // the dedicated inventory-report route so the drift check can fire atomically.
+        if ( ! empty( $batch_id ) ) {
+            $hub_url     = self::get_hub_url();
+            $token       = self::get_raw_token();
+            $instance_id = (string) get_option( self::OPT_INSTANCE_ID, '' );
+
+            if ( ! empty( $hub_url ) && ! empty( $token ) && ! empty( $instance_id ) ) {
+                wp_remote_post(
+                    trailingslashit( $hub_url ) . 'wp-json/replanta-pc/v1/pipeline/inventory-report',
+                    [
+                        'timeout' => 20,
+                        'headers' => [
+                            'Content-Type'     => 'application/json',
+                            'X-Pipeline-Token' => $token,
+                            'X-Instance-ID'    => $instance_id,
+                        ],
+                        'body' => wp_json_encode( [
+                            'inventory' => $inv,
+                            'batch_id'  => $batch_id,
+                        ] ),
+                    ]
+                );
+            }
+        }
+
+        return [ 'success' => true, 'inventory' => $inv ];
     }
 
     private static function handle_prepare_production( array $cmd ): array {

@@ -959,73 +959,143 @@ class RP_Care_Task_Updates {
      * verifies integrity, and reports production_backup_complete to PC.
      * Idempotent: re-running for the same batch_id reports the already-created backup.
      */
-    public static function do_create_production_backup( string $batch_id ): void {
+    public static function do_create_production_backup( string $batch_id, string $command_id = '' ): void {
         if ( empty( $batch_id ) ) {
             return;
         }
 
+        if ( $command_id && class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+            RP_Care_Pipeline_Command_Journal::mark_running( $command_id );
+        }
+
         if ( ! class_exists( 'RP_Care_Pipeline_Client' ) || ! RP_Care_Pipeline_Client::is_pipeline_enabled() ) {
             self::report_batch_to_pc( $batch_id, 'production_failed', [ 'error' => 'pipeline_disabled' ] );
+            if ( $command_id && class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+                RP_Care_Pipeline_Command_Journal::mark_failed( $command_id, false, 'pipeline_disabled' );
+            }
             return;
         }
 
         if ( RP_Care_Pipeline_Client::is_staging() ) {
             self::report_batch_to_pc( $batch_id, 'production_failed', [ 'error' => 'not_production' ] );
+            if ( $command_id && class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+                RP_Care_Pipeline_Command_Journal::mark_failed( $command_id, true, 'not_production' );
+            }
             return;
         }
 
         if ( RP_Care_Pipeline_Client::is_in_quarantine() ) {
             self::report_batch_to_pc( $batch_id, 'production_failed', [ 'error' => 'in_quarantine' ] );
+            if ( $command_id && class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+                RP_Care_Pipeline_Command_Journal::mark_failed( $command_id, false, 'in_quarantine' );
+            }
             return;
         }
 
         // Idempotency: only create one backup per batch.
         $existing_id = (string) get_option( 'rpcare_prod_backup_done_' . $batch_id, '' );
         if ( ! empty( $existing_id ) ) {
-            self::report_batch_to_pc( $batch_id, 'backup_complete', [
+            $rpc_result = self::report_batch_to_pc( $batch_id, 'backup_complete', [
                 'backup_id'       => $existing_id,
                 'backup_verified' => true,
             ] );
+            if ( ! is_wp_error( $rpc_result ) && $command_id && class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+                RP_Care_Pipeline_Command_Journal::mark_completed( $command_id );
+            } elseif ( is_wp_error( $rpc_result ) && $command_id && class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+                RP_Care_Pipeline_Command_Journal::mark_failed( $command_id, false, 'outbox_enqueue_failed' );
+            }
             return;
         }
 
         $backup_result = self::create_pipeline_backup( $batch_id );
         if ( is_wp_error( $backup_result ) ) {
             self::report_batch_to_pc( $batch_id, 'production_failed', [ 'error' => 'backup_failed: ' . $backup_result->get_error_message() ] );
+            if ( $command_id && class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+                RP_Care_Pipeline_Command_Journal::mark_failed( $command_id, false, 'backup_failed' );
+            }
             return;
         }
 
         // Persist so apply_production_batch can verify the backup_id from the command.
         update_option( 'rpcare_prod_backup_done_' . $batch_id, $backup_result );
 
-        self::report_batch_to_pc( $batch_id, 'backup_complete', [
+        $rpc_result = self::report_batch_to_pc( $batch_id, 'backup_complete', [
             'backup_id'       => $backup_result,
             'backup_verified' => true,
         ] );
+
+        if ( is_wp_error( $rpc_result ) ) {
+            if ( $command_id && class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+                RP_Care_Pipeline_Command_Journal::mark_failed( $command_id, false, 'outbox_enqueue_failed' );
+            }
+            return;
+        }
+
+        if ( $command_id && class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+            RP_Care_Pipeline_Command_Journal::mark_completed( $command_id );
+        }
     }
 
     /**
      * Apply an update batch on the staging environment.
      * Called by the rpcare_pipeline_apply_staging_batch AS action.
      */
-    public static function apply_staging_batch( string $batch_id ): array {
+    public static function apply_staging_batch( string $batch_id, string $command_id = '' ): array {
+        if ( $command_id && class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+            RP_Care_Pipeline_Command_Journal::mark_running( $command_id );
+        }
+
         if ( ! class_exists( 'RP_Care_Pipeline_Client' ) || ! RP_Care_Pipeline_Client::is_pipeline_enabled() ) {
             self::report_batch_to_pc( $batch_id, 'staging_failed', [] );
+            if ( $command_id && class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+                RP_Care_Pipeline_Command_Journal::mark_failed( $command_id, false, 'pipeline_disabled' );
+            }
             return [ 'success' => false, 'error' => 'pipeline_disabled' ];
         }
 
         if ( ! RP_Care_Pipeline_Client::is_staging() ) {
             self::report_batch_to_pc( $batch_id, 'staging_failed', [] );
+            if ( $command_id && class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+                RP_Care_Pipeline_Command_Journal::mark_failed( $command_id, true, 'not_staging_instance' );
+            }
             return [ 'success' => false, 'error' => 'not_staging_instance' ];
         }
 
         if ( RP_Care_Pipeline_Client::is_in_quarantine() ) {
             self::report_batch_to_pc( $batch_id, 'staging_failed', [] );
+            if ( $command_id && class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+                RP_Care_Pipeline_Command_Journal::mark_failed( $command_id, false, 'in_quarantine' );
+            }
             return [ 'success' => false, 'error' => 'in_quarantine' ];
         }
 
+        // Idempotency: local work already completed; re-publish event if needed.
         if ( get_option( 'rpcare_staging_batch_done_' . $batch_id ) ) {
+            if ( $command_id && class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+                RP_Care_Pipeline_Command_Journal::mark_completed( $command_id );
+            }
             return [ 'success' => true, 'idempotent' => true, 'batch_id' => $batch_id ];
+        }
+
+        // Idempotency: work applied locally but event not yet durably persisted.
+        $applied_state = get_option( 'rpcare_staging_applied_' . $batch_id );
+        if ( $applied_state !== false ) {
+            $was_success   = ! empty( $applied_state );
+            $rpc_result    = self::report_batch_to_pc( $batch_id, $was_success ? 'staging_done' : 'staging_failed', is_array( $applied_state ) ? $applied_state : [] );
+            if ( is_wp_error( $rpc_result ) ) {
+                if ( $command_id && class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+                    RP_Care_Pipeline_Command_Journal::mark_failed( $command_id, false, 'outbox_enqueue_failed' );
+                }
+                return [ 'success' => false, 'error' => 'outbox_enqueue_failed', 'retryable' => true ];
+            }
+            if ( $was_success ) {
+                update_option( 'rpcare_staging_batch_done_' . $batch_id, time() );
+            }
+            delete_option( 'rpcare_staging_applied_' . $batch_id );
+            if ( $command_id && class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+                RP_Care_Pipeline_Command_Journal::mark_completed( $command_id );
+            }
+            return [ 'success' => $was_success, 'batch_id' => $batch_id ];
         }
 
         if ( ! self::acquire_batch_lock( $batch_id ) ) {
@@ -1038,14 +1108,19 @@ class RP_Care_Task_Updates {
             if ( is_wp_error( $manifest_data ) ) {
                 self::report_batch_to_pc( $batch_id, 'staging_failed', [] );
                 self::release_batch_lock( $batch_id );
+                if ( $command_id && class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+                    RP_Care_Pipeline_Command_Journal::mark_failed( $command_id, false, $manifest_data->get_error_message() );
+                }
                 return [ 'success' => false, 'error' => $manifest_data->get_error_message() ];
             }
 
-            // Pre-flight: every manifest item must have a pre-downloaded artifact.
             $artifact_check = self::validate_manifest_artifacts( $manifest_data['manifest'], $batch_id );
             if ( $artifact_check instanceof \WP_Error ) {
                 self::report_batch_to_pc( $batch_id, 'staging_failed', [ [ 'error' => $artifact_check->get_error_message() ] ] );
                 self::release_batch_lock( $batch_id );
+                if ( $command_id && class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+                    RP_Care_Pipeline_Command_Journal::mark_failed( $command_id, false, $artifact_check->get_error_message() );
+                }
                 return [ 'success' => false, 'error' => $artifact_check->get_error_message() ];
             }
 
@@ -1054,13 +1129,30 @@ class RP_Care_Task_Updates {
             $deferred     = $batch_items['deferred'];
             $success      = empty( array_filter( $applied, static function ( $r ) { return empty( $r['success'] ); } ) );
 
-            self::report_batch_to_pc( $batch_id, $success ? 'staging_done' : 'staging_failed', $applied, $deferred );
+            // Persist "applied" state before attempting to publish the event.
+            // This allows a retry to re-publish without re-applying the batch.
+            update_option( 'rpcare_staging_applied_' . $batch_id, $success ? $applied : [] );
+
+            $rpc_result = self::report_batch_to_pc( $batch_id, $success ? 'staging_done' : 'staging_failed', $applied, $deferred );
+
+            if ( is_wp_error( $rpc_result ) ) {
+                // Event not durably persisted — do not mark done; retry will re-publish.
+                self::release_batch_lock( $batch_id );
+                if ( $command_id && class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+                    RP_Care_Pipeline_Command_Journal::mark_failed( $command_id, false, 'outbox_enqueue_failed' );
+                }
+                return [ 'success' => false, 'error' => 'outbox_enqueue_failed', 'retryable' => true ];
+            }
 
             if ( $success ) {
                 update_option( 'rpcare_staging_batch_done_' . $batch_id, time() );
             }
+            delete_option( 'rpcare_staging_applied_' . $batch_id );
 
             self::release_batch_lock( $batch_id );
+            if ( $command_id && class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+                RP_Care_Pipeline_Command_Journal::mark_completed( $command_id );
+            }
             return [ 'success' => $success, 'batch_id' => $batch_id, 'item_results' => $applied, 'deferred_items' => $deferred ];
 
         } catch ( \Throwable $e ) {
@@ -1069,6 +1161,9 @@ class RP_Care_Task_Updates {
             }
             self::report_batch_to_pc( $batch_id, 'staging_failed', $item_results );
             self::release_batch_lock( $batch_id );
+            if ( $command_id && class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+                RP_Care_Pipeline_Command_Journal::mark_failed( $command_id, false, $e->getMessage() );
+            }
             return [ 'success' => false, 'error' => $e->getMessage() ];
         }
     }
@@ -1078,19 +1173,32 @@ class RP_Care_Task_Updates {
      * Called by the rpcare_pipeline_apply_production_batch AS action.
      * $backup_id must match the backup created by do_create_production_backup().
      */
-    public static function apply_production_batch( string $batch_id, string $manifest_hash, string $approval_id, string $backup_id = '' ): array {
+    public static function apply_production_batch( string $batch_id, string $manifest_hash, string $approval_id, string $backup_id = '', string $command_id = '' ): array {
+        if ( $command_id && class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+            RP_Care_Pipeline_Command_Journal::mark_running( $command_id );
+        }
+
         if ( ! class_exists( 'RP_Care_Pipeline_Client' ) || ! RP_Care_Pipeline_Client::is_pipeline_enabled() ) {
             self::report_batch_to_pc( $batch_id, 'production_failed', [] );
+            if ( $command_id && class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+                RP_Care_Pipeline_Command_Journal::mark_failed( $command_id, false, 'pipeline_disabled' );
+            }
             return [ 'success' => false, 'error' => 'pipeline_disabled' ];
         }
 
         if ( RP_Care_Pipeline_Client::is_staging() ) {
             self::report_batch_to_pc( $batch_id, 'production_failed', [] );
+            if ( $command_id && class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+                RP_Care_Pipeline_Command_Journal::mark_failed( $command_id, true, 'not_production_instance' );
+            }
             return [ 'success' => false, 'error' => 'not_production_instance' ];
         }
 
         if ( RP_Care_Pipeline_Client::is_in_quarantine() ) {
             self::report_batch_to_pc( $batch_id, 'production_failed', [] );
+            if ( $command_id && class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+                RP_Care_Pipeline_Command_Journal::mark_failed( $command_id, false, 'in_quarantine' );
+            }
             return [ 'success' => false, 'error' => 'in_quarantine' ];
         }
 
@@ -1098,21 +1206,49 @@ class RP_Care_Task_Updates {
             return [ 'success' => false, 'error' => 'missing_required_params' ];
         }
 
-        // backup_id is required — it proves the backup callback ran before this command was sent.
         if ( empty( $backup_id ) ) {
             self::report_batch_to_pc( $batch_id, 'production_failed', [ [ 'error' => 'missing_backup_id' ] ] );
+            if ( $command_id && class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+                RP_Care_Pipeline_Command_Journal::mark_failed( $command_id, true, 'missing_backup_id' );
+            }
             return [ 'success' => false, 'error' => 'missing_backup_id_in_command' ];
         }
 
-        // Verify the backup_id from the command matches what we recorded locally.
         $stored_backup_id = (string) get_option( 'rpcare_prod_backup_done_' . $batch_id, '' );
         if ( empty( $stored_backup_id ) || ! hash_equals( $stored_backup_id, $backup_id ) ) {
             self::report_batch_to_pc( $batch_id, 'production_failed', [ [ 'error' => 'backup_id_mismatch' ] ] );
+            if ( $command_id && class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+                RP_Care_Pipeline_Command_Journal::mark_failed( $command_id, false, 'backup_id_mismatch' );
+            }
             return [ 'success' => false, 'error' => 'backup_id_mismatch' ];
         }
 
         if ( get_option( 'rpcare_prod_batch_done_' . $batch_id ) ) {
+            if ( $command_id && class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+                RP_Care_Pipeline_Command_Journal::mark_completed( $command_id );
+            }
             return [ 'success' => true, 'idempotent' => true, 'batch_id' => $batch_id ];
+        }
+
+        // Idempotency: local work applied but event not yet persisted.
+        $applied_state = get_option( 'rpcare_prod_applied_' . $batch_id );
+        if ( $applied_state !== false ) {
+            $was_success = ! empty( $applied_state );
+            $rpc_result  = self::report_batch_to_pc( $batch_id, $was_success ? 'production_done' : 'production_failed', is_array( $applied_state ) ? $applied_state : [] );
+            if ( is_wp_error( $rpc_result ) ) {
+                if ( $command_id && class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+                    RP_Care_Pipeline_Command_Journal::mark_failed( $command_id, false, 'outbox_enqueue_failed' );
+                }
+                return [ 'success' => false, 'error' => 'outbox_enqueue_failed', 'retryable' => true ];
+            }
+            if ( $was_success ) {
+                update_option( 'rpcare_prod_batch_done_' . $batch_id, time() );
+            }
+            delete_option( 'rpcare_prod_applied_' . $batch_id );
+            if ( $command_id && class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+                RP_Care_Pipeline_Command_Journal::mark_completed( $command_id );
+            }
+            return [ 'success' => $was_success, 'batch_id' => $batch_id ];
         }
 
         if ( ! self::acquire_batch_lock( $batch_id ) ) {
@@ -1125,25 +1261,31 @@ class RP_Care_Task_Updates {
             if ( is_wp_error( $manifest_data ) ) {
                 self::report_batch_to_pc( $batch_id, 'production_failed', [] );
                 self::release_batch_lock( $batch_id );
+                if ( $command_id && class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+                    RP_Care_Pipeline_Command_Journal::mark_failed( $command_id, false, $manifest_data->get_error_message() );
+                }
                 return [ 'success' => false, 'error' => $manifest_data->get_error_message() ];
             }
 
-            // CRITICAL: verify manifest hash matches what was approved.
             if ( ! hash_equals( $manifest_hash, $manifest_data['manifest_hash'] ) ) {
                 self::report_batch_to_pc( $batch_id, 'production_failed', [ [ 'error' => 'manifest_hash_mismatch' ] ] );
                 self::release_batch_lock( $batch_id );
+                if ( $command_id && class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+                    RP_Care_Pipeline_Command_Journal::mark_failed( $command_id, true, 'manifest_hash_mismatch' );
+                }
                 return [ 'success' => false, 'error' => 'manifest_hash_mismatch' ];
             }
 
-            // Pre-flight: every manifest item must have a pre-downloaded artifact.
             $artifact_check = self::validate_manifest_artifacts( $manifest_data['manifest'], $batch_id );
             if ( $artifact_check instanceof \WP_Error ) {
                 self::report_batch_to_pc( $batch_id, 'production_failed', [ [ 'error' => $artifact_check->get_error_message() ] ] );
                 self::release_batch_lock( $batch_id );
+                if ( $command_id && class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+                    RP_Care_Pipeline_Command_Journal::mark_failed( $command_id, false, $artifact_check->get_error_message() );
+                }
                 return [ 'success' => false, 'error' => $artifact_check->get_error_message() ];
             }
 
-            // Record backup_id for rollback_batch to use.
             update_option( 'rpcare_prod_batch_backup_' . $batch_id, $backup_id );
 
             $batch_items  = self::apply_manifest_items( $manifest_data['manifest'], $batch_id, 'production' );
@@ -1151,13 +1293,28 @@ class RP_Care_Task_Updates {
             $deferred     = $batch_items['deferred'];
             $success      = empty( array_filter( $applied, static function ( $r ) { return empty( $r['success'] ); } ) );
 
-            self::report_batch_to_pc( $batch_id, $success ? 'production_done' : 'production_failed', $applied, $deferred );
+            // Persist applied state before publishing.
+            update_option( 'rpcare_prod_applied_' . $batch_id, $success ? $applied : [] );
+
+            $rpc_result = self::report_batch_to_pc( $batch_id, $success ? 'production_done' : 'production_failed', $applied, $deferred );
+
+            if ( is_wp_error( $rpc_result ) ) {
+                self::release_batch_lock( $batch_id );
+                if ( $command_id && class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+                    RP_Care_Pipeline_Command_Journal::mark_failed( $command_id, false, 'outbox_enqueue_failed' );
+                }
+                return [ 'success' => false, 'error' => 'outbox_enqueue_failed', 'retryable' => true ];
+            }
 
             if ( $success ) {
                 update_option( 'rpcare_prod_batch_done_' . $batch_id, time() );
             }
+            delete_option( 'rpcare_prod_applied_' . $batch_id );
 
             self::release_batch_lock( $batch_id );
+            if ( $command_id && class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+                RP_Care_Pipeline_Command_Journal::mark_completed( $command_id );
+            }
             return [ 'success' => $success, 'batch_id' => $batch_id, 'item_results' => $applied, 'deferred_items' => $deferred ];
 
         } catch ( \Throwable $e ) {
@@ -1166,6 +1323,9 @@ class RP_Care_Task_Updates {
             }
             self::report_batch_to_pc( $batch_id, 'production_failed', $item_results );
             self::release_batch_lock( $batch_id );
+            if ( $command_id && class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+                RP_Care_Pipeline_Command_Journal::mark_failed( $command_id, false, $e->getMessage() );
+            }
             return [ 'success' => false, 'error' => $e->getMessage() ];
         }
     }
@@ -1173,32 +1333,58 @@ class RP_Care_Task_Updates {
     /**
      * Roll back a production batch to its pre-update state via the stored backup.
      */
-    public static function rollback_batch( string $batch_id ): array {
+    public static function rollback_batch( string $batch_id, string $command_id = '' ): array {
+        if ( $command_id && class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+            RP_Care_Pipeline_Command_Journal::mark_running( $command_id );
+        }
+
         if ( ! class_exists( 'RP_Care_Pipeline_Client' ) || ! RP_Care_Pipeline_Client::is_pipeline_enabled() ) {
             self::report_batch_to_pc( $batch_id, 'rollback_failed', [] );
+            if ( $command_id && class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+                RP_Care_Pipeline_Command_Journal::mark_failed( $command_id, false, 'pipeline_disabled' );
+            }
             return [ 'success' => false, 'error' => 'pipeline_disabled' ];
         }
 
         if ( RP_Care_Pipeline_Client::is_staging() ) {
             self::report_batch_to_pc( $batch_id, 'rollback_failed', [] );
+            if ( $command_id && class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+                RP_Care_Pipeline_Command_Journal::mark_failed( $command_id, true, 'not_applicable_on_staging' );
+            }
             return [ 'success' => false, 'error' => 'not_applicable_on_staging' ];
         }
 
         $backup_id = get_option( 'rpcare_prod_batch_backup_' . $batch_id );
         if ( empty( $backup_id ) ) {
             self::report_batch_to_pc( $batch_id, 'rollback_failed', [ [ 'error' => 'no_backup_found' ] ] );
+            if ( $command_id && class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+                RP_Care_Pipeline_Command_Journal::mark_failed( $command_id, false, 'no_backup_found' );
+            }
             return [ 'success' => false, 'error' => 'no_backup_found_for_batch' ];
         }
 
         $restore_result = self::restore_pipeline_backup( (string) $backup_id, $batch_id );
         if ( is_wp_error( $restore_result ) ) {
-            self::report_batch_to_pc( $batch_id, 'rollback_failed', [ [ 'error' => $restore_result->get_error_message() ] ] );
+            $rpc_result = self::report_batch_to_pc( $batch_id, 'rollback_failed', [ [ 'error' => $restore_result->get_error_message() ] ] );
+            if ( $command_id && class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+                RP_Care_Pipeline_Command_Journal::mark_failed( $command_id, false, $restore_result->get_error_message() );
+            }
             return [ 'success' => false, 'error' => $restore_result->get_error_message() ];
         }
 
         delete_option( 'rpcare_prod_batch_done_' . $batch_id );
-        self::report_batch_to_pc( $batch_id, 'rolled_back', [] );
+        $rpc_result = self::report_batch_to_pc( $batch_id, 'rolled_back', [] );
 
+        if ( is_wp_error( $rpc_result ) ) {
+            if ( $command_id && class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+                RP_Care_Pipeline_Command_Journal::mark_failed( $command_id, false, 'outbox_enqueue_failed' );
+            }
+            return [ 'success' => false, 'error' => 'outbox_enqueue_failed', 'retryable' => true ];
+        }
+
+        if ( $command_id && class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+            RP_Care_Pipeline_Command_Journal::mark_completed( $command_id );
+        }
         return [ 'success' => true, 'batch_id' => $batch_id, 'backup_id' => $backup_id ];
     }
 
@@ -2132,7 +2318,7 @@ class RP_Care_Task_Updates {
      * Called once from the plugin init hook (replanta-care.php).
      */
     public static function register_pipeline_hooks(): void {
-        add_action( 'rpcare_create_production_backup', [ self::class, 'do_create_production_backup' ] );
+        add_action( 'rpcare_create_production_backup', [ self::class, 'do_create_production_backup' ], 10, 2 );
     }
 
     /**

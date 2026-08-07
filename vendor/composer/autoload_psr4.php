@@ -7,4 +7,6 @@ $baseDir = dirname($vendorDir);
 
 return array(
     'ReplantaCare\\' => array($baseDir . '/inc'),
+    'PhpParser\\' => array($vendorDir . '/nikic/php-parser/lib/PhpParser'),
+    'DeepCopy\\' => array($vendorDir . '/myclabs/deep-copy/src/DeepCopy'),
 );

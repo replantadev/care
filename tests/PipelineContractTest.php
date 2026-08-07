@@ -980,8 +980,8 @@ class CarePipelineContractTest extends TestCase {
         }
     }
 
-    // CC-S18: send_batch_event 5xx returns retry_later WP_Error.
-    public function test_send_batch_event_5xx_returns_retry_later(): void {
+    // CC-S18: send_batch_event 5xx returns retryable WP_Error.
+    public function test_send_batch_event_5xx_returns_retryable(): void {
         $enc_token = $this->care_encrypt( 'test-pc-token-cc-s18' );
         update_option( RP_Care_Pipeline_Client::OPT_ENABLED,    true );
         update_option( 'rpcare_hub_url',                        'http://pc.example.test' );
@@ -1002,8 +1002,8 @@ class CarePipelineContractTest extends TestCase {
         $GLOBALS['_wp_remote_post_mock'] = null;
 
         $this->assertTrue( is_wp_error( $result ), 'send_batch_event on 5xx must return WP_Error' );
-        $this->assertSame( 'retry_later', $result->get_error_code(),
-            'Error code on 5xx must be retry_later' );
+        $this->assertSame( 'retryable', $result->get_error_code(),
+            'Error code on 5xx must be retryable (not retry_later)' );
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -1058,18 +1058,14 @@ class CarePipelineContractTest extends TestCase {
         $GLOBALS['wpdb']                 = $orig_wpdb;
         $GLOBALS['_wp_remote_post_mock'] = null;
 
-        // CURRENTLY FAILS: wp_remote_post() is called directly for batch-status.
         $this->assertEmpty(
             $batch_status_calls,
-            'CC-S19 FAIL: report_batch_to_pc calls wp_remote_post() directly — ' .
-            'all batch events MUST route through RP_Care_Pipeline_Outbox::enqueue() so ' .
-            'the event is durable before any HTTP attempt'
+            'report_batch_to_pc must not call wp_remote_post() directly — all events must route through the outbox'
         );
 
         $this->assertNotEmpty(
             $outbox_inserts,
-            'CC-S19 FAIL: no outbox INSERT attempted — ' .
-            'report_batch_to_pc must call RP_Care_Pipeline_Outbox::enqueue() to persist the event'
+            'report_batch_to_pc must call RP_Care_Pipeline_Outbox::enqueue() to persist the event before HTTP'
         );
     }
 
@@ -1188,11 +1184,10 @@ class CarePipelineContractTest extends TestCase {
         $GLOBALS['wpdb']                 = $orig_wpdb;
         $GLOBALS['_wp_remote_post_mock'] = null;
 
-        // CURRENTLY FAILS: both events are attempted because deliver_pending() has no FIFO guard.
         $this->assertNotContains(
             'evt-s20-002',
             $attempted_events,
-            'CC-S20 FAIL: event-2 MUST be blocked while undelivered event-1 exists for the same batch (FIFO per batch)'
+            'event-2 must be blocked while undelivered event-1 exists for the same batch (FIFO per batch)'
         );
     }
 
@@ -1284,10 +1279,9 @@ class CarePipelineContractTest extends TestCase {
             }
         }
 
-        // CURRENTLY FAILS: deliver_pending() uses plain SELECT (no atomic UPDATE claim).
         $this->assertTrue(
             $has_atomic_claim,
-            'CC-S21 FAIL: deliver_pending() must use atomic UPDATE SET status=\'delivering\' WHERE status=\'pending\' — not a plain SELECT that allows two workers to claim the same row'
+            'deliver_pending() must use atomic UPDATE SET status=\'delivering\' WHERE status=\'pending\''
         );
     }
 
@@ -1348,12 +1342,94 @@ class CarePipelineContractTest extends TestCase {
             'CC-S22 setup: unknown command type must return success=false via default case'
         );
 
-        // CURRENTLY FAILS: mark_processed() runs before the switch (line 271),
-        // so is_replayed() returns true even though the handler never succeeded.
         $this->assertFalse(
             RP_Care_Pipeline_Client::is_replayed( $command_id ),
-            'CC-S22 FAIL: mark_processed() MUST NOT be called before dispatch — ' .
-            'a failed handler must leave the command_id unmarked so PC can re-deliver it'
+            'mark_processed() must not be called before dispatch — a failed handler must leave the command unmarked'
         );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // CC-S23: send_batch_event 409 with body code=conflict → payload_conflict
+    // ─────────────────────────────────────────────────────────────────────────
+
+    public function test_send_batch_event_409_with_conflict_body_returns_payload_conflict(): void {
+        $enc_token = $this->care_encrypt( 'test-pc-token-cc-s23' );
+        update_option( RP_Care_Pipeline_Client::OPT_ENABLED,     true );
+        update_option( 'rpcare_hub_url',                         'http://pc.example.test' );
+        update_option( RP_Care_Pipeline_Client::OPT_TOKEN,       $enc_token );
+        update_option( RP_Care_Pipeline_Client::OPT_INSTANCE_ID, 'inst-cc-s23' );
+
+        // PC returns 409 with body containing code=conflict (payload mismatch, NOT idempotent).
+        $GLOBALS['_wp_remote_post_mock'] = static function ( $url, $args ) {
+            return [
+                'response' => [ 'code' => 409 ],
+                'body'     => json_encode( [ 'code' => 'conflict', 'message' => 'Payload differs from recorded event.' ] ),
+            ];
+        };
+
+        $result = RP_Care_Pipeline_Client::send_batch_event(
+            'cc-s23-batch',
+            'staging_updated',
+            [],
+            'evt-uuid-s23'
+        );
+
+        $GLOBALS['_wp_remote_post_mock'] = null;
+
+        $this->assertTrue( is_wp_error( $result ),
+            '409 with code=conflict body must return WP_Error' );
+        $this->assertSame( 'payload_conflict', $result->get_error_code(),
+            'Error code must be payload_conflict on 409 with body code=conflict' );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // CC-S24: try_deliver_one returns blocked_by_prior_event when FIFO check fails
+    // ─────────────────────────────────────────────────────────────────────────
+
+    public function test_try_deliver_one_returns_blocked_when_prior_event_undelivered(): void {
+        $target_event_id = 'evt-s24-target';
+        $orig_wpdb       = $GLOBALS['wpdb'];
+
+        $GLOBALS['wpdb'] = new class( $target_event_id ) extends wpdb {
+            private string $target;
+            public function __construct( string $t ) { $this->target = $t; }
+
+            public function prepare( string $sql, ...$args ): string {
+                $i = 0;
+                return preg_replace_callback( '/%[sdf]/', function () use ( &$i, $args ) {
+                    return "'" . addslashes( (string) ( $args[ $i++ ] ?? '' ) ) . "'";
+                }, $sql );
+            }
+
+            // recover_expired_leases() calls get_results — return empty (no expired leases).
+            public function get_results( string $sql, string $output = 'OBJECT' ): array { return []; }
+
+            // FIFO-check get_row: return row with has_prior_undelivered=1.
+            public function get_row( string $sql, $output = 'OBJECT', int $row_offset = 0 ) {
+                if ( str_contains( $sql, 'has_prior_undelivered' ) ) {
+                    $row = [
+                        'id'                   => 2,
+                        'batch_id'             => 'cc-s24-batch',
+                        'status'               => 'pending',
+                        'has_prior_undelivered' => 1,
+                    ];
+                    return $output === ARRAY_A ? $row : (object) $row;
+                }
+                return null;
+            }
+
+            public function query( string $sql ): int|bool { return true; }
+        };
+
+        try {
+            $result = RP_Care_Pipeline_Outbox::try_deliver_one( $target_event_id );
+        } finally {
+            $GLOBALS['wpdb'] = $orig_wpdb;
+        }
+
+        $this->assertInstanceOf( \WP_Error::class, $result,
+            'try_deliver_one must return WP_Error when a prior undelivered event exists for the same batch' );
+        $this->assertSame( 'blocked_by_prior_event', $result->get_error_code(),
+            'Error code must be blocked_by_prior_event' );
     }
 }

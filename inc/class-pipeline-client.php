@@ -262,14 +262,36 @@ class RP_Care_Pipeline_Client {
 
         $command_id   = $command['command_id'] ?? '';
         $command_type = $command['command_type'] ?? '';
+        $batch_id_cmd = $command['payload']['batch_id'] ?? '';
 
-        // 2. Replay protection.
-        if ( self::is_replayed( $command_id ) ) {
-            return [ 'success' => true, 'replayed' => true ]; // ack it again (idempotent)
+        // 2. Replay protection — journal-based (falls back to options if journal unavailable).
+        if ( class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+            // INSERT IGNORE records the first receipt; subsequent calls are no-ops.
+            RP_Care_Pipeline_Command_Journal::insert_received(
+                $command_id, $instance_id, $environment, $command_type, $batch_id_cmd
+            );
+
+            $journal_state = RP_Care_Pipeline_Command_Journal::get_state( $command_id );
+
+            if ( $journal_state === RP_Care_Pipeline_Command_Journal::STATE_COMPLETED ) {
+                return [ 'success' => true, 'replayed' => true ];
+            }
+            if ( $journal_state === RP_Care_Pipeline_Command_Journal::STATE_FAILED_PERMANENT ) {
+                return [ 'success' => false, 'error' => 'command_permanently_failed' ];
+            }
+            // accepted / running → AS action already in flight; ack without re-dispatch.
+            if ( in_array( $journal_state, [
+                    RP_Care_Pipeline_Command_Journal::STATE_ACCEPTED,
+                    RP_Care_Pipeline_Command_Journal::STATE_RUNNING,
+                ], true ) ) {
+                return [ 'success' => true, 'replayed' => true ];
+            }
+            // failed_retryable or received → fall through to dispatch.
+        } elseif ( self::is_replayed( $command_id ) ) {
+            return [ 'success' => true, 'replayed' => true ];
         }
 
-        // 3. Dispatch — mark_processed() called ONLY after a successful handler return.
-        // (P0-5 fix: marking before dispatch permanently loses a command on handler failure.)
+        // 3. Dispatch — journal / mark_processed() only after successful handler return.
         switch ( $command_type ) {
             case 'report_inventory':
                 $result = self::handle_report_inventory( $command );
@@ -315,10 +337,24 @@ class RP_Care_Pipeline_Client {
                 return [ 'success' => false, 'error' => "Unknown command type: $command_type" ];
         }
 
-        // Mark as processed only when the handler succeeded — failed handlers remain
-        // re-deliverable so PC can retry.
+        // Mark as processed only when the handler succeeded.
         if ( ! empty( $result['success'] ) ) {
-            self::mark_processed( $command_id );
+            if ( class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+                // Async handlers mark themselves accepted inside handle_*; sync handlers mark completed here.
+                $state_after = RP_Care_Pipeline_Command_Journal::get_state( $command_id );
+                if ( ! in_array( $state_after, [
+                    RP_Care_Pipeline_Command_Journal::STATE_ACCEPTED,
+                    RP_Care_Pipeline_Command_Journal::STATE_RUNNING,
+                    RP_Care_Pipeline_Command_Journal::STATE_COMPLETED,
+                    RP_Care_Pipeline_Command_Journal::STATE_FAILED_PERMANENT,
+                ], true ) ) {
+                    RP_Care_Pipeline_Command_Journal::mark_completed( $command_id );
+                }
+            } else {
+                self::mark_processed( $command_id );
+            }
+        } elseif ( class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+            RP_Care_Pipeline_Command_Journal::mark_failed( $command_id, false, $result['error'] ?? 'handler_failed' );
         }
 
         return $result;
@@ -413,17 +449,24 @@ class RP_Care_Pipeline_Client {
     }
 
     private static function handle_prepare_production( array $cmd ): array {
-        $batch_id = $cmd['payload']['batch_id'] ?? '';
+        $batch_id   = $cmd['payload']['batch_id'] ?? '';
+        $command_id = $cmd['command_id'] ?? '';
         if ( empty( $batch_id ) ) {
             return [ 'success' => false, 'error' => 'missing_batch_id' ];
         }
-        // Must be production environment.
         if ( self::is_staging() ) {
             return [ 'success' => false, 'error' => 'not_applicable_on_staging' ];
         }
-        // Schedule AS action for the backup.
         if ( function_exists( 'as_schedule_single_action' ) ) {
-            as_schedule_single_action( time(), 'rpcare_create_production_backup', [ $batch_id ], 'pipeline' );
+            $action_id = (int) as_schedule_single_action(
+                time(),
+                'rpcare_create_production_backup',
+                [ $batch_id, $command_id ],
+                'pipeline'
+            );
+            if ( class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+                RP_Care_Pipeline_Command_Journal::mark_accepted( $command_id, $action_id );
+            }
         }
         return [ 'success' => true, 'batch_id' => $batch_id, 'event' => 'prepare_production_scheduled' ];
     }
@@ -475,20 +518,23 @@ class RP_Care_Pipeline_Client {
     }
 
     private static function handle_apply_update_batch( array $cmd ): array {
-        $batch_id = $cmd['payload']['batch_id'] ?? '';
+        $batch_id   = $cmd['payload']['batch_id'] ?? '';
+        $command_id = $cmd['command_id'] ?? '';
         if ( ! self::is_staging() ) {
             return [ 'success' => false, 'error' => 'apply_update_batch sent to production. Use apply_production_batch.' ];
         }
-        // Offload to AS to avoid HTTP timeout.
-        if ( function_exists( 'as_enqueue_async_action' ) ) {
-            as_enqueue_async_action(
-                'rpcare_pipeline_apply_staging_batch',
-                [ 'batch_id' => $batch_id ],
-                'replanta-care'
-            );
-            return [ 'success' => true, 'queued' => true, 'batch_id' => $batch_id ];
+        if ( ! function_exists( 'as_enqueue_async_action' ) ) {
+            return [ 'success' => false, 'error' => 'Action Scheduler not available.' ];
         }
-        return [ 'success' => false, 'error' => 'Action Scheduler not available.' ];
+        $action_id = (int) as_enqueue_async_action(
+            'rpcare_pipeline_apply_staging_batch',
+            [ 'batch_id' => $batch_id, 'command_id' => $command_id ],
+            'replanta-care'
+        );
+        if ( class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+            RP_Care_Pipeline_Command_Journal::mark_accepted( $command_id, $action_id );
+        }
+        return [ 'success' => true, 'queued' => true, 'batch_id' => $batch_id ];
     }
 
     private static function handle_run_test_suite( array $cmd ): array {
@@ -537,8 +583,8 @@ class RP_Care_Pipeline_Client {
         $manifest_hash = $cmd['payload']['manifest_hash'] ?? '';
         $approval_id   = $cmd['payload']['approval_id'] ?? '';
         $backup_id     = $cmd['payload']['backup_id'] ?? '';
+        $command_id    = $cmd['command_id'] ?? '';
 
-        // Production must not be staging.
         if ( self::is_staging() ) {
             return [ 'success' => false, 'error' => 'apply_production_batch sent to staging instance.' ];
         }
@@ -547,21 +593,25 @@ class RP_Care_Pipeline_Client {
             return [ 'success' => false, 'error' => 'Missing batch_id, manifest_hash, approval_id, or backup_id.' ];
         }
 
-        if ( function_exists( 'as_enqueue_async_action' ) ) {
-            as_enqueue_async_action(
-                'rpcare_pipeline_apply_production_batch',
-                [
-                    'batch_id'      => $batch_id,
-                    'manifest_hash' => $manifest_hash,
-                    'approval_id'   => $approval_id,
-                    'backup_id'     => $backup_id,
-                ],
-                'replanta-care'
-            );
-            return [ 'success' => true, 'queued' => true ];
+        if ( ! function_exists( 'as_enqueue_async_action' ) ) {
+            return [ 'success' => false, 'error' => 'Action Scheduler not available.' ];
         }
 
-        return [ 'success' => false, 'error' => 'Action Scheduler not available.' ];
+        $action_id = (int) as_enqueue_async_action(
+            'rpcare_pipeline_apply_production_batch',
+            [
+                'batch_id'      => $batch_id,
+                'manifest_hash' => $manifest_hash,
+                'approval_id'   => $approval_id,
+                'backup_id'     => $backup_id,
+                'command_id'    => $command_id,
+            ],
+            'replanta-care'
+        );
+        if ( class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+            RP_Care_Pipeline_Command_Journal::mark_accepted( $command_id, $action_id );
+        }
+        return [ 'success' => true, 'queued' => true ];
     }
 
     /**
@@ -691,15 +741,34 @@ class RP_Care_Pipeline_Client {
 
         $code = is_wp_error( $response ) ? 0 : (int) wp_remote_retrieve_response_code( $response );
 
+        // Transient failures: network error, timeout, 429, 5xx.
         if ( is_wp_error( $response ) || $code === 0 || $code === 429 || $code >= 500 ) {
             $err = is_wp_error( $response ) ? $response->get_error_message() : "HTTP $code";
-            return new \WP_Error( 'retry_later', "Batch event delivery failed (retryable): $err" );
+            return new \WP_Error( 'retryable', "Batch event delivery failed (retryable): $err", [ 'http_code' => $code ] );
         }
 
+        // 409 — distinguish payload conflict (security event) from idempotent duplicate.
+        if ( $code === 409 ) {
+            $body_data  = json_decode( wp_remote_retrieve_body( $response ), true );
+            $error_code = is_array( $body_data ) ? ( $body_data['code'] ?? '' ) : '';
+            if ( $error_code === 'conflict' ) {
+                // PC reports a different payload for the same event_id — possible replay attack.
+                return new \WP_Error(
+                    'payload_conflict',
+                    "PC reports payload conflict for event '{$event}' (HTTP 409 conflict).",
+                    [ 'http_code' => 409, 'error_code' => 'conflict' ]
+                );
+            }
+            // Other 409 → duplicate_ok / already processed → treat as delivered.
+            return true;
+        }
+
+        // Permanent 4xx failures (400, 401, 403, 404, 410, 422, …).
         if ( $code >= 400 ) {
-            return new \WP_Error( 'rejected', "PC rejected batch event '$event' (HTTP $code)." );
+            return new \WP_Error( 'permanent_failure', "PC rejected batch event '{$event}' permanently (HTTP $code).", [ 'http_code' => $code ] );
         }
 
+        // 2xx → delivered.
         return true;
     }
 
@@ -761,16 +830,20 @@ class RP_Care_Pipeline_Client {
     }
 
     private static function handle_rollback_batch( array $cmd ): array {
-        $batch_id = $cmd['payload']['batch_id'] ?? '';
-        if ( function_exists( 'as_enqueue_async_action' ) ) {
-            as_enqueue_async_action(
-                'rpcare_pipeline_rollback_batch',
-                [ 'batch_id' => $batch_id ],
-                'replanta-care'
-            );
-            return [ 'success' => true, 'queued' => true ];
+        $batch_id   = $cmd['payload']['batch_id'] ?? '';
+        $command_id = $cmd['command_id'] ?? '';
+        if ( ! function_exists( 'as_enqueue_async_action' ) ) {
+            return [ 'success' => false, 'error' => 'Action Scheduler not available.' ];
         }
-        return [ 'success' => false, 'error' => 'Action Scheduler not available.' ];
+        $action_id = (int) as_enqueue_async_action(
+            'rpcare_pipeline_rollback_batch',
+            [ 'batch_id' => $batch_id, 'command_id' => $command_id ],
+            'replanta-care'
+        );
+        if ( class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+            RP_Care_Pipeline_Command_Journal::mark_accepted( $command_id, $action_id );
+        }
+        return [ 'success' => true, 'queued' => true ];
     }
 
     private static function handle_cancel_batch( array $cmd ): array {
@@ -916,34 +989,44 @@ class RP_Care_Pipeline_Client {
     public static function register_as_callbacks(): void {
         add_action(
             'rpcare_pipeline_apply_staging_batch',
-            static function ( string $batch_id ): void {
+            static function ( string $batch_id, string $command_id = '' ): void {
                 if ( ! class_exists( 'RP_Care_Task_Updates' ) ) {
                     return;
                 }
-                RP_Care_Task_Updates::apply_staging_batch( $batch_id );
-            }
+                RP_Care_Task_Updates::apply_staging_batch( $batch_id, $command_id );
+            },
+            10,
+            2
         );
 
         add_action(
             'rpcare_pipeline_apply_production_batch',
-            static function ( string $batch_id, string $manifest_hash = '', string $approval_id = '', string $backup_id = '' ): void {
+            static function (
+                string $batch_id,
+                string $manifest_hash = '',
+                string $approval_id   = '',
+                string $backup_id     = '',
+                string $command_id    = ''
+            ): void {
                 if ( ! class_exists( 'RP_Care_Task_Updates' ) ) {
                     return;
                 }
-                RP_Care_Task_Updates::apply_production_batch( $batch_id, $manifest_hash, $approval_id, $backup_id );
+                RP_Care_Task_Updates::apply_production_batch( $batch_id, $manifest_hash, $approval_id, $backup_id, $command_id );
             },
             10,
-            4
+            5
         );
 
         add_action(
             'rpcare_pipeline_rollback_batch',
-            static function ( string $batch_id ): void {
+            static function ( string $batch_id, string $command_id = '' ): void {
                 if ( ! class_exists( 'RP_Care_Task_Updates' ) ) {
                     return;
                 }
-                RP_Care_Task_Updates::rollback_batch( $batch_id );
-            }
+                RP_Care_Task_Updates::rollback_batch( $batch_id, $command_id );
+            },
+            10,
+            2
         );
     }
 

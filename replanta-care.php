@@ -3,7 +3,7 @@
  * Plugin Name: Replanta Care
  * Plugin URI: https://replanta.dev
  * Description: Plugin de mantenimiento WordPress automatizado para clientes de Replanta con integracion Hub
- * Version: 1.15.66
+ * Version: 1.15.67
  * Author: Replanta
  * Author URI: https://replanta.dev
  * License: GPL v2 or later
@@ -18,7 +18,7 @@ if (!defined('ABSPATH')) {
 
 // Define plugin constants
 if ( ! defined( 'RPCARE_VERSION' ) ) {
-    define( 'RPCARE_VERSION', '1.15.66' );
+    define( 'RPCARE_VERSION', '1.15.67' );
 }
 define('RPCARE_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('RPCARE_PLUGIN_PATH', plugin_dir_path(__FILE__));
@@ -187,6 +187,7 @@ class ReplantaCare {
             'inc/class-client-portal.php',
 
             // Staging-First Update Pipeline
+            'inc/class-pipeline-command-journal.php',
             'inc/class-pipeline-client.php',
             'inc/class-pipeline-outbox.php',
             'inc/class-backup-provider.php',
@@ -782,6 +783,29 @@ class ReplantaCare {
                 $wpdb->query( "ALTER TABLE `{$outbox_table}` ADD COLUMN `last_error_safe` varchar(500) DEFAULT NULL AFTER `last_error_code`" );
             }
         }
+
+        // Pipeline command journal — durable state machine for command dispatch.
+        $journal_table = $wpdb->prefix . 'rpcare_pipeline_command_journal';
+        $sql_journal   = "CREATE TABLE IF NOT EXISTS `{$journal_table}` (
+            id bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+            command_id char(36) NOT NULL,
+            instance_id char(36) NOT NULL DEFAULT '',
+            environment varchar(20) NOT NULL DEFAULT 'production',
+            command_type varchar(50) NOT NULL DEFAULT '',
+            batch_id varchar(36) NOT NULL DEFAULT '',
+            state varchar(30) NOT NULL DEFAULT 'received',
+            action_id bigint(20) UNSIGNED DEFAULT NULL,
+            error_message varchar(500) DEFAULT NULL,
+            received_at datetime NOT NULL,
+            accepted_at datetime DEFAULT NULL,
+            running_at datetime DEFAULT NULL,
+            completed_at datetime DEFAULT NULL,
+            PRIMARY KEY (id),
+            UNIQUE KEY command_id (command_id),
+            KEY state (state),
+            KEY batch_id (batch_id)
+        ) $charset_collate;";
+        dbDelta( $sql_journal );
     }
     
     public function is_activated() {

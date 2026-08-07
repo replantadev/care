@@ -3,7 +3,7 @@
  * Plugin Name: Replanta Care
  * Plugin URI: https://replanta.dev
  * Description: Plugin de mantenimiento WordPress automatizado para clientes de Replanta con integracion Hub
- * Version: 1.15.67
+ * Version: 1.15.68
  * Author: Replanta
  * Author URI: https://replanta.dev
  * License: GPL v2 or later
@@ -18,7 +18,7 @@ if (!defined('ABSPATH')) {
 
 // Define plugin constants
 if ( ! defined( 'RPCARE_VERSION' ) ) {
-    define( 'RPCARE_VERSION', '1.15.67' );
+    define( 'RPCARE_VERSION', '1.15.68' );
 }
 define('RPCARE_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('RPCARE_PLUGIN_PATH', plugin_dir_path(__FILE__));
@@ -794,9 +794,13 @@ class ReplantaCare {
             command_type varchar(50) NOT NULL DEFAULT '',
             batch_id varchar(36) NOT NULL DEFAULT '',
             state varchar(30) NOT NULL DEFAULT 'received',
+            identity_hash char(64) DEFAULT NULL,
             action_id bigint(20) UNSIGNED DEFAULT NULL,
+            worker_id varchar(64) DEFAULT NULL,
+            lease_expires_at datetime DEFAULT NULL,
             error_message varchar(500) DEFAULT NULL,
             received_at datetime NOT NULL,
+            dispatching_at datetime DEFAULT NULL,
             accepted_at datetime DEFAULT NULL,
             running_at datetime DEFAULT NULL,
             completed_at datetime DEFAULT NULL,

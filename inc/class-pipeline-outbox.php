@@ -211,7 +211,7 @@ class RP_Care_Pipeline_Outbox {
 
         foreach ( $expired as $row ) {
             $id           = (int) $row['id'];
-            $new_attempts = (int) $row['attempts'] + 1;
+            $new_attempts = (int) ($row['attempts'] ?? 0) + 1;
 
             if ( $new_attempts >= self::MAX_ATTEMPTS ) {
                 $wpdb->query(

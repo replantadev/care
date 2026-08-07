@@ -264,29 +264,61 @@ class RP_Care_Pipeline_Client {
         $command_type = $command['command_type'] ?? '';
         $batch_id_cmd = $command['payload']['batch_id'] ?? '';
 
-        // 2. Replay protection — journal-based (falls back to options if journal unavailable).
+        // 2. Replay protection + atomic dispatch claim (journal-based).
         if ( class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
             // INSERT IGNORE records the first receipt; subsequent calls are no-ops.
             RP_Care_Pipeline_Command_Journal::insert_received(
                 $command_id, $instance_id, $environment, $command_type, $batch_id_cmd
             );
 
-            $journal_state = RP_Care_Pipeline_Command_Journal::get_state( $command_id );
+            // Build identity hash — binds command_id to its exact invocation identity.
+            $identity_hash = hash( 'sha256', implode( '|', [
+                $instance_id,
+                $environment,
+                $command_type,
+                $batch_id_cmd,
+                $command['payload_hash'] ?? '',
+            ] ) );
 
-            if ( $journal_state === RP_Care_Pipeline_Command_Journal::STATE_COMPLETED ) {
-                return [ 'success' => true, 'replayed' => true ];
+            $worker_id = substr( md5( uniqid( (string) getmypid(), true ) ), 0, 16 );
+            $lease_at  = gmdate(
+                'Y-m-d H:i:s',
+                time() + RP_Care_Pipeline_Command_Journal::DISPATCH_LEASE_SECONDS
+            );
+
+            $claim = RP_Care_Pipeline_Command_Journal::claim_for_dispatch(
+                $command_id, $identity_hash, $worker_id, $lease_at
+            );
+
+            switch ( $claim ) {
+                case 'already_terminal':
+                    // completed → replay success; failed_permanent → report failure.
+                    $final_state = RP_Care_Pipeline_Command_Journal::get_state( $command_id );
+                    if ( $final_state === RP_Care_Pipeline_Command_Journal::STATE_COMPLETED ) {
+                        return [ 'success' => true, 'replayed' => true ];
+                    }
+                    return [ 'success' => false, 'error' => 'command_permanently_failed' ];
+
+                case 'accepted_or_running':
+                    // AS action already in flight; ack without re-dispatch.
+                    return [ 'success' => true, 'replayed' => true ];
+
+                case 'lease_valid':
+                    // Another worker holds the dispatching lease; PC should retry later.
+                    return [ 'success' => false, 'error' => 'dispatch_lease_held_by_other_worker' ];
+
+                case 'identity_conflict':
+                    return [ 'success' => false, 'error' => 'command_identity_conflict' ];
+
+                case 'not_found':
+                    // Should not happen (insert_received ran); treat as retryable.
+                    return [ 'success' => false, 'error' => 'journal_row_not_found' ];
+
+                case 'claimed':
+                default:
+                    // This worker owns the slot — fall through to dispatch.
+                    break;
             }
-            if ( $journal_state === RP_Care_Pipeline_Command_Journal::STATE_FAILED_PERMANENT ) {
-                return [ 'success' => false, 'error' => 'command_permanently_failed' ];
-            }
-            // accepted / running → AS action already in flight; ack without re-dispatch.
-            if ( in_array( $journal_state, [
-                    RP_Care_Pipeline_Command_Journal::STATE_ACCEPTED,
-                    RP_Care_Pipeline_Command_Journal::STATE_RUNNING,
-                ], true ) ) {
-                return [ 'success' => true, 'replayed' => true ];
-            }
-            // failed_retryable or received → fall through to dispatch.
         } elseif ( self::is_replayed( $command_id ) ) {
             return [ 'success' => true, 'replayed' => true ];
         }
@@ -340,13 +372,16 @@ class RP_Care_Pipeline_Client {
         // Mark as processed only when the handler succeeded.
         if ( ! empty( $result['success'] ) ) {
             if ( class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
-                // Async handlers mark themselves accepted inside handle_*; sync handlers mark completed here.
+                // Async handlers advance journal inside handle_* (dispatching→accepted);
+                // sync handlers get marked completed here.
                 $state_after = RP_Care_Pipeline_Command_Journal::get_state( $command_id );
                 if ( ! in_array( $state_after, [
+                    RP_Care_Pipeline_Command_Journal::STATE_DISPATCHING,
                     RP_Care_Pipeline_Command_Journal::STATE_ACCEPTED,
                     RP_Care_Pipeline_Command_Journal::STATE_RUNNING,
                     RP_Care_Pipeline_Command_Journal::STATE_COMPLETED,
                     RP_Care_Pipeline_Command_Journal::STATE_FAILED_PERMANENT,
+                    RP_Care_Pipeline_Command_Journal::STATE_FAILED_RETRYABLE,
                 ], true ) ) {
                     RP_Care_Pipeline_Command_Journal::mark_completed( $command_id );
                 }
@@ -354,7 +389,15 @@ class RP_Care_Pipeline_Client {
                 self::mark_processed( $command_id );
             }
         } elseif ( class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
-            RP_Care_Pipeline_Command_Journal::mark_failed( $command_id, false, $result['error'] ?? 'handler_failed' );
+            // Handler failed and hasn't already marked the state — mark retryable.
+            $state_after = RP_Care_Pipeline_Command_Journal::get_state( $command_id );
+            if ( ! in_array( $state_after, [
+                RP_Care_Pipeline_Command_Journal::STATE_FAILED_RETRYABLE,
+                RP_Care_Pipeline_Command_Journal::STATE_FAILED_PERMANENT,
+                RP_Care_Pipeline_Command_Journal::STATE_COMPLETED,
+            ], true ) ) {
+                RP_Care_Pipeline_Command_Journal::mark_failed( $command_id, false, $result['error'] ?? 'handler_failed' );
+            }
         }
 
         return $result;
@@ -457,15 +500,31 @@ class RP_Care_Pipeline_Client {
         if ( self::is_staging() ) {
             return [ 'success' => false, 'error' => 'not_applicable_on_staging' ];
         }
-        if ( function_exists( 'as_schedule_single_action' ) ) {
-            $action_id = (int) as_schedule_single_action(
-                time(),
-                'rpcare_create_production_backup',
-                [ $batch_id, $command_id ],
-                'pipeline'
-            );
+        if ( ! function_exists( 'as_enqueue_async_action' ) ) {
             if ( class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
-                RP_Care_Pipeline_Command_Journal::mark_accepted( $command_id, $action_id );
+                RP_Care_Pipeline_Command_Journal::mark_failed( $command_id, false, 'action_scheduler_not_available' );
+            }
+            return [ 'success' => false, 'error' => 'action_scheduler_not_available' ];
+        }
+        $action_id = (int) as_enqueue_async_action(
+            'rpcare_create_production_backup',
+            [ $batch_id, $command_id ],
+            'pipeline',
+            true // unique per hook+args to prevent double-enqueue on retry
+        );
+        if ( $action_id <= 0 ) {
+            if ( class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+                RP_Care_Pipeline_Command_Journal::mark_failed( $command_id, false, 'as_enqueue_failed' );
+            }
+            return [ 'success' => false, 'error' => 'as_enqueue_failed' ];
+        }
+        $accepted = false;
+        if ( class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+            $accepted = RP_Care_Pipeline_Command_Journal::mark_accepted( $command_id, $action_id );
+            if ( ! $accepted ) {
+                // Lost the dispatching slot (race) — fail retryable so PC retries.
+                RP_Care_Pipeline_Command_Journal::mark_failed( $command_id, false, 'mark_accepted_failed' );
+                return [ 'success' => false, 'error' => 'mark_accepted_failed' ];
             }
         }
         return [ 'success' => true, 'batch_id' => $batch_id, 'event' => 'prepare_production_scheduled' ];
@@ -524,15 +583,29 @@ class RP_Care_Pipeline_Client {
             return [ 'success' => false, 'error' => 'apply_update_batch sent to production. Use apply_production_batch.' ];
         }
         if ( ! function_exists( 'as_enqueue_async_action' ) ) {
+            if ( class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+                RP_Care_Pipeline_Command_Journal::mark_failed( $command_id, false, 'action_scheduler_not_available' );
+            }
             return [ 'success' => false, 'error' => 'Action Scheduler not available.' ];
         }
         $action_id = (int) as_enqueue_async_action(
             'rpcare_pipeline_apply_staging_batch',
             [ 'batch_id' => $batch_id, 'command_id' => $command_id ],
-            'replanta-care'
+            'replanta-care',
+            true // unique per hook+args
         );
+        if ( $action_id <= 0 ) {
+            if ( class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+                RP_Care_Pipeline_Command_Journal::mark_failed( $command_id, false, 'as_enqueue_failed' );
+            }
+            return [ 'success' => false, 'error' => 'as_enqueue_failed' ];
+        }
         if ( class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
-            RP_Care_Pipeline_Command_Journal::mark_accepted( $command_id, $action_id );
+            $accepted = RP_Care_Pipeline_Command_Journal::mark_accepted( $command_id, $action_id );
+            if ( ! $accepted ) {
+                RP_Care_Pipeline_Command_Journal::mark_failed( $command_id, false, 'mark_accepted_failed' );
+                return [ 'success' => false, 'error' => 'mark_accepted_failed' ];
+            }
         }
         return [ 'success' => true, 'queued' => true, 'batch_id' => $batch_id ];
     }
@@ -594,6 +667,9 @@ class RP_Care_Pipeline_Client {
         }
 
         if ( ! function_exists( 'as_enqueue_async_action' ) ) {
+            if ( class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+                RP_Care_Pipeline_Command_Journal::mark_failed( $command_id, false, 'action_scheduler_not_available' );
+            }
             return [ 'success' => false, 'error' => 'Action Scheduler not available.' ];
         }
 
@@ -606,10 +682,21 @@ class RP_Care_Pipeline_Client {
                 'backup_id'     => $backup_id,
                 'command_id'    => $command_id,
             ],
-            'replanta-care'
+            'replanta-care',
+            true // unique per hook+args
         );
+        if ( $action_id <= 0 ) {
+            if ( class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+                RP_Care_Pipeline_Command_Journal::mark_failed( $command_id, false, 'as_enqueue_failed' );
+            }
+            return [ 'success' => false, 'error' => 'as_enqueue_failed' ];
+        }
         if ( class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
-            RP_Care_Pipeline_Command_Journal::mark_accepted( $command_id, $action_id );
+            $accepted = RP_Care_Pipeline_Command_Journal::mark_accepted( $command_id, $action_id );
+            if ( ! $accepted ) {
+                RP_Care_Pipeline_Command_Journal::mark_failed( $command_id, false, 'mark_accepted_failed' );
+                return [ 'success' => false, 'error' => 'mark_accepted_failed' ];
+            }
         }
         return [ 'success' => true, 'queued' => true ];
     }
@@ -833,15 +920,29 @@ class RP_Care_Pipeline_Client {
         $batch_id   = $cmd['payload']['batch_id'] ?? '';
         $command_id = $cmd['command_id'] ?? '';
         if ( ! function_exists( 'as_enqueue_async_action' ) ) {
+            if ( class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+                RP_Care_Pipeline_Command_Journal::mark_failed( $command_id, false, 'action_scheduler_not_available' );
+            }
             return [ 'success' => false, 'error' => 'Action Scheduler not available.' ];
         }
         $action_id = (int) as_enqueue_async_action(
             'rpcare_pipeline_rollback_batch',
             [ 'batch_id' => $batch_id, 'command_id' => $command_id ],
-            'replanta-care'
+            'replanta-care',
+            true // unique per hook+args
         );
+        if ( $action_id <= 0 ) {
+            if ( class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
+                RP_Care_Pipeline_Command_Journal::mark_failed( $command_id, false, 'as_enqueue_failed' );
+            }
+            return [ 'success' => false, 'error' => 'as_enqueue_failed' ];
+        }
         if ( class_exists( 'RP_Care_Pipeline_Command_Journal' ) ) {
-            RP_Care_Pipeline_Command_Journal::mark_accepted( $command_id, $action_id );
+            $accepted = RP_Care_Pipeline_Command_Journal::mark_accepted( $command_id, $action_id );
+            if ( ! $accepted ) {
+                RP_Care_Pipeline_Command_Journal::mark_failed( $command_id, false, 'mark_accepted_failed' );
+                return [ 'success' => false, 'error' => 'mark_accepted_failed' ];
+            }
         }
         return [ 'success' => true, 'queued' => true ];
     }

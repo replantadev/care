@@ -1119,7 +1119,11 @@ class CarePipelineContractTest extends TestCase {
             }
 
             // Old code path: plain SELECT returns ALL rows (no FIFO).
+            // recover_expired_leases() queries for 'delivering' rows — none exist here, return empty.
             public function get_results( string $sql, string $output = 'OBJECT' ): array {
+                if ( str_contains( $sql, "status = 'delivering'" ) ) {
+                    return [];
+                }
                 return [ [ 'id' => 1 ], [ 'id' => 2 ] ];
             }
 
@@ -1231,6 +1235,10 @@ class CarePipelineContractTest extends TestCase {
 
             public function get_results( string $sql, string $output = 'OBJECT' ): array {
                 $this->log[] = 'get_results:' . $sql;
+                // recover_expired_leases() queries for 'delivering' rows — none in this test.
+                if ( str_contains( $sql, "status = 'delivering'" ) ) {
+                    return [];
+                }
                 return [ [ 'id' => 1 ] ]; // old code returns one row
             }
 

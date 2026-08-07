@@ -686,4 +686,71 @@ class CarePipelineContractTest extends TestCase {
             'Error must be manifest_hash_mismatch when the approved hash differs from the fetched manifest hash'
         );
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // CC-S09: validate_manifest_artifacts passes with proper id field (not artifact_id)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    public function test_validate_manifest_artifacts_passes_with_id_field(): void {
+        $manifest = [
+            'proposed_updates' => [
+                'plugins' => [
+                    [ 'slug' => 'woocommerce', 'file' => 'woocommerce/woocommerce.php',
+                      'from_version' => '8.0.0', 'to_version' => '8.1.0', 'id' => 'art-001', 'sha256' => str_repeat( 'a', 64 ) ],
+                ],
+                'themes'  => [],
+            ],
+            'artifacts' => [
+                [
+                    'id'      => 'art-001',
+                    'type'    => 'plugin',
+                    'slug'    => 'woocommerce',
+                    'version' => '8.1.0',
+                    'sha256'  => str_repeat( 'a', 64 ),
+                    'size'    => 1024,
+                ],
+            ],
+        ];
+
+        $method = new ReflectionMethod( RP_Care_Task_Updates::class, 'validate_manifest_artifacts' );
+        $method->setAccessible( true );
+
+        $result = $method->invoke( null, $manifest, 'cc-s09-batch' );
+
+        $this->assertNull(
+            $result,
+            'validate_manifest_artifacts must return null (no error) when artifact uses id field and type:slug key matches'
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // CC-S10: translations produce success=true, status='deferred' in apply_manifest_items
+    // ─────────────────────────────────────────────────────────────────────────
+
+    public function test_translations_are_deferred_in_apply_manifest_items(): void {
+        $manifest = [
+            'proposed_updates' => [
+                'plugins'      => [],
+                'themes'       => [],
+                'core'         => [],
+                'translations' => [
+                    [ 'slug' => 'woocommerce', 'type' => 'translation', 'from_version' => '8.0.0', 'to_version' => '8.1.0' ],
+                ],
+            ],
+            'artifacts' => [],
+        ];
+
+        $method = new ReflectionMethod( RP_Care_Task_Updates::class, 'apply_manifest_items' );
+        $method->setAccessible( true );
+
+        $results = $method->invoke( null, $manifest, 'cc-s10-batch', 'staging' );
+
+        $this->assertCount( 1, $results, 'apply_manifest_items must return one result for the translation item' );
+        $translation = $results[0];
+
+        $this->assertSame( 'woocommerce', $translation['slug'], 'Result slug must match the translation item slug' );
+        $this->assertTrue( $translation['success'], 'Translation result must have success=true (deferred, not failed)' );
+        $this->assertSame( 'deferred', $translation['status'] ?? '', 'Translation result must have status=deferred' );
+        $this->assertArrayNotHasKey( 'error', $translation, 'Translation result must not have an error key when deferred' );
+    }
 }

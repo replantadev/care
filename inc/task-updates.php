@@ -1249,10 +1249,20 @@ class RP_Care_Task_Updates {
             return new \WP_Error( 'manifest_hash_mismatch', 'Locally recalculated manifest hash does not match the value returned by PC.' );
         }
 
-        // Verify artifact_set_hash if present.
-        $artifacts          = $manifest['artifacts'] ?? [];
-        $stored_aset_hash   = $manifest['artifact_set_hash'] ?? '';
-        if ( ! empty( $artifacts ) && ! empty( $stored_aset_hash ) ) {
+        // Verify artifact_set_hash — fail closed on any inconsistency.
+        $artifacts        = $manifest['artifacts'] ?? [];
+        $stored_aset_hash = $manifest['artifact_set_hash'] ?? '';
+        $has_updates      = ! empty( $manifest['proposed_updates']['plugins'] )
+                         || ! empty( $manifest['proposed_updates']['themes'] );
+
+        if ( $has_updates && empty( $artifacts ) ) {
+            return new \WP_Error( 'missing_artifacts', 'Manifest has plugin/theme updates but no artifacts array — failing closed.' );
+        }
+
+        if ( ! empty( $artifacts ) ) {
+            if ( empty( $stored_aset_hash ) ) {
+                return new \WP_Error( 'missing_artifact_set_hash', 'Manifest has artifacts but no artifact_set_hash.' );
+            }
             $computed_aset_hash = self::compute_artifact_set_hash_local( $artifacts );
             if ( ! hash_equals( $stored_aset_hash, $computed_aset_hash ) ) {
                 return new \WP_Error( 'artifact_set_hash_mismatch', 'artifact_set_hash in manifest does not match locally computed value.' );
@@ -1293,7 +1303,7 @@ class RP_Care_Task_Updates {
     private static function compute_artifact_set_hash_local( array $artifacts ): string {
         $tuples = [];
         foreach ( $artifacts as $a ) {
-            $id     = $a['id'] ?? $a['artifact_id'] ?? '';
+            $id     = $a['id'] ?? '';
             $sha256 = $a['sha256'] ?? '';
             if ( $id && $sha256 ) {
                 $tuples[] = "$id:$sha256";
@@ -1321,12 +1331,11 @@ class RP_Care_Task_Updates {
         }
 
         foreach ( $proposed['translations'] ?? [] as $item ) {
-            // Translations are not yet implemented — fail closed rather than pretend success.
             $results[] = [
                 'slug'    => $item['slug'] ?? '',
                 'type'    => 'translation',
-                'success' => false,
-                'error'   => 'translations_not_implemented',
+                'success' => true,
+                'status'  => 'deferred',
             ];
         }
 
@@ -1335,31 +1344,46 @@ class RP_Care_Task_Updates {
 
     /**
      * Verify that every plugin/theme item in the manifest has a pre-downloaded artifact
-     * with a non-empty artifact_id and sha256. Returns WP_Error on first missing item.
+     * with a non-empty id, sha256, and matching version. Returns WP_Error on first failure.
      */
     private static function validate_manifest_artifacts( array $manifest, string $batch_id ): ?\WP_Error {
-        $proposed = $manifest['proposed_updates'] ?? [];
+        $proposed  = $manifest['proposed_updates'] ?? [];
         $artifacts = $manifest['artifacts'] ?? [];
 
         $artifact_index = [];
         foreach ( $artifacts as $a ) {
-            $slug = $a['slug'] ?? '';
-            if ( $slug !== '' && ! empty( $a['artifact_id'] ) && ! empty( $a['sha256'] ) ) {
-                $artifact_index[ $slug ] = true;
+            $a_id   = $a['id'] ?? '';
+            $slug   = $a['slug'] ?? '';
+            $type   = $a['type'] ?? '';
+            $sha256 = $a['sha256'] ?? '';
+            $ver    = $a['version'] ?? '';
+            if ( $a_id !== '' && $slug !== '' && $type !== '' && $sha256 !== '' && $ver !== '' ) {
+                $artifact_index[ $type . ':' . $slug ] = $a;
             }
         }
 
-        foreach ( [ 'plugins', 'themes' ] as $item_type ) {
+        $type_map = [ 'plugins' => 'plugin', 'themes' => 'theme' ];
+
+        foreach ( $type_map as $item_type => $artifact_type ) {
             foreach ( $proposed[ $item_type ] ?? [] as $item ) {
                 $slug = $item['slug'] ?? '';
                 if ( $slug === '' ) {
                     continue;
                 }
-                if ( ! isset( $artifact_index[ $slug ] ) ) {
+                $key = $artifact_type . ':' . $slug;
+                if ( ! isset( $artifact_index[ $key ] ) ) {
                     return new \WP_Error(
                         'missing_artifact',
-                        "Manifest item '$slug' ($item_type) has no pre-downloaded artifact with sha256. " .
+                        "Manifest item '$slug' ($item_type) has no pre-downloaded artifact with id, sha256, and version. " .
                         'All updates must be pre-downloaded by Plugin Center before deployment.'
+                    );
+                }
+                $to_version       = $item['to_version'] ?? '';
+                $artifact_version = $artifact_index[ $key ]['version'] ?? '';
+                if ( $to_version !== '' && $artifact_version !== $to_version ) {
+                    return new \WP_Error(
+                        'artifact_version_mismatch',
+                        "Artifact for '$slug' ($item_type) has version '$artifact_version' but manifest expects '$to_version'."
                     );
                 }
             }

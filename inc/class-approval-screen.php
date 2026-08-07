@@ -336,10 +336,27 @@ class RP_Care_Approval_Screen {
             'actor_roles'               => implode( ',', (array) $user->roles ),
         ];
 
-        // Send the approval to PC via REST.
-        self::send_approval_to_pc( $approval );
+        // Send the approval to PC via pipeline client.
+        $sent = false;
+        if ( class_exists( 'RP_Care_Pipeline_Client' ) ) {
+            $sent = RP_Care_Pipeline_Client::send_approval_to_pc( $approval );
+        }
+        if ( is_wp_error( $sent ) ) {
+            if ( class_exists( 'RP_Care_Utils' ) ) {
+                RP_Care_Utils::log( 'pipeline', 'warning', 'Approval send failed: ' . $sent->get_error_message(), [
+                    'batch_id' => $batch_id,
+                    'decision' => $decision,
+                ] );
+            }
+            $redirect_url = admin_url(
+                'admin.php?page=rpcare-approve-updates&send_error=' . urlencode( $sent->get_error_message() ) .
+                '&batch_id=' . urlencode( $batch_id )
+            );
+            wp_safe_redirect( $redirect_url );
+            exit;
+        }
 
-        // Delete the transient (single-use).
+        // Delete the transient only after confirmed send (single-use).
         delete_transient( self::TRANSIENT_PREFIX . $batch_id );
 
         if ( class_exists( 'RP_Care_Utils' ) ) {
@@ -354,36 +371,6 @@ class RP_Care_Approval_Screen {
         $redirect_url = admin_url( 'admin.php?page=rpcare-approve-updates&decision=' . urlencode( $decision ) . '&batch_id=' . urlencode( $batch_id ) );
         wp_safe_redirect( $redirect_url );
         exit;
-    }
-
-    // ── Notify PC ────────────────────────────────────────────────────────────
-
-    private static function send_approval_to_pc( array $approval ): void {
-        if ( ! class_exists( 'RP_Care_Pipeline_Client' ) ) {
-            return;
-        }
-        $hub_url = RP_Care_Pipeline_Client::get_hub_url_public();
-        $token   = RP_Care_Pipeline_Client::get_token_public();
-
-        if ( empty( $hub_url ) || empty( $token ) ) {
-            if ( class_exists( 'RP_Care_Utils' ) ) {
-                RP_Care_Utils::log( 'pipeline', 'warning', 'Could not send approval to PC: hub_url or token missing.' );
-            }
-            return;
-        }
-
-        wp_remote_post(
-            trailingslashit( $hub_url ) . 'wp-json/replanta-pc/v1/pipeline/batch-approval',
-            [
-                'timeout' => 15,
-                'headers' => [
-                    'Content-Type'     => 'application/json',
-                    'X-Pipeline-Token' => $token,
-                    'X-Instance-ID'    => (string) get_option( RP_Care_Pipeline_Client::OPT_INSTANCE_ID, '' ),
-                ],
-                'body'    => wp_json_encode( $approval ),
-            ]
-        );
     }
 
     /**
@@ -466,7 +453,9 @@ class RP_Care_Approval_Screen {
         set_transient( 'rpcare_pending_approval_' . $batch_id, $pending, 48 * HOUR_IN_SECONDS );
 
         // Forward to PC.
-        self::send_approval_to_pc( $approval );
+        if ( class_exists( 'RP_Care_Pipeline_Client' ) ) {
+            RP_Care_Pipeline_Client::send_approval_to_pc( $approval );
+        }
     }
 }
 

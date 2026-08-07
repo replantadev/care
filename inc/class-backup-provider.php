@@ -269,7 +269,9 @@ class RP_Care_LocalSnapshot implements RP_Care_Backup_Provider {
             'can_create'      => true,
             'can_verify'      => true,
             'can_restore'     => true,
-            'restore_verified'=> true,
+            // P0-6: restore relies on a naive SQL parser and shell commands with no
+            // post-restore integrity check — verified=true would be a false claim.
+            'restore_verified'=> false,
         ];
     }
 

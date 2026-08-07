@@ -194,6 +194,10 @@ if ( ! defined( 'WEEK_IN_SECONDS' ) )    define( 'WEEK_IN_SECONDS',    604800 );
 if ( ! defined( 'WP_DEBUG_LOG' ) )       define( 'WP_DEBUG_LOG',       false );
 if ( ! defined( 'DOING_CRON' ) )         define( 'DOING_CRON',         false );
 if ( ! defined( 'DOING_AJAX' ) )         define( 'DOING_AJAX',         false );
+// wpdb output-type constants
+if ( ! defined( 'OBJECT' ) )             define( 'OBJECT',   'OBJECT' );
+if ( ! defined( 'ARRAY_A' ) )            define( 'ARRAY_A',  'ARRAY_A' );
+if ( ! defined( 'ARRAY_N' ) )            define( 'ARRAY_N',  'ARRAY_N' );
 
 // ── WP crypto stubs ───────────────────────────────────────────────────────
 if ( ! function_exists( 'wp_salt' ) ) {

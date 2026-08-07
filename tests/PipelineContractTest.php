@@ -418,47 +418,59 @@ class CarePipelineContractTest extends TestCase {
     // ─────────────────────────────────────────────────────────────────────────
 
     public function test_event_reporting_maps_staging_done_to_staging_updated(): void {
-        // Set up credentials so report_batch_to_pc doesn't bail out early.
+        // P0-1 fix: report_batch_to_pc no longer calls wp_remote_post directly.
+        // It enqueues to the outbox first; delivery happens via try_deliver_one().
+        // This test now verifies the outbox row — the durable, auditable record.
+
         $enc_token = $this->care_encrypt( 'care-token-cc006' );
         update_option( 'rpcare_options', [ 'hub_url' => 'https://hub.contract-test.example' ] );
         update_option( RP_Care_Pipeline_Client::OPT_TOKEN,       $enc_token );
         update_option( RP_Care_Pipeline_Client::OPT_INSTANCE_ID, 'cc006-instance' );
 
-        // Capture the last wp_remote_post call.
-        $GLOBALS['_wp_remote_post_last'] = null;
-        $GLOBALS['_wp_remote_post_mock'] = function ( string $url, array $args ) {
-            $GLOBALS['_wp_remote_post_last'] = $args;
-            return [ 'response' => [ 'code' => 200 ], 'body' => '{"ok":true}' ];
+        // Capture inserts to the outbox table.
+        $outbox_inserts = [];
+        $prev_wpdb      = $GLOBALS['wpdb'];
+
+        $GLOBALS['wpdb'] = new class( $outbox_inserts ) extends wpdb {
+            private $log;
+            public function __construct( &$l ) { $this->log = &$l; }
+            public function insert( string $table, array $data, $format = null ): int|false {
+                if ( str_contains( $table, 'rpcare_pipeline_outbox' ) ) {
+                    $this->log[] = $data;
+                    return 1;
+                }
+                return false;
+            }
+            public function query( string $sql ): int|bool {
+                // Atomic claim UPDATE → 0 so try_deliver_one exits cleanly in tests.
+                if ( preg_match( '/UPDATE.*rpcare_pipeline_outbox.*SET.*status/si', $sql ) ) {
+                    return 0;
+                }
+                return true;
+            }
         };
 
-        // Invoke the private method via Reflection.
-        $method = new ReflectionMethod( RP_Care_Task_Updates::class, 'report_batch_to_pc' );
-        $method->setAccessible( true );
-        $method->invoke( null, 'cc006-batch', 'staging_done', [] );
+        try {
+            $method = new ReflectionMethod( RP_Care_Task_Updates::class, 'report_batch_to_pc' );
+            $method->setAccessible( true );
+            $method->invoke( null, 'cc006-batch', 'staging_done', [] );
+        } finally {
+            $GLOBALS['wpdb'] = $prev_wpdb;
+        }
 
-        $this->assertNotNull(
-            $GLOBALS['_wp_remote_post_last'],
-            'wp_remote_post must have been called by report_batch_to_pc'
-        );
+        $this->assertNotEmpty( $outbox_inserts,
+            'report_batch_to_pc must enqueue the event to the outbox (not call wp_remote_post directly)' );
 
-        $body = json_decode( $GLOBALS['_wp_remote_post_last']['body'] ?? '{}', true );
+        $row = $outbox_inserts[0];
 
-        $this->assertArrayHasKey(
-            'event', $body,
-            'POST body must contain "event" key, not "state"'
-        );
-        $this->assertArrayNotHasKey(
-            'state', $body,
-            'POST body must NOT contain "state" key — PC expects event names'
-        );
-        $this->assertSame(
-            'staging_updated', $body['event'],
-            'Internal status "staging_done" must be mapped to PC event "staging_updated"'
-        );
-        $this->assertSame(
-            'cc006-batch', $body['batch_id'],
-            'POST body must include the batch_id'
-        );
+        $this->assertSame( 'staging_updated', $row['event'],
+            'Internal status "staging_done" must be mapped to PC event "staging_updated"' );
+        $this->assertSame( 'cc006-batch', $row['batch_id'],
+            'Outbox row must include the correct batch_id' );
+
+        $payload = json_decode( $row['payload_json'] ?? '{}', true );
+        $this->assertArrayNotHasKey( 'state', $payload,
+            'Payload must NOT use "state" key — PC API uses event names' );
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -561,12 +573,22 @@ class CarePipelineContractTest extends TestCase {
 
     public function test_create_pipeline_backup_fails_with_db_export_failed_when_wpdb_unavailable(): void {
         // Ensure no $wpdb global — export_db_snapshot must return false, triggering db_export_failed.
+        $had_wpdb = isset( $GLOBALS['wpdb'] ) ? $GLOBALS['wpdb'] : null;
         unset( $GLOBALS['wpdb'] );
 
         $method = new ReflectionMethod( RP_Care_Task_Updates::class, 'create_pipeline_backup' );
         $method->setAccessible( true );
 
-        $result = $method->invoke( null, 'cc-s05-batch' );
+        try {
+            $result = $method->invoke( null, 'cc-s05-batch' );
+        } finally {
+            // Restore wpdb so subsequent tests (e.g. those using the outbox) are not affected.
+            if ( $had_wpdb !== null ) {
+                $GLOBALS['wpdb'] = $had_wpdb;
+            } else {
+                $GLOBALS['wpdb'] = new wpdb();
+            }
+        }
 
         $this->assertInstanceOf(
             WP_Error::class, $result,
@@ -982,5 +1004,356 @@ class CarePipelineContractTest extends TestCase {
         $this->assertTrue( is_wp_error( $result ), 'send_batch_event on 5xx must return WP_Error' );
         $this->assertSame( 'retry_later', $result->get_error_code(),
             'Error code on 5xx must be retry_later' );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // CC-S19: report_batch_to_pc must route through Outbox::enqueue, not wp_remote_post
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * P0-1: With current code report_batch_to_pc() calls wp_remote_post() directly (task-updates.php:2070).
+     * After fix: all Care→PC events must be persisted via RP_Care_Pipeline_Outbox::enqueue()
+     * BEFORE any HTTP attempt, so a crash between enqueue and delivery is recoverable.
+     */
+    public function test_CC_S19_report_batch_to_pc_routes_through_outbox_not_wp_remote_post(): void {
+        $enc_token = $this->care_encrypt( 'test-token-s19' );
+        update_option( 'rpcare_options',                         [ 'hub_url' => 'https://pc.s19.test' ] );
+        update_option( RP_Care_Pipeline_Client::OPT_TOKEN,       $enc_token );
+        update_option( RP_Care_Pipeline_Client::OPT_INSTANCE_ID, 'inst-s19' );
+        update_option( RP_Care_Pipeline_Client::OPT_ENABLED,     false ); // disabled → early-fail path
+
+        $batch_status_calls = [];
+        $GLOBALS['_wp_remote_post_mock'] = static function ( string $url, array $args ) use ( &$batch_status_calls ) {
+            if ( str_contains( $url, 'batch-status' ) ) {
+                $batch_status_calls[] = $url;
+            }
+            return [ 'response' => [ 'code' => 200 ], 'body' => '{}' ];
+        };
+
+        $outbox_inserts = [];
+        $orig_wpdb      = $GLOBALS['wpdb'];
+        $GLOBALS['wpdb'] = new class ( $outbox_inserts ) extends wpdb {
+            private $log; // reference — no type declaration allowed on PHP ref properties
+            public function __construct( array &$l ) { $this->log = &$l; }
+            public function insert( string $table, array $data, $fmt = null ): int|false {
+                if ( str_contains( $table, 'rpcare_pipeline_outbox' ) ) {
+                    $this->log[] = $data;
+                    return 1;
+                }
+                return false;
+            }
+            public function prepare( string $sql, ...$args ): string {
+                $i = 0;
+                return preg_replace_callback( '/%[sdf]/', function() use ( &$i, $args ) {
+                    return "'" . addslashes( (string) ( $args[ $i++ ] ?? '' ) ) . "'";
+                }, $sql );
+            }
+            public function query( string $sql ): int|bool { return true; }
+            public function get_row( string $sql, $out = null, int $off = 0 ) { return null; }
+            public function update( string $t, array $d, array $w, $f = null, $wf = null ): int|false { return 1; }
+        };
+
+        RP_Care_Task_Updates::apply_staging_batch( 'cc-s19-batch' );
+
+        $GLOBALS['wpdb']                 = $orig_wpdb;
+        $GLOBALS['_wp_remote_post_mock'] = null;
+
+        // CURRENTLY FAILS: wp_remote_post() is called directly for batch-status.
+        $this->assertEmpty(
+            $batch_status_calls,
+            'CC-S19 FAIL: report_batch_to_pc calls wp_remote_post() directly — ' .
+            'all batch events MUST route through RP_Care_Pipeline_Outbox::enqueue() so ' .
+            'the event is durable before any HTTP attempt'
+        );
+
+        $this->assertNotEmpty(
+            $outbox_inserts,
+            'CC-S19 FAIL: no outbox INSERT attempted — ' .
+            'report_batch_to_pc must call RP_Care_Pipeline_Outbox::enqueue() to persist the event'
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // CC-S20: deliver_pending must enforce FIFO — event-2 blocked while event-1 is failing
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * P0-2: Current deliver_pending() uses a plain SELECT ALL and processes both events.
+     * After fix: claim_next() only picks an event when no undelivered earlier sibling exists
+     * for the same batch (FIFO per batch).
+     */
+    public function test_CC_S20_deliver_pending_enforces_fifo_per_batch(): void {
+        $rows = [
+            1 => [
+                'id' => 1, 'batch_id' => 'cc-s20-batch', 'event' => 'staging_updated',
+                'status' => 'pending', 'attempts' => 3, 'event_id' => 'evt-s20-001',
+                'payload_json' => '{}', 'next_attempt_at' => '2000-01-01 00:00:00',
+                'delivered_at' => null, 'created_at' => '2000-01-01 00:00:00',
+                'last_error_code' => null, 'last_error_safe' => null,
+            ],
+            2 => [
+                'id' => 2, 'batch_id' => 'cc-s20-batch', 'event' => 'production_updated',
+                'status' => 'pending', 'attempts' => 0, 'event_id' => 'evt-s20-002',
+                'payload_json' => '{}', 'next_attempt_at' => '2000-01-01 00:00:00',
+                'delivered_at' => null, 'created_at' => '2000-01-01 00:05:00',
+                'last_error_code' => null, 'last_error_safe' => null,
+            ],
+        ];
+
+        $attempted_events = [];
+        $GLOBALS['_wp_remote_post_mock'] = static function ( string $url, array $args ) use ( &$attempted_events ) {
+            $body = json_decode( $args['body'] ?? '{}', true );
+            $eid  = $body['event_id'] ?? ( $body['data']['event_id'] ?? '?' );
+            $attempted_events[] = $eid;
+            return [ 'response' => [ 'code' => 500 ], 'body' => 'Internal Server Error' ];
+        };
+
+        $orig_wpdb       = $GLOBALS['wpdb'];
+        $GLOBALS['wpdb'] = new class ( $rows ) extends wpdb {
+            private $r; // untyped — assigned by value, internal copy used by mock
+            private int $cand_calls = 0;
+
+            public function __construct( array $rows ) { $this->r = $rows; }
+
+            public function prepare( string $sql, ...$args ): string {
+                $i = 0;
+                return preg_replace_callback( '/%[sdf]/', function() use ( &$i, $args ) {
+                    return "'" . addslashes( (string) ( $args[ $i++ ] ?? '' ) ) . "'";
+                }, $sql );
+            }
+
+            // Old code path: plain SELECT returns ALL rows (no FIFO).
+            public function get_results( string $sql, string $output = 'OBJECT' ): array {
+                return [ [ 'id' => 1 ], [ 'id' => 2 ] ];
+            }
+
+            // New code path: FIFO-aware SELECT for claim_next candidate,
+            // plus full-row SELECT after claim.
+            public function get_row( string $sql, $output = 'OBJECT', int $row_offset = 0 ) {
+                if ( str_contains( $sql, "status = 'pending'" ) && ! str_contains( $sql, 'WHERE id =' ) ) {
+                    // FIFO candidate SELECT.
+                    $this->cand_calls++;
+                    if ( $this->cand_calls > 1 ) {
+                        return null; // event-1 is in backoff; event-2 is blocked.
+                    }
+                    $r = $this->r[1]; // event-1 is the only eligible candidate.
+                    return $output === 'ARRAY_A' ? $r : (object) $r;
+                }
+                if ( preg_match( "/WHERE id = '?(\d+)'?/i", $sql, $m ) ) {
+                    $id  = (int) $m[1];
+                    $row = $this->r[ $id ] ?? null;
+                    return $row ? ( $output === 'ARRAY_A' ? $row : (object) $row ) : null;
+                }
+                if ( preg_match( "/WHERE event_id = '([^']+)'/i", $sql, $m ) ) {
+                    foreach ( $this->r as $row ) {
+                        if ( $row['event_id'] === $m[1] ) {
+                            return $output === 'ARRAY_A' ? $row : (object) $row;
+                        }
+                    }
+                }
+                return null;
+            }
+
+            // Atomic claim: UPDATE SET status='delivering' WHERE id=N AND status='pending'.
+            public function query( string $sql ): int|bool {
+                if ( preg_match(
+                    "/UPDATE.*rpcare_pipeline_outbox.*SET.*status.*=.*'delivering'.*WHERE.*id.*=.*'?(\d+)'?.*AND.*status.*=.*'pending'/si",
+                    $sql, $m
+                ) ) {
+                    $id = (int) $m[1];
+                    if ( isset( $this->r[ $id ] ) && $this->r[ $id ]['status'] === 'pending' ) {
+                        $this->r[ $id ]['status'] = 'delivering';
+                        return 1;
+                    }
+                    return 0;
+                }
+                return true;
+            }
+
+            // record_failure() resets status and sets backoff.
+            public function update( string $t, array $data, array $w, $f = null, $wf = null ): int|false {
+                if ( isset( $w['id'] ) && isset( $this->r[ (int) $w['id'] ] ) ) {
+                    $this->r[ (int) $w['id'] ] = array_merge( $this->r[ (int) $w['id'] ], $data );
+                }
+                return 1;
+            }
+        };
+
+        update_option( 'rpcare_options',                         [ 'hub_url' => 'https://pc.s20.test' ] );
+        update_option( RP_Care_Pipeline_Client::OPT_TOKEN,       $this->care_encrypt( 'tok-s20' ) );
+        update_option( RP_Care_Pipeline_Client::OPT_INSTANCE_ID, 'inst-s20' );
+
+        RP_Care_Pipeline_Outbox::deliver_pending();
+
+        $GLOBALS['wpdb']                 = $orig_wpdb;
+        $GLOBALS['_wp_remote_post_mock'] = null;
+
+        // CURRENTLY FAILS: both events are attempted because deliver_pending() has no FIFO guard.
+        $this->assertNotContains(
+            'evt-s20-002',
+            $attempted_events,
+            'CC-S20 FAIL: event-2 MUST be blocked while undelivered event-1 exists for the same batch (FIFO per batch)'
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // CC-S21: deliver_pending must use atomic UPDATE claim, not plain SELECT
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * P0-2: Current deliver_pending() selects rows without an atomic claim, allowing two
+     * concurrent workers to both attempt the same outbox row.
+     * After fix: claim_next() issues UPDATE SET status='delivering' WHERE status='pending'
+     * — only one worker's UPDATE succeeds (rows_affected=1).
+     */
+    public function test_CC_S21_deliver_pending_uses_atomic_update_claim(): void {
+        $pending_row = [
+            'id' => 1, 'event_id' => 'evt-s21-001', 'batch_id' => 'cc-s21-batch',
+            'event' => 'staging_updated', 'payload_json' => '{}',
+            'attempts' => 0, 'status' => 'pending', 'delivered_at' => null,
+            'next_attempt_at' => '2000-01-01 00:00:00', 'created_at' => '2000-01-01 00:00:00',
+            'last_error_code' => null, 'last_error_safe' => null,
+        ];
+
+        $query_log = [];
+        $orig_wpdb = $GLOBALS['wpdb'];
+        $GLOBALS['wpdb'] = new class ( $pending_row, $query_log ) extends wpdb {
+            private array $row;
+            private $log; // untyped — PHP typed properties cannot be ref-assigned
+            private int   $cand_calls = 0;
+
+            public function __construct( array $row, array &$log ) {
+                $this->row  = $row;
+                $this->log  = &$log;
+            }
+
+            public function prepare( string $sql, ...$args ): string {
+                $i = 0;
+                return preg_replace_callback( '/%[sdf]/', function() use ( &$i, $args ) {
+                    return "'" . addslashes( (string) ( $args[ $i++ ] ?? '' ) ) . "'";
+                }, $sql );
+            }
+
+            public function get_results( string $sql, string $output = 'OBJECT' ): array {
+                $this->log[] = 'get_results:' . $sql;
+                return [ [ 'id' => 1 ] ]; // old code returns one row
+            }
+
+            public function get_row( string $sql, $output = 'OBJECT', int $row_offset = 0 ) {
+                $this->log[] = 'get_row:' . $sql;
+                if ( str_contains( $sql, "status = 'pending'" ) ) {
+                    $this->cand_calls++;
+                    if ( $this->cand_calls > 1 ) return null;
+                    return $output === 'ARRAY_A' ? $this->row : (object) $this->row;
+                }
+                if ( str_contains( $sql, 'WHERE id =' ) ) {
+                    return $output === 'ARRAY_A' ? $this->row : (object) $this->row;
+                }
+                return null;
+            }
+
+            public function query( string $sql ): int|bool {
+                $this->log[] = 'query:' . $sql;
+                return 1;
+            }
+
+            public function update( string $t, array $d, array $w, $f = null, $wf = null ): int|false {
+                return 1;
+            }
+        };
+
+        $GLOBALS['_wp_remote_post_mock'] = static fn() => [ 'response' => [ 'code' => 200 ], 'body' => '{}' ];
+        update_option( 'rpcare_options',                         [ 'hub_url' => 'https://pc.s21.test' ] );
+        update_option( RP_Care_Pipeline_Client::OPT_TOKEN,       $this->care_encrypt( 'tok-s21' ) );
+        update_option( RP_Care_Pipeline_Client::OPT_INSTANCE_ID, 'inst-s21' );
+
+        RP_Care_Pipeline_Outbox::deliver_pending();
+
+        $GLOBALS['wpdb']                 = $orig_wpdb;
+        $GLOBALS['_wp_remote_post_mock'] = null;
+
+        $has_atomic_claim = false;
+        foreach ( $query_log as $entry ) {
+            if ( str_starts_with( $entry, 'query:' )
+                 && preg_match(
+                     "/UPDATE.*rpcare_pipeline_outbox.*SET.*status.*=.*'delivering'.*WHERE.*status.*=.*'pending'/si",
+                     substr( $entry, 6 )
+                 ) ) {
+                $has_atomic_claim = true;
+                break;
+            }
+        }
+
+        // CURRENTLY FAILS: deliver_pending() uses plain SELECT (no atomic UPDATE claim).
+        $this->assertTrue(
+            $has_atomic_claim,
+            'CC-S21 FAIL: deliver_pending() must use atomic UPDATE SET status=\'delivering\' WHERE status=\'pending\' — not a plain SELECT that allows two workers to claim the same row'
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // CC-S22: mark_processed must be called AFTER the handler, not before dispatch
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * P0-5: With current code, mark_processed() is called at line 271 BEFORE the switch
+     * dispatch. If the handler returns failure, the command_id is permanently marked as
+     * "already seen" — the next PC delivery is ACK'd without executing the handler.
+     * After fix: mark_processed() called ONLY after a successful handler return.
+     */
+    public function test_CC_S22_mark_processed_called_after_handler_not_before(): void {
+        $secret       = 'test-secret-cc-s22-sprint7';
+        $command_id   = 'cc-s22-cmd-' . bin2hex( random_bytes( 4 ) );
+        $instance_id  = 'inst-s22';
+        $environment  = 'staging';
+        $command_type = 'unknown_type_will_hit_default_case'; // → success=false
+        $batch_id     = 'cc-s22-batch';
+        $payload      = [];
+        $payload_hash = hash( 'sha256', wp_json_encode( $payload ) );
+        $issued_at    = gmdate( 'Y-m-d\TH:i:s\Z' );
+        $expires_at   = gmdate( 'Y-m-d\TH:i:s\Z', time() + 3600 );
+
+        $hmac_payload = implode( '|', [
+            $command_id, $instance_id, $environment, $command_type,
+            $batch_id, $payload_hash, '', $issued_at, $expires_at,
+        ] );
+        $hmac = hash_hmac( 'sha256', $hmac_payload, $secret );
+
+        $command = [
+            'command_id'         => $command_id,
+            'instance_id'        => $instance_id,
+            'command_type'       => $command_type,
+            'target_environment' => $environment,
+            'batch_id'           => $batch_id,
+            'payload'            => $payload,
+            'payload_hash'       => $payload_hash,
+            'manifest_hash'      => '',
+            'issued_at'          => $issued_at,
+            'expires_at'         => $expires_at,
+            'hmac'               => $hmac,
+        ];
+
+        update_option( RP_Care_Pipeline_Client::OPT_INSTANCE_ID, $instance_id );
+        update_option( RP_Care_Pipeline_Client::OPT_ENVIRONMENT,  $environment );
+
+        $ref = new \ReflectionMethod( RP_Care_Pipeline_Client::class, 'process_command' );
+        $ref->setAccessible( true );
+        $result = $ref->invoke(
+            null, $command, $secret, $instance_id, $environment,
+            'https://hub.s22.test', 'tok-s22'
+        );
+
+        $this->assertFalse(
+            $result['success'] ?? true,
+            'CC-S22 setup: unknown command type must return success=false via default case'
+        );
+
+        // CURRENTLY FAILS: mark_processed() runs before the switch (line 271),
+        // so is_replayed() returns true even though the handler never succeeded.
+        $this->assertFalse(
+            RP_Care_Pipeline_Client::is_replayed( $command_id ),
+            'CC-S22 FAIL: mark_processed() MUST NOT be called before dispatch — ' .
+            'a failed handler must leave the command_id unmarked so PC can re-deliver it'
+        );
     }
 }

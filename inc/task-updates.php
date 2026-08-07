@@ -2016,9 +2016,17 @@ class RP_Care_Task_Updates {
     /**
      * POST a batch status update to Plugin Center. Non-throwing.
      */
-    private static function report_batch_to_pc( string $batch_id, string $status, array $item_results, array $deferred_items = [] ): void {
-        if ( ! class_exists( 'RP_Care_Pipeline_Client' ) ) {
-            return;
+    /**
+     * Persist a batch status event to the outbox and attempt immediate delivery.
+     * Uses RP_Care_Pipeline_Outbox::enqueue() so the event is durable before any HTTP
+     * attempt — a crash between enqueue and delivery is recoverable by the scheduler.
+     *
+     * Returns the event_id UUID on success, or WP_Error if the outbox INSERT failed.
+     * Callers may ignore the return value; the outbox scheduler handles retries.
+     */
+    private static function report_batch_to_pc( string $batch_id, string $status, array $item_results, array $deferred_items = [] ): string|\WP_Error {
+        if ( ! class_exists( 'RP_Care_Pipeline_Client' ) || ! class_exists( 'RP_Care_Pipeline_Outbox' ) ) {
+            return new \WP_Error( 'outbox_unavailable', 'Pipeline outbox not available.' );
         }
 
         $hub_url     = RP_Care_Pipeline_Client::get_hub_url_public();
@@ -2026,7 +2034,7 @@ class RP_Care_Task_Updates {
         $instance_id = (string) get_option( RP_Care_Pipeline_Client::OPT_INSTANCE_ID, '' );
 
         if ( empty( $hub_url ) || empty( $token ) || empty( $instance_id ) ) {
-            return;
+            return new \WP_Error( 'pipeline_not_configured', 'Hub URL, token, or instance_id missing.' );
         }
 
         // Map internal status strings to PC event names.
@@ -2067,34 +2075,32 @@ class RP_Care_Task_Updates {
                 break;
         }
 
-        $response = wp_remote_post(
-            trailingslashit( $hub_url ) . 'wp-json/replanta-pc/v1/pipeline/batch-status',
-            [
-                'timeout' => 15,
-                'headers' => [
-                    'Content-Type'     => 'application/json',
-                    'X-Pipeline-Token' => $token,
-                    'X-Instance-ID'    => $instance_id,
-                ],
-                'body'    => wp_json_encode( [
-                    'batch_id'    => $batch_id,
-                    'event'       => $event_name,
-                    'data'        => array_merge(
-                        [ 'item_results' => $item_results ],
-                        ! empty( $deferred_items ) ? [ 'deferred_items' => $deferred_items ] : [],
-                        $extra_data
-                    ),
-                    'instance_id' => $instance_id,
-                ] ),
-            ]
-        );
+        $payload = [
+            'data' => array_merge(
+                [ 'item_results' => $item_results ],
+                ! empty( $deferred_items ) ? [ 'deferred_items' => $deferred_items ] : [],
+                $extra_data
+            ),
+            'instance_id' => $instance_id,
+        ];
 
-        if ( is_wp_error( $response ) && class_exists( 'RP_Care_Utils' ) ) {
-            RP_Care_Utils::log( 'pipeline', 'warning', 'report_batch_to_pc failed: ' . $response->get_error_message(), [
-                'batch_id' => $batch_id,
-                'status'   => $status,
-            ] );
+        // Persist to outbox FIRST — event is durable before any HTTP attempt.
+        $event_id = RP_Care_Pipeline_Outbox::enqueue( $batch_id, $event_name, $payload );
+
+        if ( is_wp_error( $event_id ) ) {
+            if ( class_exists( 'RP_Care_Utils' ) ) {
+                RP_Care_Utils::log( 'pipeline', 'error', 'report_batch_to_pc: outbox enqueue failed: ' . $event_id->get_error_message(), [
+                    'batch_id' => $batch_id,
+                    'status'   => $status,
+                ] );
+            }
+            return $event_id;
         }
+
+        // Best-effort immediate delivery; outbox scheduler retries on failure.
+        RP_Care_Pipeline_Outbox::try_deliver_one( $event_id );
+
+        return $event_id;
     }
 
     /**

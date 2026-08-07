@@ -268,43 +268,60 @@ class RP_Care_Pipeline_Client {
             return [ 'success' => true, 'replayed' => true ]; // ack it again (idempotent)
         }
 
-        self::mark_processed( $command_id );
-
-        // 3. Dispatch.
+        // 3. Dispatch — mark_processed() called ONLY after a successful handler return.
+        // (P0-5 fix: marking before dispatch permanently loses a command on handler failure.)
         switch ( $command_type ) {
             case 'report_inventory':
-                return self::handle_report_inventory( $command );
+                $result = self::handle_report_inventory( $command );
+                break;
 
             case 'prepare_staging':
-                return self::handle_prepare_staging( $command );
+                $result = self::handle_prepare_staging( $command );
+                break;
 
             case 'apply_update_batch':
-                return self::handle_apply_update_batch( $command );
+                $result = self::handle_apply_update_batch( $command );
+                break;
 
             case 'run_test_suite':
-                return self::handle_run_test_suite( $command );
+                $result = self::handle_run_test_suite( $command );
+                break;
 
             case 'apply_production_batch':
-                return self::handle_apply_production_batch( $command );
+                $result = self::handle_apply_production_batch( $command );
+                break;
 
             case 'verify_production':
-                return self::handle_verify_production( $command );
+                $result = self::handle_verify_production( $command );
+                break;
 
             case 'rollback_batch':
-                return self::handle_rollback_batch( $command );
+                $result = self::handle_rollback_batch( $command );
+                break;
 
             case 'cancel_batch':
-                return self::handle_cancel_batch( $command );
+                $result = self::handle_cancel_batch( $command );
+                break;
 
             case 'approval_required':
-                return self::handle_approval_required( $command );
+                $result = self::handle_approval_required( $command );
+                break;
 
             case 'prepare_production':
-                return self::handle_prepare_production( $command );
+                $result = self::handle_prepare_production( $command );
+                break;
 
             default:
                 return [ 'success' => false, 'error' => "Unknown command type: $command_type" ];
         }
+
+        // Mark as processed only when the handler succeeded — failed handlers remain
+        // re-deliverable so PC can retry.
+        if ( ! empty( $result['success'] ) ) {
+            self::mark_processed( $command_id );
+        }
+
+        return $result;
     }
 
     // ── Command verification ─────────────────────────────────────────────────

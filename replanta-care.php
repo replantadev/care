@@ -3,7 +3,7 @@
  * Plugin Name: Replanta Care
  * Plugin URI: https://replanta.dev
  * Description: Plugin de mantenimiento WordPress automatizado para clientes de Replanta con integracion Hub
- * Version: 1.15.65
+ * Version: 1.15.66
  * Author: Replanta
  * Author URI: https://replanta.dev
  * License: GPL v2 or later
@@ -18,7 +18,7 @@ if (!defined('ABSPATH')) {
 
 // Define plugin constants
 if ( ! defined( 'RPCARE_VERSION' ) ) {
-    define( 'RPCARE_VERSION', '1.15.65' );
+    define( 'RPCARE_VERSION', '1.15.66' );
 }
 define('RPCARE_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('RPCARE_PLUGIN_PATH', plugin_dir_path(__FILE__));
@@ -746,18 +746,42 @@ class ReplantaCare {
             batch_id varchar(36) NOT NULL,
             event varchar(64) NOT NULL,
             payload_json longtext NOT NULL,
+            status varchar(20) NOT NULL DEFAULT 'pending',
             attempts int(11) UNSIGNED NOT NULL DEFAULT 0,
             next_attempt_at datetime NOT NULL,
             created_at datetime NOT NULL,
-            last_error varchar(500) DEFAULT NULL,
+            lease_owner varchar(32) DEFAULT NULL,
+            lease_expires_at datetime DEFAULT NULL,
+            last_error_code varchar(64) DEFAULT NULL,
+            last_error_safe varchar(500) DEFAULT NULL,
             delivered_at datetime DEFAULT NULL,
             PRIMARY KEY (id),
             UNIQUE KEY event_id (event_id),
-            KEY batch_id (batch_id),
+            KEY batch_status (batch_id, status),
             KEY next_attempt_at (next_attempt_at),
             KEY delivered_at (delivered_at)
         ) $charset_collate;";
         dbDelta( $sql_outbox );
+
+        // Upgrade migrations — add new columns to existing outbox installs.
+        $outbox_cols = $wpdb->get_col( "SHOW COLUMNS FROM `{$outbox_table}`", 0 );
+        if ( ! empty( $outbox_cols ) ) {
+            if ( ! in_array( 'status', $outbox_cols, true ) ) {
+                $wpdb->query( "ALTER TABLE `{$outbox_table}` ADD COLUMN `status` varchar(20) NOT NULL DEFAULT 'pending' AFTER `payload_json`" );
+            }
+            if ( ! in_array( 'lease_owner', $outbox_cols, true ) ) {
+                $wpdb->query( "ALTER TABLE `{$outbox_table}` ADD COLUMN `lease_owner` varchar(32) DEFAULT NULL AFTER `created_at`" );
+            }
+            if ( ! in_array( 'lease_expires_at', $outbox_cols, true ) ) {
+                $wpdb->query( "ALTER TABLE `{$outbox_table}` ADD COLUMN `lease_expires_at` datetime DEFAULT NULL AFTER `lease_owner`" );
+            }
+            if ( ! in_array( 'last_error_code', $outbox_cols, true ) ) {
+                $wpdb->query( "ALTER TABLE `{$outbox_table}` ADD COLUMN `last_error_code` varchar(64) DEFAULT NULL AFTER `lease_expires_at`" );
+            }
+            if ( ! in_array( 'last_error_safe', $outbox_cols, true ) ) {
+                $wpdb->query( "ALTER TABLE `{$outbox_table}` ADD COLUMN `last_error_safe` varchar(500) DEFAULT NULL AFTER `last_error_code`" );
+            }
+        }
     }
     
     public function is_activated() {

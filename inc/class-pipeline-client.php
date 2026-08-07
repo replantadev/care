@@ -413,16 +413,48 @@ class RP_Care_Pipeline_Client {
 
     private static function handle_prepare_staging( array $cmd ): array {
         $batch_id = $cmd['payload']['batch_id'] ?? '';
+        if ( empty( $batch_id ) ) {
+            return [ 'success' => false, 'error' => 'missing_batch_id' ];
+        }
         if ( ! self::is_staging() ) {
             return [ 'success' => false, 'error' => 'prepare_staging sent to production instance.' ];
         }
-        if ( class_exists( 'RP_Care_Staging_Provider' ) ) {
-            $result = RP_Care_Staging_Provider::prepare( $batch_id );
-            return is_wp_error( $result )
-                ? [ 'success' => false, 'error' => $result->get_error_message() ]
-                : [ 'success' => true, 'result' => $result ];
+
+        // Verify isolation: staging canonical URL must differ from production.
+        $staging_url = self::get_canonical_url();
+        if ( empty( $staging_url ) ) {
+            return [
+                'success'  => true,
+                'batch_id' => $batch_id,
+                'event'    => 'waiting_manual_staging_refresh',
+                'reason'   => 'staging_canonical_url_not_configured',
+            ];
         }
-        return [ 'success' => false, 'error' => 'Staging provider not available.' ];
+
+        // Optional: delegate to a staging provider if available.
+        if ( class_exists( 'RP_Care_Staging_Provider' ) ) {
+            $provider_result = RP_Care_Staging_Provider::prepare( $batch_id );
+            if ( is_wp_error( $provider_result ) ) {
+                return [
+                    'success'  => true,
+                    'batch_id' => $batch_id,
+                    'event'    => 'operation_failed',
+                    'phase'    => 'staging',
+                    'reason'   => $provider_result->get_error_message(),
+                ];
+            }
+        }
+
+        return [
+            'success'          => true,
+            'batch_id'         => $batch_id,
+            'event'            => 'staging_ready',
+            'staging_metadata' => [
+                'url'         => $staging_url,
+                'prepared_at' => gmdate( 'c' ),
+                'environment' => 'staging',
+            ],
+        ];
     }
 
     private static function handle_apply_update_batch( array $cmd ): array {
@@ -444,11 +476,43 @@ class RP_Care_Pipeline_Client {
 
     private static function handle_run_test_suite( array $cmd ): array {
         $batch_id = $cmd['payload']['batch_id'] ?? '';
-        if ( class_exists( 'RP_Care_Test_Runner' ) ) {
-            $result = RP_Care_Test_Runner::run( $batch_id );
-            return [ 'success' => true, 'result' => $result ];
+        if ( empty( $batch_id ) ) {
+            return [ 'success' => false, 'error' => 'missing_batch_id' ];
         }
-        return [ 'success' => false, 'error' => 'Test runner not available.' ];
+        if ( ! self::is_staging() ) {
+            return [ 'success' => false, 'error' => 'run_test_suite sent to production instance.' ];
+        }
+
+        // Delegate to test runner if available; otherwise run built-in health checks.
+        if ( class_exists( 'RP_Care_Test_Runner' ) ) {
+            $runner_result = RP_Care_Test_Runner::run( $batch_id );
+            if ( is_wp_error( $runner_result ) ) {
+                return [ 'success' => false, 'error' => $runner_result->get_error_message() ];
+            }
+            $severity    = $runner_result['severity'] ?? 'none';
+            $test_report = $runner_result['report']   ?? $runner_result;
+        } else {
+            // Built-in: HTTP health check of staging canonical URL.
+            $staging_url = self::get_canonical_url();
+            $severity    = 'none';
+            $test_report = [ 'checks' => [], 'note' => 'built_in_health_check' ];
+            if ( ! empty( $staging_url ) ) {
+                $resp = wp_remote_get( $staging_url, [ 'timeout' => 15, 'sslverify' => false ] );
+                $code = is_wp_error( $resp ) ? 0 : (int) wp_remote_retrieve_response_code( $resp );
+                if ( $code === 0 || $code >= 500 ) {
+                    $severity = 'critical';
+                }
+                $test_report['checks'][] = [ 'url' => $staging_url, 'status_code' => $code ];
+            }
+        }
+
+        return [
+            'success'     => true,
+            'batch_id'    => $batch_id,
+            'event'       => 'tests_complete',
+            'severity'    => $severity,
+            'test_report' => $test_report,
+        ];
     }
 
     private static function handle_apply_production_batch( array $cmd ): array {
@@ -559,13 +623,124 @@ class RP_Care_Pipeline_Client {
         return true;
     }
 
+    /**
+     * POST a pipeline event to PC's /pipeline/batch-status endpoint.
+     * Used by RP_Care_Pipeline_Outbox to deliver durable events with idempotency.
+     *
+     * @param string $batch_id  Batch the event belongs to.
+     * @param string $event     Event name (e.g. 'staging_updated', 'tests_complete').
+     * @param array  $payload   Full POST body (must include event_id).
+     * @param string $event_id  UUID from the outbox row — included for PC-side dedup.
+     * @return true|\WP_Error
+     */
+    public static function send_batch_event(
+        string $batch_id,
+        string $event,
+        array  $payload,
+        string $event_id = ''
+    ): true|\WP_Error {
+        if ( ! self::is_pipeline_enabled() ) {
+            return new \WP_Error( 'pipeline_disabled', 'Pipeline is not enabled.' );
+        }
+
+        $hub_url     = self::get_hub_url_public();
+        $token       = self::get_token_public();
+        $instance_id = (string) get_option( self::OPT_INSTANCE_ID, '' );
+
+        if ( empty( $hub_url ) || empty( $token ) || empty( $instance_id ) ) {
+            return new \WP_Error( 'not_configured', 'Pipeline client not fully configured.' );
+        }
+
+        $body = array_merge( $payload, [
+            'batch_id' => $batch_id,
+            'event'    => $event,
+        ] );
+        if ( ! empty( $event_id ) ) {
+            $body['event_id'] = $event_id;
+        }
+
+        $response = wp_remote_post(
+            trailingslashit( $hub_url ) . 'wp-json/replanta-pc/v1/pipeline/batch-status',
+            [
+                'timeout' => 15,
+                'headers' => [
+                    'Content-Type'     => 'application/json',
+                    'X-Pipeline-Token' => $token,
+                    'X-Instance-ID'    => $instance_id,
+                ],
+                'body' => wp_json_encode( $body ),
+            ]
+        );
+
+        $code = is_wp_error( $response ) ? 0 : (int) wp_remote_retrieve_response_code( $response );
+
+        if ( is_wp_error( $response ) || $code === 0 || $code === 429 || $code >= 500 ) {
+            $err = is_wp_error( $response ) ? $response->get_error_message() : "HTTP $code";
+            return new \WP_Error( 'retry_later', "Batch event delivery failed (retryable): $err" );
+        }
+
+        if ( $code >= 400 ) {
+            return new \WP_Error( 'rejected', "PC rejected batch event '$event' (HTTP $code)." );
+        }
+
+        return true;
+    }
+
     private static function handle_verify_production( array $cmd ): array {
         $batch_id = $cmd['payload']['batch_id'] ?? '';
-        if ( class_exists( 'RP_Care_Test_Runner' ) ) {
-            $result = RP_Care_Test_Runner::run( $batch_id, [ 'non_destructive' => true ] );
-            return [ 'success' => true, 'result' => $result ];
+        if ( empty( $batch_id ) ) {
+            return [ 'success' => false, 'error' => 'missing_batch_id' ];
         }
-        return [ 'success' => false, 'error' => 'Test runner not available.' ];
+        if ( self::is_staging() ) {
+            return [ 'success' => false, 'error' => 'verify_production sent to staging instance.' ];
+        }
+
+        // Delegate to test runner if available; otherwise run built-in health checks.
+        if ( class_exists( 'RP_Care_Test_Runner' ) ) {
+            $runner_result = RP_Care_Test_Runner::run( $batch_id, [ 'non_destructive' => true ] );
+            if ( is_wp_error( $runner_result ) ) {
+                return [
+                    'success'  => true,
+                    'batch_id' => $batch_id,
+                    'event'    => 'operation_failed',
+                    'phase'    => 'production_verification',
+                    'reason'   => $runner_result->get_error_message(),
+                ];
+            }
+            $severity    = $runner_result['severity'] ?? 'none';
+            $test_report = $runner_result['report']   ?? $runner_result;
+        } else {
+            // Built-in: HTTP health check of production site URL.
+            $prod_url    = get_site_url();
+            $severity    = 'none';
+            $test_report = [ 'checks' => [], 'note' => 'built_in_health_check' ];
+            if ( ! empty( $prod_url ) ) {
+                $resp = wp_remote_get( $prod_url, [ 'timeout' => 15, 'sslverify' => true ] );
+                $code = is_wp_error( $resp ) ? 0 : (int) wp_remote_retrieve_response_code( $resp );
+                if ( $code === 0 || $code >= 500 ) {
+                    $severity = 'critical';
+                }
+                $test_report['checks'][] = [ 'url' => $prod_url, 'status_code' => $code ];
+            }
+        }
+
+        if ( $severity === 'critical' ) {
+            return [
+                'success'     => true,
+                'batch_id'    => $batch_id,
+                'event'       => 'operation_failed',
+                'phase'       => 'production_verification',
+                'reason'      => 'critical_test_failure',
+                'test_report' => $test_report,
+            ];
+        }
+
+        return [
+            'success'     => true,
+            'batch_id'    => $batch_id,
+            'event'       => 'production_verified',
+            'test_report' => $test_report,
+        ];
     }
 
     private static function handle_rollback_batch( array $cmd ): array {
@@ -670,7 +845,7 @@ class RP_Care_Pipeline_Client {
                 'body'    => wp_json_encode( [
                     'command_id'  => $command_id,
                     'instance_id' => $instance_id,
-                    'success'     => true,
+                    'status'      => 'completed',
                     'result'      => $result,
                 ] ),
             ]
@@ -694,10 +869,10 @@ class RP_Care_Pipeline_Client {
                     'X-Instance-ID'    => $instance_id,
                 ],
                 'body'    => wp_json_encode( [
-                    'command_id'  => $command_id,
-                    'instance_id' => $instance_id,
-                    'success'     => false,
-                    'reason'      => substr( $reason, 0, 500 ),
+                    'command_id'    => $command_id,
+                    'instance_id'   => $instance_id,
+                    'status'        => 'failed',
+                    'error_message' => substr( $reason, 0, 500 ),
                 ] ),
             ]
         );

@@ -1049,17 +1049,19 @@ class RP_Care_Task_Updates {
                 return [ 'success' => false, 'error' => $artifact_check->get_error_message() ];
             }
 
-            $item_results = self::apply_manifest_items( $manifest_data['manifest'], $batch_id, 'staging' );
-            $success      = empty( array_filter( $item_results, static function ( $r ) { return empty( $r['success'] ); } ) );
+            $batch_items  = self::apply_manifest_items( $manifest_data['manifest'], $batch_id, 'staging' );
+            $applied      = $batch_items['applied'];
+            $deferred     = $batch_items['deferred'];
+            $success      = empty( array_filter( $applied, static function ( $r ) { return empty( $r['success'] ); } ) );
 
-            self::report_batch_to_pc( $batch_id, $success ? 'staging_done' : 'staging_failed', $item_results );
+            self::report_batch_to_pc( $batch_id, $success ? 'staging_done' : 'staging_failed', $applied, $deferred );
 
             if ( $success ) {
                 update_option( 'rpcare_staging_batch_done_' . $batch_id, time() );
             }
 
             self::release_batch_lock( $batch_id );
-            return [ 'success' => $success, 'batch_id' => $batch_id, 'item_results' => $item_results ];
+            return [ 'success' => $success, 'batch_id' => $batch_id, 'item_results' => $applied, 'deferred_items' => $deferred ];
 
         } catch ( \Throwable $e ) {
             if ( class_exists( 'RP_Care_Utils' ) ) {
@@ -1144,17 +1146,19 @@ class RP_Care_Task_Updates {
             // Record backup_id for rollback_batch to use.
             update_option( 'rpcare_prod_batch_backup_' . $batch_id, $backup_id );
 
-            $item_results = self::apply_manifest_items( $manifest_data['manifest'], $batch_id, 'production' );
-            $success      = empty( array_filter( $item_results, static function ( $r ) { return empty( $r['success'] ); } ) );
+            $batch_items  = self::apply_manifest_items( $manifest_data['manifest'], $batch_id, 'production' );
+            $applied      = $batch_items['applied'];
+            $deferred     = $batch_items['deferred'];
+            $success      = empty( array_filter( $applied, static function ( $r ) { return empty( $r['success'] ); } ) );
 
-            self::report_batch_to_pc( $batch_id, $success ? 'production_done' : 'production_failed', $item_results );
+            self::report_batch_to_pc( $batch_id, $success ? 'production_done' : 'production_failed', $applied, $deferred );
 
             if ( $success ) {
                 update_option( 'rpcare_prod_batch_done_' . $batch_id, time() );
             }
 
             self::release_batch_lock( $batch_id );
-            return [ 'success' => $success, 'batch_id' => $batch_id, 'item_results' => $item_results ];
+            return [ 'success' => $success, 'batch_id' => $batch_id, 'item_results' => $applied, 'deferred_items' => $deferred ];
 
         } catch ( \Throwable $e ) {
             if ( class_exists( 'RP_Care_Utils' ) ) {
@@ -1313,33 +1317,45 @@ class RP_Care_Task_Updates {
         return hash( 'sha256', implode( '|', $tuples ) );
     }
 
+    /**
+     * Apply all manifest items.
+     * Returns ['applied' => [...], 'deferred' => [...]].
+     * Translations and core items without a frozen artifact go into 'deferred'.
+     * Only items in 'applied' are considered for success/failure.
+     */
     private static function apply_manifest_items( array $manifest, string $batch_id, string $env ): array {
-        $results  = [];
+        $applied  = [];
+        $deferred = [];
         $proposed = $manifest['proposed_updates'] ?? [];
 
         foreach ( $proposed['plugins'] ?? [] as $item ) {
-            $results[] = self::apply_pipeline_plugin( $item, $manifest, $batch_id, $env );
+            $applied[] = self::apply_pipeline_plugin( $item, $manifest, $batch_id, $env );
         }
 
         foreach ( $proposed['themes'] ?? [] as $item ) {
-            $results[] = self::apply_pipeline_theme( $item, $manifest, $batch_id, $env );
+            $applied[] = self::apply_pipeline_theme( $item, $manifest, $batch_id, $env );
         }
 
         if ( ! empty( $proposed['core'] ) ) {
-            $core_item = isset( $proposed['core'][0] ) ? $proposed['core'][0] : $proposed['core'];
-            $results[] = self::apply_pipeline_core( (array) $core_item, $manifest, $batch_id );
+            $core_item  = isset( $proposed['core'][0] ) ? $proposed['core'][0] : $proposed['core'];
+            $core_result = self::apply_pipeline_core( (array) $core_item, $manifest, $batch_id );
+            // Core without a frozen artifact is deferred, not a failure.
+            if ( ( $core_result['status'] ?? '' ) === 'deferred' ) {
+                $deferred[] = $core_result;
+            } else {
+                $applied[] = $core_result;
+            }
         }
 
         foreach ( $proposed['translations'] ?? [] as $item ) {
-            $results[] = [
-                'slug'    => $item['slug'] ?? '',
-                'type'    => 'translation',
-                'success' => true,
-                'status'  => 'deferred',
+            $deferred[] = [
+                'slug'   => $item['slug'] ?? '',
+                'type'   => 'translation',
+                'status' => 'deferred',
             ];
         }
 
-        return $results;
+        return [ 'applied' => $applied, 'deferred' => $deferred ];
     }
 
     /**
@@ -1392,16 +1408,67 @@ class RP_Care_Task_Updates {
         return null;
     }
 
+    /**
+     * Locate a single artifact by full identity: type, slug, and expected version.
+     * Fails closed — returns WP_Error if any field is missing or the version doesn't match.
+     * Use this everywhere instead of inline slug loops.
+     */
+    private static function find_artifact( array $manifest, string $type, string $slug, string $expected_version ): array|\WP_Error {
+        foreach ( $manifest['artifacts'] ?? [] as $a ) {
+            if ( ( $a['type'] ?? '' ) !== $type ) { continue; }
+            if ( ( $a['slug'] ?? '' ) !== $slug )  { continue; }
+            $a_id = $a['id']     ?? '';
+            $sha  = $a['sha256'] ?? '';
+            $ver  = $a['version'] ?? '';
+            if ( $a_id === '' || $sha === '' || $ver === '' ) {
+                return new \WP_Error( 'artifact_incomplete', "Artifact for $type '$slug' is missing id, sha256, or version." );
+            }
+            if ( $expected_version !== '' && $ver !== $expected_version ) {
+                return new \WP_Error(
+                    'artifact_version_mismatch',
+                    "Artifact for $type '$slug' has version '$ver' but '$expected_version' is expected."
+                );
+            }
+            return $a;
+        }
+        return new \WP_Error( 'artifact_not_found', "No artifact found for $type '$slug'." );
+    }
+
+    /**
+     * Read the installed version of a plugin, theme, or WordPress core.
+     * Used for post-install verification.
+     */
+    private static function get_installed_version( string $type, string $slug, ?string $file ): string {
+        switch ( $type ) {
+            case 'plugin':
+                $plugin_file = $file ?: "$slug/$slug.php";
+                if ( ! function_exists( 'get_plugin_data' ) ) {
+                    require_once ABSPATH . 'wp-admin/includes/plugin.php';
+                }
+                $data = get_plugin_data( WP_PLUGIN_DIR . '/' . $plugin_file, false, false );
+                return $data['Version'] ?? '';
+            case 'theme':
+                $theme = wp_get_theme( $slug );
+                return $theme->exists() ? ( $theme->get( 'Version' ) ?: '' ) : '';
+            case 'core':
+                return get_bloginfo( 'version' );
+            default:
+                return '';
+        }
+    }
+
     private static function apply_pipeline_plugin( array $item, array $manifest, string $batch_id, string $env ): array {
         $slug         = $item['slug'] ?? '';
+        $file         = $item['file'] ?? "$slug/$slug.php";
         $from_version = $item['from_version'] ?? '';
         $to_version   = $item['to_version'] ?? '';
+        $start_ts     = microtime( true );
         $result_base  = [
-            'slug'         => $slug,
-            'type'         => 'plugin',
-            'success'      => false,
-            'from_version' => $from_version,
-            'to_version'   => $to_version,
+            'slug'              => $slug,
+            'type'              => 'plugin',
+            'success'           => false,
+            'from_version'      => $from_version,
+            'requested_version' => $to_version,
         ];
 
         if ( empty( $slug ) ) {
@@ -1409,62 +1476,64 @@ class RP_Care_Task_Updates {
             return $result_base;
         }
 
-        $artifact = null;
-        foreach ( $manifest['artifacts'] ?? [] as $a ) {
-            if ( ( $a['slug'] ?? '' ) === $slug ) {
-                $artifact = $a;
-                break;
-            }
-        }
-
-        $sha256      = $artifact['sha256'] ?? null;
-        $package_url = null;
-
-        if ( $artifact ) {
-            $hub_url     = RP_Care_Pipeline_Client::get_hub_url_public();
-            $token       = RP_Care_Pipeline_Client::get_token_public();
-            $instance_id = (string) get_option( RP_Care_Pipeline_Client::OPT_INSTANCE_ID, '' );
-
-            $tmp_file = self::download_artifact_package( $artifact, $hub_url, $token, $instance_id );
-            if ( is_wp_error( $tmp_file ) ) {
-                $result_base['error'] = $tmp_file->get_error_message();
-                return $result_base;
-            }
-            $package_url = $tmp_file;
-        } else {
-            // FAIL CLOSED: pipeline mandates a pre-downloaded artifact — no WP.org fallback.
-            $result_base['error'] = 'no_artifact';
+        // Locate artifact by full identity: type + slug + expected version.
+        $artifact = self::find_artifact( $manifest, 'plugin', $slug, $to_version );
+        if ( is_wp_error( $artifact ) ) {
+            $result_base['error'] = $artifact->get_error_message();
             return $result_base;
         }
+
+        $hub_url     = RP_Care_Pipeline_Client::get_hub_url_public();
+        $token       = RP_Care_Pipeline_Client::get_token_public();
+        $instance_id = (string) get_option( RP_Care_Pipeline_Client::OPT_INSTANCE_ID, '' );
+
+        $tmp_file = self::download_artifact_package( $artifact, $hub_url, $token, $instance_id );
+        if ( is_wp_error( $tmp_file ) ) {
+            $result_base['error'] = $tmp_file->get_error_message();
+            return $result_base;
+        }
+
+        // Preserve activation state before upgrade.
+        $was_active = function_exists( 'is_plugin_active' ) && is_plugin_active( $file );
 
         try {
             if ( ! class_exists( 'Plugin_Upgrader' ) ) {
                 require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
             }
 
-            $skin     = class_exists( 'WP_Ajax_Upgrader_Skin' ) ? new WP_Ajax_Upgrader_Skin() : new WP_Upgrader_Skin();
-            $upgrader = new Plugin_Upgrader( $skin );
-            $result   = $upgrader->install( $package_url, [ 'overwrite_package' => true ] );
+            $skin     = class_exists( 'WP_Ajax_Upgrader_Skin' ) ? new \WP_Ajax_Upgrader_Skin() : new \WP_Upgrader_Skin();
+            $upgrader = new \Plugin_Upgrader( $skin );
+            $result   = $upgrader->install( $tmp_file, [ 'overwrite_package' => true ] );
 
-            if ( $artifact && is_string( $package_url ) && file_exists( $package_url ) ) {
-                @unlink( $package_url );
-            }
+            @unlink( $tmp_file );
 
             if ( is_wp_error( $result ) ) {
                 $result_base['error'] = $result->get_error_message();
                 return $result_base;
             }
 
-            $result_base['success'] = true;
-            if ( $sha256 ) {
-                $result_base['sha256'] = $sha256;
+            // Restore activation state.
+            if ( $was_active && function_exists( 'is_plugin_active' ) && ! is_plugin_active( $file ) ) {
+                activate_plugin( $file, '', false, true );
             }
+
+            // Post-install: verify installed version matches requested.
+            $installed = self::get_installed_version( 'plugin', $slug, $file );
+            if ( $to_version !== '' && $installed !== $to_version ) {
+                $result_base['error']             = 'version_mismatch_after_install';
+                $result_base['installed_version'] = $installed;
+                return $result_base;
+            }
+
+            $result_base['success']           = true;
+            $result_base['installed_version'] = $installed;
+            $result_base['artifact_id']       = $artifact['id'];
+            $result_base['sha256']            = $artifact['sha256'];
+            $result_base['duration_ms']       = (int) ( ( microtime( true ) - $start_ts ) * 1000 );
             return $result_base;
 
         } catch ( \Throwable $e ) {
-            if ( $artifact && is_string( $package_url ) && file_exists( $package_url ) ) {
-                @unlink( $package_url );
-            }
+            @unlink( $tmp_file );
             $result_base['error'] = $e->getMessage();
             return $result_base;
         }
@@ -1474,12 +1543,13 @@ class RP_Care_Task_Updates {
         $slug         = $item['slug'] ?? '';
         $from_version = $item['from_version'] ?? '';
         $to_version   = $item['to_version'] ?? '';
+        $start_ts     = microtime( true );
         $result_base  = [
-            'slug'         => $slug,
-            'type'         => 'theme',
-            'success'      => false,
-            'from_version' => $from_version,
-            'to_version'   => $to_version,
+            'slug'              => $slug,
+            'type'              => 'theme',
+            'success'           => false,
+            'from_version'      => $from_version,
+            'requested_version' => $to_version,
         ];
 
         if ( empty( $slug ) ) {
@@ -1487,18 +1557,91 @@ class RP_Care_Task_Updates {
             return $result_base;
         }
 
-        $artifact = null;
-        foreach ( $manifest['artifacts'] ?? [] as $a ) {
-            if ( ( $a['slug'] ?? '' ) === $slug ) {
-                $artifact = $a;
-                break;
-            }
+        // Locate artifact by full identity: type + slug + expected version.
+        $artifact = self::find_artifact( $manifest, 'theme', $slug, $to_version );
+        if ( is_wp_error( $artifact ) ) {
+            $result_base['error'] = $artifact->get_error_message();
+            return $result_base;
         }
 
-        $sha256      = $artifact['sha256'] ?? null;
-        $package_url = null;
+        $hub_url     = RP_Care_Pipeline_Client::get_hub_url_public();
+        $token       = RP_Care_Pipeline_Client::get_token_public();
+        $instance_id = (string) get_option( RP_Care_Pipeline_Client::OPT_INSTANCE_ID, '' );
 
-        if ( $artifact ) {
+        $tmp_file = self::download_artifact_package( $artifact, $hub_url, $token, $instance_id );
+        if ( is_wp_error( $tmp_file ) ) {
+            $result_base['error'] = $tmp_file->get_error_message();
+            return $result_base;
+        }
+
+        try {
+            if ( ! class_exists( 'Theme_Upgrader' ) ) {
+                require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
+            }
+
+            $skin     = class_exists( 'WP_Ajax_Upgrader_Skin' ) ? new \WP_Ajax_Upgrader_Skin() : new \WP_Upgrader_Skin();
+            $upgrader = new \Theme_Upgrader( $skin );
+            $result   = $upgrader->install( $tmp_file, [ 'overwrite_package' => true ] );
+
+            @unlink( $tmp_file );
+
+            if ( is_wp_error( $result ) ) {
+                $result_base['error'] = $result->get_error_message();
+                return $result_base;
+            }
+
+            // Post-install: verify installed version matches requested.
+            $installed = self::get_installed_version( 'theme', $slug, null );
+            if ( $to_version !== '' && $installed !== $to_version ) {
+                $result_base['error']             = 'version_mismatch_after_install';
+                $result_base['installed_version'] = $installed;
+                return $result_base;
+            }
+
+            $result_base['success']           = true;
+            $result_base['installed_version'] = $installed;
+            $result_base['artifact_id']       = $artifact['id'];
+            $result_base['sha256']            = $artifact['sha256'];
+            $result_base['duration_ms']       = (int) ( ( microtime( true ) - $start_ts ) * 1000 );
+            return $result_base;
+
+        } catch ( \Throwable $e ) {
+            @unlink( $tmp_file );
+            $result_base['error'] = $e->getMessage();
+            return $result_base;
+        }
+    }
+
+    private static function apply_pipeline_core( array $item, array $manifest, string $batch_id ): array {
+        $from_version = $item['from_version'] ?? '';
+        $to_version   = $item['to_version'] ?? '';
+        $start_ts     = microtime( true );
+        $result_base  = [
+            'slug'              => 'wordpress',
+            'type'              => 'core',
+            'success'           => false,
+            'from_version'      => $from_version,
+            'requested_version' => $to_version,
+        ];
+
+        // Core must use a frozen artifact — no live WordPress.org downloads in pipeline.
+        $artifact = self::find_artifact( $manifest, 'core', 'wordpress', $to_version );
+        if ( is_wp_error( $artifact ) ) {
+            // No pre-downloaded core artifact: defer to manual — do NOT pretend it was tested.
+            return [
+                'slug'    => 'wordpress',
+                'type'    => 'core',
+                'success' => true,
+                'status'  => 'deferred',
+                'note'    => 'Core updates require a pre-downloaded artifact in the manifest. Excluded from automated pipeline — apply manually.',
+            ];
+        }
+
+        try {
+            if ( ! class_exists( 'Core_Upgrader' ) ) {
+                require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
+            }
+
             $hub_url     = RP_Care_Pipeline_Client::get_hub_url_public();
             $token       = RP_Care_Pipeline_Client::get_token_public();
             $instance_id = (string) get_option( RP_Care_Pipeline_Client::OPT_INSTANCE_ID, '' );
@@ -1508,96 +1651,40 @@ class RP_Care_Task_Updates {
                 $result_base['error'] = $tmp_file->get_error_message();
                 return $result_base;
             }
-            $package_url = $tmp_file;
-        } else {
-            // FAIL CLOSED: pipeline mandates a pre-downloaded artifact — no WP.org fallback.
-            $result_base['error'] = 'no_artifact';
-            return $result_base;
-        }
 
-        try {
-            if ( ! class_exists( 'Theme_Upgrader' ) ) {
-                require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
-            }
+            // Build a minimal update object using the local temp file.
+            // WP_Upgrader::download_package() returns local paths unchanged, so no live WP.org request.
+            $update_obj           = new \stdClass();
+            $update_obj->response = 'upgrade';
+            $update_obj->current  = $to_version;
+            $update_obj->download = $tmp_file;
+            $update_obj->packages = (object) [ 'full' => $tmp_file, 'no_content' => $tmp_file ];
+            $update_obj->locale   = get_locale();
 
-            $skin     = class_exists( 'WP_Ajax_Upgrader_Skin' ) ? new WP_Ajax_Upgrader_Skin() : new WP_Upgrader_Skin();
-            $upgrader = new Theme_Upgrader( $skin );
-            $result   = $upgrader->install( $package_url, [ 'overwrite_package' => true ] );
+            $skin     = class_exists( 'WP_Ajax_Upgrader_Skin' ) ? new \WP_Ajax_Upgrader_Skin() : new \WP_Upgrader_Skin();
+            $upgrader = new \Core_Upgrader( $skin );
+            $result   = $upgrader->upgrade( $update_obj, [ 'allow_relaxed_file_ownership' => true ] );
 
-            if ( $artifact && is_string( $package_url ) && file_exists( $package_url ) ) {
-                @unlink( $package_url );
-            }
+            @unlink( $tmp_file );
 
             if ( is_wp_error( $result ) ) {
                 $result_base['error'] = $result->get_error_message();
                 return $result_base;
             }
 
-            $result_base['success'] = true;
-            if ( $sha256 ) {
-                $result_base['sha256'] = $sha256;
-            }
-            return $result_base;
-
-        } catch ( \Throwable $e ) {
-            if ( $artifact && is_string( $package_url ) && file_exists( $package_url ) ) {
-                @unlink( $package_url );
-            }
-            $result_base['error'] = $e->getMessage();
-            return $result_base;
-        }
-    }
-
-    private static function apply_pipeline_core( array $item, array $manifest, string $batch_id ): array {
-        $from_version = $item['from_version'] ?? '';
-        $to_version   = $item['to_version'] ?? '';
-        $result_base  = [
-            'slug'         => 'wordpress',
-            'type'         => 'core',
-            'success'      => false,
-            'from_version' => $from_version,
-            'to_version'   => $to_version,
-        ];
-
-        try {
-            if ( ! function_exists( 'get_core_updates' ) ) {
-                require_once ABSPATH . 'wp-admin/includes/update.php';
-            }
-            if ( ! class_exists( 'Core_Upgrader' ) ) {
-                require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
-            }
-
-            delete_site_transient( 'update_core' );
-            wp_version_check();
-
-            $updates = get_core_updates();
-            if ( empty( $updates ) || ! isset( $updates[0] ) || $updates[0]->response !== 'upgrade' ) {
-                if ( $to_version && get_bloginfo( 'version' ) === $to_version ) {
-                    $result_base['success'] = true;
-                    $result_base['note']    = 'already_at_target_version';
-                    return $result_base;
-                }
-                $result_base['error'] = 'no_core_update_available';
+            // Post-install: verify WP version matches requested.
+            $installed = get_bloginfo( 'version' );
+            if ( $to_version !== '' && $installed !== $to_version ) {
+                $result_base['error']             = 'version_mismatch_after_install';
+                $result_base['installed_version'] = $installed;
                 return $result_base;
             }
 
-            $update = $updates[0];
-            if ( $to_version && $update->current !== $to_version ) {
-                $result_base['error'] = "wp_reports_version_{$update->current}_not_{$to_version}";
-                return $result_base;
-            }
-
-            $skin     = class_exists( 'WP_Ajax_Upgrader_Skin' ) ? new WP_Ajax_Upgrader_Skin() : new WP_Upgrader_Skin();
-            $upgrader = new Core_Upgrader( $skin );
-            $result   = $upgrader->upgrade( $update );
-
-            if ( is_wp_error( $result ) ) {
-                $result_base['error'] = $result->get_error_message();
-                return $result_base;
-            }
-
-            $result_base['success']    = true;
-            $result_base['to_version'] = $update->current;
+            $result_base['success']           = true;
+            $result_base['installed_version'] = $installed;
+            $result_base['artifact_id']       = $artifact['id'];
+            $result_base['sha256']            = $artifact['sha256'];
+            $result_base['duration_ms']       = (int) ( ( microtime( true ) - $start_ts ) * 1000 );
             return $result_base;
 
         } catch ( \Throwable $e ) {
@@ -1929,7 +2016,7 @@ class RP_Care_Task_Updates {
     /**
      * POST a batch status update to Plugin Center. Non-throwing.
      */
-    private static function report_batch_to_pc( string $batch_id, string $status, array $item_results ): void {
+    private static function report_batch_to_pc( string $batch_id, string $status, array $item_results, array $deferred_items = [] ): void {
         if ( ! class_exists( 'RP_Care_Pipeline_Client' ) ) {
             return;
         }
@@ -1992,7 +2079,11 @@ class RP_Care_Task_Updates {
                 'body'    => wp_json_encode( [
                     'batch_id'    => $batch_id,
                     'event'       => $event_name,
-                    'data'        => array_merge( [ 'item_results' => $item_results ], $extra_data ),
+                    'data'        => array_merge(
+                        [ 'item_results' => $item_results ],
+                        ! empty( $deferred_items ) ? [ 'deferred_items' => $deferred_items ] : [],
+                        $extra_data
+                    ),
                     'instance_id' => $instance_id,
                 ] ),
             ]

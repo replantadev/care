@@ -1,7 +1,7 @@
 <?php
 // Minimal bootstrap for offline unit tests — no WP or DB required.
 define( 'ABSPATH', __DIR__ . '/../' );
-define( 'RPCARE_VERSION', '1.15.58' );
+define( 'RPCARE_VERSION', '1.15.65' );
 define( 'RPCARE_TESTING', true );
 
 // ── WP option store ────────────────────────────────────────────────────────
@@ -66,6 +66,20 @@ if ( ! function_exists( 'register_uninstall_hook' ) ) {
 }
 if ( ! function_exists( 'home_url' ) ) {
     function home_url( string $path = '' ): string { return 'http://localhost' . $path; }
+}
+if ( ! function_exists( 'get_site_url' ) ) {
+    function get_site_url( ?int $blog_id = null, string $path = '', string $scheme = '' ): string {
+        return 'http://localhost' . $path;
+    }
+}
+if ( ! function_exists( 'wp_remote_get' ) ) {
+    function wp_remote_get( string $url, array $args = [] ): array|\WP_Error {
+        if ( isset( $GLOBALS['_wp_remote_get_mock'] ) ) {
+            $m = $GLOBALS['_wp_remote_get_mock'];
+            return is_callable( $m ) ? $m( $url, $args ) : $m;
+        }
+        return [ 'response' => [ 'code' => 200 ], 'body' => '' ];
+    }
 }
 if ( ! function_exists( 'wp_json_encode' ) ) {
     function wp_json_encode( $data ): string|false { return json_encode( $data ); }
@@ -187,6 +201,34 @@ if ( ! function_exists( 'wp_salt' ) ) {
         return 'test-wp-salt-for-unit-tests-only';
     }
 }
+
+// ── Minimal $wpdb stub (no real DB — inserts return false) ────────────────
+if ( ! class_exists( 'wpdb' ) ) {
+    class wpdb {
+        public string $prefix      = 'wp_';
+        public ?string $last_error = null;
+
+        public function insert( string $table, array $data, $format = null ): int|false { return false; }
+        public function update( string $table, array $data, array $where, $format = null, $where_format = null ): int|false { return 0; }
+        public function query( string $sql ): int|bool { return true; }
+        public function get_var( string $sql, int $col_offset = 0, int $row_offset = 0 ): ?string { return null; }
+        public function get_row( string $sql, string $output = 'OBJECT', int $row_offset = 0 ) { return null; }
+        public function get_results( string $sql, string $output = 'OBJECT' ): array { return []; }
+        public function get_col( string $sql, int $col_offset = 0 ): array { return []; }
+        public function prepare( string $sql, ...$args ): string {
+            // Basic positional substitution — for test assertions only.
+            $idx = 0;
+            return preg_replace_callback( '/%[sdfs]/', function() use ( &$idx, $args ) {
+                return "'" . addslashes( (string) ( $args[ $idx++ ] ?? '' ) ) . "'";
+            }, $sql );
+        }
+        public function _real_escape( string $s ): string { return addslashes( $s ); }
+    }
+}
+if ( ! isset( $GLOBALS['wpdb'] ) || ! $GLOBALS['wpdb'] ) {
+    $GLOBALS['wpdb'] = new wpdb();
+}
+$wpdb = $GLOBALS['wpdb']; // make available at global scope via direct assignment
 
 // ── RP_Care_Utils stub ─────────────────────────────────────────────────────
 if ( ! class_exists( 'RP_Care_Utils' ) ) {

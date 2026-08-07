@@ -3,7 +3,7 @@
  * Plugin Name: Replanta Care
  * Plugin URI: https://replanta.dev
  * Description: Plugin de mantenimiento WordPress automatizado para clientes de Replanta con integracion Hub
- * Version: 1.15.58
+ * Version: 1.15.65
  * Author: Replanta
  * Author URI: https://replanta.dev
  * License: GPL v2 or later
@@ -18,7 +18,7 @@ if (!defined('ABSPATH')) {
 
 // Define plugin constants
 if ( ! defined( 'RPCARE_VERSION' ) ) {
-    define( 'RPCARE_VERSION', '1.15.58' );
+    define( 'RPCARE_VERSION', '1.15.65' );
 }
 define('RPCARE_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('RPCARE_PLUGIN_PATH', plugin_dir_path(__FILE__));
@@ -188,6 +188,8 @@ class ReplantaCare {
 
             // Staging-First Update Pipeline
             'inc/class-pipeline-client.php',
+            'inc/class-pipeline-outbox.php',
+            'inc/class-backup-provider.php',
             'inc/class-inventory-snapshot.php',
             'inc/class-isolation-checker.php',
             'inc/class-staging-provider.php',
@@ -735,6 +737,27 @@ class ReplantaCare {
         if (empty($suggestion_score_column)) {
             $wpdb->query("ALTER TABLE `$table_404` ADD COLUMN `suggestion_score` decimal(5,2) DEFAULT NULL AFTER `suggested_redirect`");
         }
+
+        // Pipeline outbox table — durable at-least-once delivery queue for Care→PC events.
+        $outbox_table = $wpdb->prefix . 'rpcare_pipeline_outbox';
+        $sql_outbox   = "CREATE TABLE IF NOT EXISTS `{$outbox_table}` (
+            id bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+            event_id char(36) NOT NULL,
+            batch_id varchar(36) NOT NULL,
+            event varchar(64) NOT NULL,
+            payload_json longtext NOT NULL,
+            attempts int(11) UNSIGNED NOT NULL DEFAULT 0,
+            next_attempt_at datetime NOT NULL,
+            created_at datetime NOT NULL,
+            last_error varchar(500) DEFAULT NULL,
+            delivered_at datetime DEFAULT NULL,
+            PRIMARY KEY (id),
+            UNIQUE KEY event_id (event_id),
+            KEY batch_id (batch_id),
+            KEY next_attempt_at (next_attempt_at),
+            KEY delivered_at (delivered_at)
+        ) $charset_collate;";
+        dbDelta( $sql_outbox );
     }
     
     public function is_activated() {

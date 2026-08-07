@@ -414,8 +414,11 @@ class RP_Care_Approval_Screen {
             'terms_version'             => '1.0',
         ];
 
-        // Delegate to the standard form handler (which also forwards to PC).
-        self::process_approval( $approval );
+        // Delegate to the standard approval processor (forwards to PC).
+        $result = self::process_approval( $approval );
+        if ( is_wp_error( $result ) ) {
+            return new \WP_Error( $result->get_error_code(), $result->get_error_message() );
+        }
 
         return [
             'decision' => $decision,
@@ -425,14 +428,15 @@ class RP_Care_Approval_Screen {
 
     /**
      * Core approval processing shared by the form POST and REST endpoints.
+     * Returns WP_Error if the approval could not be sent to PC (transient preserved for retry).
      */
-    private static function process_approval( array $approval ): void {
+    private static function process_approval( array $approval ): true|\WP_Error {
         $batch_id = $approval['batch_id'];
         $decision = $approval['decision'];
 
         $pending = get_transient( 'rpcare_pending_approval_' . $batch_id );
         if ( ! $pending ) {
-            return;
+            return new \WP_Error( 'no_pending_approval', "No pending approval found for batch $batch_id." );
         }
 
         // Validate hashes.
@@ -440,10 +444,19 @@ class RP_Care_Approval_Screen {
         $inv_ok      = hash_equals( $pending['production_inventory_hash'] ?? '', $approval['production_inventory_hash'] ?? '' );
 
         if ( ! $manifest_ok || ! $inv_ok ) {
-            return;
+            return new \WP_Error( 'hash_mismatch', 'Approval hashes do not match the pending approval.' );
         }
 
-        // Record minimal audit (no full IP).
+        // Forward to PC first — only record audit entry on confirmed success.
+        if ( class_exists( 'RP_Care_Pipeline_Client' ) ) {
+            $sent = RP_Care_Pipeline_Client::send_approval_to_pc( $approval );
+            if ( is_wp_error( $sent ) ) {
+                // Transient preserved by send_approval_to_pc() for retry; surface the error.
+                return $sent;
+            }
+        }
+
+        // Record minimal audit entry after confirmed send.
         $pending['decisions'][] = [
             'decision'  => $decision,
             'actor'     => $approval['actor_display'],
@@ -452,10 +465,7 @@ class RP_Care_Approval_Screen {
         ];
         set_transient( 'rpcare_pending_approval_' . $batch_id, $pending, 48 * HOUR_IN_SECONDS );
 
-        // Forward to PC.
-        if ( class_exists( 'RP_Care_Pipeline_Client' ) ) {
-            RP_Care_Pipeline_Client::send_approval_to_pc( $approval );
-        }
+        return true;
     }
 }
 

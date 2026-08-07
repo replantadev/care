@@ -128,6 +128,7 @@ class RP_Care_Scheduler {
         // Pipeline poll — only when the pipeline is enabled.
         if ( class_exists( 'RP_Care_Pipeline_Client' ) && RP_Care_Pipeline_Client::is_pipeline_enabled() ) {
             $this->maybe_schedule( 'rpcare_task_pipeline_poll', 'five_minutes' );
+            $this->maybe_schedule( 'rpcare_deliver_pipeline_outbox', 'five_minutes' );
         }
 
         // Register action hooks for all tasks
@@ -312,6 +313,13 @@ class RP_Care_Scheduler {
         add_action('rpcare_task_pipeline_poll', static function() {
             if ( class_exists( 'RP_Care_Pipeline_Client' ) && RP_Care_Pipeline_Client::is_pipeline_enabled() ) {
                 RP_Care_Pipeline_Client::poll_and_execute();
+            }
+        });
+
+        // Pipeline outbox delivery — retries any pending Care→PC events.
+        add_action('rpcare_deliver_pipeline_outbox', static function() {
+            if ( class_exists( 'RP_Care_Pipeline_Outbox' ) ) {
+                RP_Care_Pipeline_Outbox::deliver_pending();
             }
         });
     }

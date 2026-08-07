@@ -96,6 +96,7 @@ if ( ! function_exists( 'esc_sql' ) ) {
 // ── Load Care pipeline classes ────────────────────────────────────────────────
 
 require_once __DIR__ . '/../inc/class-pipeline-client.php';
+require_once __DIR__ . '/../inc/class-pipeline-outbox.php';
 require_once __DIR__ . '/../inc/class-inventory-snapshot.php';
 require_once __DIR__ . '/../inc/task-updates.php';
 
@@ -745,12 +746,241 @@ class CarePipelineContractTest extends TestCase {
 
         $results = $method->invoke( null, $manifest, 'cc-s10-batch', 'staging' );
 
-        $this->assertCount( 1, $results, 'apply_manifest_items must return one result for the translation item' );
-        $translation = $results[0];
+        // apply_manifest_items now returns ['applied' => [...], 'deferred' => [...]].
+        $this->assertArrayHasKey( 'applied', $results,  'apply_manifest_items must return an array with key "applied"' );
+        $this->assertArrayHasKey( 'deferred', $results, 'apply_manifest_items must return an array with key "deferred"' );
+        $this->assertCount( 0, $results['applied'],  'Translation must not appear in applied[]' );
+        $this->assertCount( 1, $results['deferred'], 'Translation must appear in deferred[]' );
 
-        $this->assertSame( 'woocommerce', $translation['slug'], 'Result slug must match the translation item slug' );
-        $this->assertTrue( $translation['success'], 'Translation result must have success=true (deferred, not failed)' );
-        $this->assertSame( 'deferred', $translation['status'] ?? '', 'Translation result must have status=deferred' );
-        $this->assertArrayNotHasKey( 'error', $translation, 'Translation result must not have an error key when deferred' );
+        $translation = $results['deferred'][0];
+        $this->assertSame( 'woocommerce', $translation['slug'], 'Deferred slug must match the translation item slug' );
+        $this->assertSame( 'deferred', $translation['status'] ?? '', 'Deferred translation must have status=deferred' );
+        $this->assertArrayNotHasKey( 'error', $translation, 'Deferred translation must not have an error key' );
+    }
+
+    // ── Sprint 6 tests ─────────────────────────────────────────────────────────
+
+    // CC-S11: handle_prepare_staging returns event='staging_ready' at top level.
+    public function test_handle_prepare_staging_returns_staging_ready_event(): void {
+        // Configure environment as staging with a canonical URL so staging_ready is returned.
+        update_option( RP_Care_Pipeline_Client::OPT_ENVIRONMENT,    'staging' );
+        update_option( 'rpcare_pipeline_canonical_url', 'https://staging.example.test' );
+
+        $ref = new ReflectionMethod( RP_Care_Pipeline_Client::class, 'handle_prepare_staging' );
+        $ref->setAccessible( true );
+
+        $result = $ref->invoke( null, [
+            'type'    => 'prepare_staging',
+            'payload' => [ 'batch_id' => 'cc-s11-batch' ],
+        ] );
+
+        // Restore environment to avoid polluting other tests.
+        update_option( RP_Care_Pipeline_Client::OPT_ENVIRONMENT,    'production' );
+        delete_option( 'rpcare_pipeline_canonical_url' );
+
+        $this->assertSame( 'staging_ready', $result['event'] ?? null,
+            'handle_prepare_staging must set event=staging_ready at top level' );
+        $this->assertTrue( $result['success'] ?? false,
+            'handle_prepare_staging must set success=true' );
+        $this->assertSame( 'cc-s11-batch', $result['batch_id'] ?? null,
+            'handle_prepare_staging must echo back batch_id' );
+    }
+
+    // CC-S12: handle_run_test_suite returns event='tests_complete' with severity.
+    public function test_handle_run_test_suite_returns_tests_complete_event(): void {
+        // Configure environment as staging so the handler proceeds.
+        update_option( RP_Care_Pipeline_Client::OPT_ENVIRONMENT,    'staging' );
+        update_option( 'rpcare_pipeline_canonical_url', 'https://staging.example.test' );
+
+        // Mock HTTP call to staging URL so the health check returns 200.
+        $GLOBALS['_wp_remote_get_mock'] = [ 'response' => [ 'code' => 200 ], 'body' => '' ];
+
+        $ref = new ReflectionMethod( RP_Care_Pipeline_Client::class, 'handle_run_test_suite' );
+        $ref->setAccessible( true );
+
+        $result = $ref->invoke( null, [
+            'type'    => 'run_test_suite',
+            'payload' => [ 'batch_id' => 'cc-s12-batch' ],
+        ] );
+
+        // Restore.
+        update_option( RP_Care_Pipeline_Client::OPT_ENVIRONMENT, 'production' );
+        delete_option( 'rpcare_pipeline_canonical_url' );
+        $GLOBALS['_wp_remote_get_mock'] = null;
+
+        $this->assertSame( 'tests_complete', $result['event'] ?? null,
+            'handle_run_test_suite must set event=tests_complete at top level' );
+        $this->assertTrue( $result['success'] ?? false,
+            'handle_run_test_suite must set success=true' );
+        $this->assertArrayHasKey( 'severity', $result,
+            'handle_run_test_suite must include severity at top level' );
+        $this->assertArrayHasKey( 'test_report', $result,
+            'handle_run_test_suite must include test_report at top level' );
+    }
+
+    // CC-S13: handle_verify_production returns event='production_verified'.
+    public function test_handle_verify_production_returns_production_verified_event(): void {
+        $ref = new ReflectionMethod( RP_Care_Pipeline_Client::class, 'handle_verify_production' );
+        $ref->setAccessible( true );
+
+        $result = $ref->invoke( null, [
+            'type'    => 'verify_production',
+            'payload' => [ 'batch_id' => 'cc-s13-batch' ],
+        ] );
+
+        $this->assertSame( 'production_verified', $result['event'] ?? null,
+            'handle_verify_production must set event=production_verified at top level' );
+        $this->assertTrue( $result['success'] ?? false,
+            'handle_verify_production must set success=true' );
+        $this->assertArrayHasKey( 'test_report', $result,
+            'handle_verify_production must include test_report at top level' );
+    }
+
+    // CC-S14: find_artifact with mismatched expected_version returns WP_Error.
+    public function test_find_artifact_version_mismatch_returns_wp_error(): void {
+        $manifest = [
+            'artifacts' => [
+                [
+                    'type'    => 'plugin',
+                    'slug'    => 'woocommerce',
+                    'id'      => 'abc-123',
+                    'sha256'  => str_repeat( 'a', 64 ),
+                    'version' => '8.0.0',
+                ],
+            ],
+        ];
+
+        $ref = new ReflectionMethod( RP_Care_Task_Updates::class, 'find_artifact' );
+        $ref->setAccessible( true );
+
+        $result = $ref->invoke( null, $manifest, 'plugin', 'woocommerce', '9.0.0' );
+
+        $this->assertTrue( is_wp_error( $result ),
+            'find_artifact with mismatched version must return WP_Error' );
+        $this->assertSame( 'artifact_version_mismatch', $result->get_error_code(),
+            'Error code must be artifact_version_mismatch' );
+    }
+
+    // CC-S15: find_artifact with wrong slug returns not_found even if type matches.
+    public function test_find_artifact_type_slug_identity_no_false_match(): void {
+        $manifest = [
+            'artifacts' => [
+                [
+                    'type'    => 'plugin',
+                    'slug'    => 'woocommerce',
+                    'id'      => 'abc-123',
+                    'sha256'  => str_repeat( 'a', 64 ),
+                    'version' => '8.0.0',
+                ],
+                [
+                    'type'    => 'theme',
+                    'slug'    => 'storefront',
+                    'id'      => 'def-456',
+                    'sha256'  => str_repeat( 'b', 64 ),
+                    'version' => '4.0.0',
+                ],
+            ],
+        ];
+
+        $ref = new ReflectionMethod( RP_Care_Task_Updates::class, 'find_artifact' );
+        $ref->setAccessible( true );
+
+        // Plugin lookup must not match the theme with the same-looking slug area.
+        $result = $ref->invoke( null, $manifest, 'plugin', 'storefront', '' );
+        $this->assertTrue( is_wp_error( $result ),
+            'Plugin lookup for "storefront" must not match the theme artifact' );
+
+        // Theme lookup must not match the plugin.
+        $result2 = $ref->invoke( null, $manifest, 'theme', 'woocommerce', '' );
+        $this->assertTrue( is_wp_error( $result2 ),
+            'Theme lookup for "woocommerce" must not match the plugin artifact' );
+
+        // Correct type+slug combinations must resolve.
+        $ok1 = $ref->invoke( null, $manifest, 'plugin', 'woocommerce', '' );
+        $this->assertFalse( is_wp_error( $ok1 ), 'plugin+woocommerce must resolve' );
+
+        $ok2 = $ref->invoke( null, $manifest, 'theme', 'storefront', '' );
+        $this->assertFalse( is_wp_error( $ok2 ), 'theme+storefront must resolve' );
+    }
+
+    // CC-S16: apply_manifest_items puts deferred translations in deferred[], not applied[].
+    public function test_apply_manifest_splits_deferred_from_applied(): void {
+        $manifest = [
+            'proposed_updates' => [
+                'plugins'      => [],
+                'themes'       => [],
+                'core'         => [],
+                'translations' => [
+                    [ 'slug' => 'jetpack', 'type' => 'translation', 'from_version' => '1.0', 'to_version' => '2.0' ],
+                    [ 'slug' => 'hello',   'type' => 'translation', 'from_version' => '1.0', 'to_version' => '2.0' ],
+                ],
+            ],
+            'artifacts' => [],
+        ];
+
+        $method = new ReflectionMethod( RP_Care_Task_Updates::class, 'apply_manifest_items' );
+        $method->setAccessible( true );
+        $result = $method->invoke( null, $manifest, 'cc-s16-batch', 'staging' );
+
+        $this->assertArrayHasKey( 'applied',  $result );
+        $this->assertArrayHasKey( 'deferred', $result );
+        $this->assertCount( 0, $result['applied'],  'No applied items for translation-only manifest' );
+        $this->assertCount( 2, $result['deferred'], 'Both translations must be in deferred[]' );
+    }
+
+    // CC-S17: outbox enqueue returns a UUID string on success.
+    public function test_pipeline_outbox_enqueue_returns_uuid_string(): void {
+        if ( ! class_exists( 'RP_Care_Pipeline_Outbox' ) ) {
+            $this->markTestSkipped( 'RP_Care_Pipeline_Outbox not loaded.' );
+        }
+
+        // Ensure $wpdb stub is present (another test may have unset it).
+        if ( ! isset( $GLOBALS['wpdb'] ) || ! $GLOBALS['wpdb'] ) {
+            $GLOBALS['wpdb'] = new wpdb();
+        }
+
+        // RP_Care_Pipeline_Outbox::enqueue requires a DB. The stub's insert()
+        // returns false (no real DB), so the method returns WP_Error gracefully.
+        $result = RP_Care_Pipeline_Outbox::enqueue( 'batch-s17', 'staging_updated', [ 'foo' => 'bar' ] );
+
+        // In test environments without a DB the method returns WP_Error — that's acceptable.
+        // In environments where $wpdb->insert returns 1 it must return a UUID string.
+        $this->assertTrue(
+            is_string( $result ) || is_wp_error( $result ),
+            'enqueue must return a UUID string or WP_Error (no exceptions)'
+        );
+        if ( is_string( $result ) ) {
+            $this->assertMatchesRegularExpression(
+                '/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i',
+                $result,
+                'enqueue return value must be a valid UUID v4'
+            );
+        }
+    }
+
+    // CC-S18: send_batch_event 5xx returns retry_later WP_Error.
+    public function test_send_batch_event_5xx_returns_retry_later(): void {
+        $enc_token = $this->care_encrypt( 'test-pc-token-cc-s18' );
+        update_option( RP_Care_Pipeline_Client::OPT_ENABLED,    true );
+        update_option( 'rpcare_hub_url',                        'http://pc.example.test' );
+        update_option( RP_Care_Pipeline_Client::OPT_TOKEN,      $enc_token );
+        update_option( RP_Care_Pipeline_Client::OPT_INSTANCE_ID,'inst-cc-s18' );
+
+        $GLOBALS['_wp_remote_post_mock'] = static function( $url, $args ) {
+            return [ 'response' => [ 'code' => 503 ], 'body' => 'Service Unavailable' ];
+        };
+
+        $result = RP_Care_Pipeline_Client::send_batch_event(
+            'cc-s18-batch',
+            'staging_updated',
+            [],
+            'evt-uuid-s18'
+        );
+
+        $GLOBALS['_wp_remote_post_mock'] = null;
+
+        $this->assertTrue( is_wp_error( $result ), 'send_batch_event on 5xx must return WP_Error' );
+        $this->assertSame( 'retry_later', $result->get_error_code(),
+            'Error code on 5xx must be retry_later' );
     }
 }

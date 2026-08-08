@@ -76,7 +76,11 @@ jobs:
       - name: Extract version
         id: meta
         run: |
-          VERSION=$(grep "^define('RPCARE_VERSION'" replanta-care.php | sed "s/.*'\([0-9.]*\)'.*/\1/")
+          VERSION=$(sed -nE "s/^[[:space:]]*define\([[:space:]]*'RPCARE_VERSION'[[:space:]]*,[[:space:]]*'([0-9]+\.[0-9]+\.[0-9]+)'[[:space:]]*\);/\1/p" replanta-care.php)
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "ERROR: Could not extract a valid RPCARE_VERSION from replanta-care.php"
+            exit 1
+          fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Releasing v$VERSION"
 

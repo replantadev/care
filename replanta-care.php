@@ -3,7 +3,7 @@
  * Plugin Name: Replanta Care
  * Plugin URI: https://replanta.dev
  * Description: Plugin de mantenimiento WordPress automatizado para clientes de Replanta con integracion Hub
- * Version: 1.15.70
+ * Version: 1.15.71
  * Author: Replanta
  * Author URI: https://replanta.dev
  * License: GPL v2 or later
@@ -18,7 +18,7 @@ if (!defined('ABSPATH')) {
 
 // Define plugin constants
 if ( ! defined( 'RPCARE_VERSION' ) ) {
-    define( 'RPCARE_VERSION', '1.15.70' );
+    define( 'RPCARE_VERSION', '1.15.71' );
 }
 define('RPCARE_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('RPCARE_PLUGIN_PATH', plugin_dir_path(__FILE__));
@@ -201,6 +201,9 @@ class ReplantaCare {
             'inc/class-backup-provider.php',
             'inc/class-inventory-snapshot.php',
             'inc/class-isolation-checker.php',
+            'inc/class-staging-email-sink.php',
+            'inc/class-staging-webhook-guard.php',
+            'inc/class-staging-admin-banner.php',
             'inc/class-staging-provider.php',
             'inc/class-test-runner.php',
             'inc/class-approval-screen.php',
@@ -287,6 +290,17 @@ class ReplantaCare {
             // Register pipeline AS callbacks (production backup, etc.).
             if ( class_exists( 'RP_Care_Task_Updates' ) ) {
                 RP_Care_Task_Updates::register_pipeline_hooks();
+            }
+
+            // Staging isolation: email sink, webhook guard, admin banner.
+            if ( class_exists( 'RP_Care_Staging_Email_Sink' ) ) {
+                RP_Care_Staging_Email_Sink::register();
+            }
+            if ( class_exists( 'RP_Care_Staging_Webhook_Guard' ) ) {
+                RP_Care_Staging_Webhook_Guard::register();
+            }
+            if ( is_admin() && class_exists( 'RP_Care_Staging_Admin_Banner' ) ) {
+                RP_Care_Staging_Admin_Banner::register();
             }
         } catch (Exception $e) {
             error_log('Replanta Care: Component initialization error - ' . $e->getMessage());

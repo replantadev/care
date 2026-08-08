@@ -70,6 +70,25 @@ Cuando el modo automatico esta activo, Care:
 
 Por defecto las tareas se ejecutan en horario de baja carga (madrugada). Puedes personalizar la hora en **Configuracion > Programacion**.
 
+## Entorno de staging para actualizaciones
+
+El propietario del sitio debe proporcionar y mantener una URL de staging exclusiva, por ejemplo `https://dev2.example.com`, y declararla en **Replanta Care > Configuracion > URL de staging**. La URL por si sola no crea ni sincroniza el entorno: debe apuntar a una instalacion WordPress funcional, aislada y clonada desde produccion.
+
+Antes de habilitar el pipeline, el entorno de staging debe cumplir lo siguiente:
+
+- HTTPS y DNS validos, y acceso disponible para el operador responsable.
+- Copia reciente de los archivos y de la base de datos de produccion.
+- Replanta Care instalado y emparejado con Plugin Center como entorno `staging`; produccion se empareja por separado como `production`.
+- Indexacion bloqueada, correos salientes neutralizados y pasarelas de pago en modo prueba o desactivadas.
+- Webhooks, pedidos, integraciones ERP/CRM y cualquier otra accion externa neutralizados.
+- Cache separada de produccion; Redis debe funcionar correctamente o quedar desactivado durante la validacion.
+
+Care no solicita ni almacena credenciales MySQL del cliente para este flujo. Si el hosting no ofrece clonacion automatica, el cliente o el operador crea/refresca el clon con las herramientas del hosting. Para una clonacion manual pueden necesitarse credenciales de base de datos y acceso a archivos, pero se gestionan fuera de Care y no deben introducirse en el campo URL.
+
+El emparejamiento del staging usa credenciales tecnicas propias del pipeline y no debe consumir una segunda plaza comercial del plan. En licencias de una plaza no se debe volver a ejecutar el onboarding normal con la misma clave sobre la URL de staging; Plugin Center debe registrarla como instancia subordinada del mismo grupo.
+
+Una vez que las dos instalaciones estan emparejadas, Plugin Center puede dirigir el lote firmado al staging, recoger las pruebas y solicitar aprobacion antes de aplicar exactamente el mismo lote en produccion.
+
 ## Constantes wp-config.php
 
 | Constante | Descripcion | Default |

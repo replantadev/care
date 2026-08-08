@@ -41,6 +41,9 @@ class RP_Care_Isolation_Checker {
             self::check_maintenance_mode_available(),
             self::check_woo_emails_disabled(),
             self::check_pipelines_not_live(),
+            self::check_wp_environment_type(),
+            self::check_redis_isolated(),
+            self::check_db_isolated(),
         ];
 
         $failed_critical = array_filter( $checks, fn( $c ) => $c['level'] === self::LEVEL_CRITICAL && $c['status'] !== self::LEVEL_OK );
@@ -88,6 +91,11 @@ class RP_Care_Isolation_Checker {
 
         // Check for rpcare-specific suppression flag.
         $suppressed = $suppressed || (bool) get_option( 'rpcare_staging_suppress_email', false );
+
+        // Email sink active means suppression/redirect is in effect.
+        $suppressed = $suppressed || (
+            class_exists( 'RP_Care_Staging_Email_Sink' ) && RP_Care_Staging_Email_Sink::is_active()
+        );
 
         if ( $suppressed ) {
             return self::ok( 'email_suppressed', 'Email suppression detected.' );
@@ -198,6 +206,77 @@ class RP_Care_Isolation_Checker {
         }
 
         return self::ok( 'payment_gateways', 'No live payment gateways detected.' );
+    }
+
+    private static function check_wp_environment_type(): array {
+        if ( ! function_exists( 'wp_get_environment_type' ) ) {
+            return self::skip( 'wp_environment_type', 'wp_get_environment_type() not available.' );
+        }
+        $env_type = wp_get_environment_type();
+        if ( $env_type === 'production' ) {
+            return self::fail(
+                'wp_environment_type',
+                'WP_ENVIRONMENT_TYPE is "production". Set it to "staging" in wp-config.php on this staging instance.',
+                self::LEVEL_CRITICAL
+            );
+        }
+        return self::ok( 'wp_environment_type', "WP_ENVIRONMENT_TYPE is \"$env_type\"." );
+    }
+
+    private static function check_redis_isolated(): array {
+        $redis_configured = defined( 'WP_REDIS_HOST' ) || defined( 'WP_REDIS_SCHEME' ) || class_exists( 'WP_Object_Cache' );
+        if ( ! $redis_configured ) {
+            return self::skip( 'redis_isolated', 'Redis not detected.' );
+        }
+
+        if ( ! defined( 'WP_REDIS_PREFIX' ) || (string) WP_REDIS_PREFIX === '' ) {
+            return self::fail(
+                'redis_isolated',
+                'Redis is configured but WP_REDIS_PREFIX is not set. Staging and production may share cache keys if they use the same Redis instance.',
+                self::LEVEL_CRITICAL
+            );
+        }
+
+        $prefix = (string) WP_REDIS_PREFIX;
+        return self::ok( 'redis_isolated', "WP_REDIS_PREFIX is set (\"$prefix\"). Cache keys are namespaced." );
+    }
+
+    private static function check_db_isolated(): array {
+        global $wpdb;
+        if ( ! isset( $wpdb ) || ! is_object( $wpdb ) ) {
+            return self::skip( 'db_isolated', 'wpdb not available.' );
+        }
+
+        $current_db = (string) ( $wpdb->dbname ?? ( defined( 'DB_NAME' ) ? DB_NAME : '' ) );
+        if ( $current_db === '' ) {
+            return self::skip( 'db_isolated', 'DB_NAME could not be determined.' );
+        }
+
+        $prod_db = (string) get_option( 'rpcare_production_db_name', '' );
+        if ( $prod_db !== '' ) {
+            if ( $current_db === $prod_db ) {
+                return self::fail(
+                    'db_isolated',
+                    "Staging DB (\"$current_db\") matches the registered production DB. This staging instance shares the production database.",
+                    self::LEVEL_CRITICAL
+                );
+            }
+            return self::ok( 'db_isolated', "Staging DB \"$current_db\" differs from production DB \"$prod_db\"." );
+        }
+
+        // Without a stored reference, use naming convention as a heuristic.
+        $lower = strtolower( $current_db );
+        if ( str_contains( $lower, 'staging' ) || str_contains( $lower, 'stage' ) || str_contains( $lower, '_stg' ) ) {
+            return self::ok( 'db_isolated', "Database name \"$current_db\" appears to be staging-specific." );
+        }
+
+        return self::fail(
+            'db_isolated',
+            "Database name \"$current_db\" does not identify as staging. " .
+            'Set the rpcare_production_db_name option to the production DB name to enable comparison, ' .
+            'or use a staging-specific DB name.',
+            self::LEVEL_WARNING
+        );
     }
 
     // ── Result builders ──────────────────────────────────────────────────────

@@ -175,6 +175,24 @@ Migración idempotente: `PC_DB_Migrations::run()` en cada carga del plugin; salt
 
 ## 5. Protocolo de emparejamiento
 
+### Responsabilidad del propietario y preparacion del staging
+
+El propietario del sitio proporciona una URL exclusiva de staging y la declara en **Care > Configuracion > URL de staging**. Registrar esa URL no crea un clon ni concede acceso al servidor: debe existir una instalacion WordPress funcional en esa direccion.
+
+El procedimiento soportado para un hosting externo es:
+
+1. El cliente o el operador crea el subdominio, su HTTPS y una instalacion clonada desde produccion usando la herramienta del hosting o un proceso manual.
+2. Neutraliza indexacion, correo saliente, pagos reales, webhooks, pedidos e integraciones externas.
+3. Instala Care en ambos WordPress.
+4. Plugin Center crea un grupo de sitio y empareja cada instalacion con credenciales independientes: una como `production` y otra como `staging`.
+5. Care y Plugin Center verifican URL canonica, aislamiento y capacidades antes de habilitar el pipeline para ese grupo.
+
+Care no pide ni conserva usuario o contrasena de MySQL para el emparejamiento ni para aplicar lotes. Una URL de staging vacia tampoco puede construirse solo con credenciales de base de datos: clonar WordPress requiere archivos, base de datos, reescritura segura de URLs y controles de aislamiento. Si esas credenciales son necesarias para una clonacion manual, se gestionan fuera de Care mediante el panel o el acceso seguro del hosting.
+
+La instancia subordinada usa las credenciales de pairing del pipeline. No debe validarse como una segunda instalacion comercial con la misma licencia de una plaza ni consumir otro seat; se enlaza al grupo existente desde Plugin Center.
+
+La instalacion de staging debe usar base de datos, cache y credenciales de servicios separadas de produccion. Redis debe estar operativo o desactivado; nunca debe compartir prefijo o base logica con produccion.
+
 ```
 Operador en PC Admin
     │

@@ -39,6 +39,7 @@ ehthumbs.db
 
 # Local secure config
 config.php
+!vendor/woocommerce/action-scheduler/classes/migration/Config.php
 
 # PHPUnit artifacts
 .phpunit.result.cache

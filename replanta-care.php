@@ -3,7 +3,7 @@
  * Plugin Name: Replanta Care
  * Plugin URI: https://replanta.dev
  * Description: Plugin de mantenimiento WordPress automatizado para clientes de Replanta con integracion Hub
- * Version: 1.15.69
+ * Version: 1.15.70
  * Author: Replanta
  * Author URI: https://replanta.dev
  * License: GPL v2 or later
@@ -18,7 +18,7 @@ if (!defined('ABSPATH')) {
 
 // Define plugin constants
 if ( ! defined( 'RPCARE_VERSION' ) ) {
-    define( 'RPCARE_VERSION', '1.15.69' );
+    define( 'RPCARE_VERSION', '1.15.70' );
 }
 define('RPCARE_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('RPCARE_PLUGIN_PATH', plugin_dir_path(__FILE__));
@@ -50,6 +50,14 @@ if (file_exists($config_file)) {
 // Auto-updates via Hub (Hub fetches from GitHub and serves the zip ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â no token needed on client sites)
 if ( file_exists( RPCARE_PLUGIN_PATH . 'vendor/autoload.php' ) ) {
     require_once RPCARE_PLUGIN_PATH . 'vendor/autoload.php';
+}
+
+// The Composer package ships Action Scheduler but does not autoload its
+// WordPress bootstrap. Load it while plugins are being included so its normal
+// plugins_loaded registration runs even when WooCommerce is not installed.
+$action_scheduler_file = RPCARE_PLUGIN_PATH . 'vendor/woocommerce/action-scheduler/action-scheduler.php';
+if ( ! function_exists( 'as_enqueue_async_action' ) && file_exists( $action_scheduler_file ) ) {
+    require_once $action_scheduler_file;
 }
 
 /**

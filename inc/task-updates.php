@@ -2124,7 +2124,7 @@ class RP_Care_Task_Updates {
      * Restore a backup created by create_pipeline_backup().
      * Returns true on success, WP_Error on failure.
      */
-    private static function restore_pipeline_backup( string $backup_id, string $batch_id ): true|\WP_Error {
+    private static function restore_pipeline_backup( string $backup_id, string $batch_id ): bool|\WP_Error {
         $record = get_option( 'rpcare_pipeline_backup_' . $batch_id );
         if ( ! is_array( $record ) ) {
             return new \WP_Error( 'backup_record_missing', 'No backup record found for batch.' );
@@ -2325,7 +2325,7 @@ class RP_Care_Task_Updates {
      * Restore a DB snapshot from a SQL dump file via wpdb.
      * Returns true on success, WP_Error on failure.
      */
-    private static function restore_db_from_snapshot( string $sql_file ): true|\WP_Error {
+    private static function restore_db_from_snapshot( string $sql_file ): bool|\WP_Error {
         global $wpdb;
 
         if ( ! isset( $wpdb ) || ! method_exists( $wpdb, 'query' ) ) {

@@ -430,7 +430,7 @@ class RP_Care_Approval_Screen {
      * Core approval processing shared by the form POST and REST endpoints.
      * Returns WP_Error if the approval could not be sent to PC (transient preserved for retry).
      */
-    private static function process_approval( array $approval ): true|\WP_Error {
+    private static function process_approval( array $approval ): bool|\WP_Error {
         $batch_id = $approval['batch_id'];
         $decision = $approval['decision'];
 
@@ -468,4 +468,3 @@ class RP_Care_Approval_Screen {
         return true;
     }
 }
-

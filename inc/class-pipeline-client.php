@@ -742,7 +742,7 @@ class RP_Care_Pipeline_Client {
      * @param array $approval_data  Must include 'batch_id' and the full approval payload.
      * @return true|\WP_Error
      */
-    public static function send_approval_to_pc( array $approval_data ): true|\WP_Error {
+    public static function send_approval_to_pc( array $approval_data ): bool|\WP_Error {
         if ( ! self::is_pipeline_enabled() ) {
             return new \WP_Error( 'pipeline_disabled', 'Pipeline is not enabled.' );
         }
@@ -822,7 +822,7 @@ class RP_Care_Pipeline_Client {
         string $event,
         array  $payload,
         string $event_id = ''
-    ): true|\WP_Error {
+    ): bool|\WP_Error {
         if ( ! self::is_pipeline_enabled() ) {
             return new \WP_Error( 'pipeline_disabled', 'Pipeline is not enabled.' );
         }

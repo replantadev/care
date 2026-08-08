@@ -46,7 +46,7 @@ interface RP_Care_Backup_Provider {
      * @param array $descriptor  Value previously returned by createPreUpdate or latestEvidence.
      * @return true|\WP_Error
      */
-    public function verify( array $descriptor ): true|\WP_Error;
+    public function verify( array $descriptor ): bool|\WP_Error;
 
     /**
      * Begin a restore from the given descriptor.
@@ -55,7 +55,7 @@ interface RP_Care_Backup_Provider {
      * @param array $descriptor
      * @return true|\WP_Error
      */
-    public function restore( array $descriptor ): true|\WP_Error;
+    public function restore( array $descriptor ): bool|\WP_Error;
 
     /**
      * Declares what this provider supports.
@@ -113,7 +113,7 @@ class RP_Care_BackuplyObserved implements RP_Care_Backup_Provider {
         );
     }
 
-    public function verify( array $descriptor ): true|\WP_Error {
+    public function verify( array $descriptor ): bool|\WP_Error {
         if ( empty( $descriptor['id'] ) ) {
             return new \WP_Error( 'invalid_descriptor', 'Descriptor is missing id.' );
         }
@@ -131,7 +131,7 @@ class RP_Care_BackuplyObserved implements RP_Care_Backup_Provider {
         return new \WP_Error( 'backup_not_found', "No Backuply log entry for id '{$descriptor['id']}'." );
     }
 
-    public function restore( array $descriptor ): true|\WP_Error {
+    public function restore( array $descriptor ): bool|\WP_Error {
         return new \WP_Error(
             'observe_only',
             'BackuplyObserved cannot perform programmatic restores. Use the Backuply admin panel.'
@@ -226,7 +226,7 @@ class RP_Care_LocalSnapshot implements RP_Care_Backup_Provider {
         return $descriptor;
     }
 
-    public function verify( array $descriptor ): true|\WP_Error {
+    public function verify( array $descriptor ): bool|\WP_Error {
         $path = $descriptor['path'] ?? '';
         if ( empty( $path ) || ! is_dir( $path ) ) {
             return new \WP_Error( 'snapshot_missing', "Snapshot directory '$path' does not exist." );
@@ -237,7 +237,7 @@ class RP_Care_LocalSnapshot implements RP_Care_Backup_Provider {
         return true;
     }
 
-    public function restore( array $descriptor ): true|\WP_Error {
+    public function restore( array $descriptor ): bool|\WP_Error {
         $verify = $this->verify( $descriptor );
         if ( is_wp_error( $verify ) ) {
             return $verify;
@@ -277,7 +277,7 @@ class RP_Care_LocalSnapshot implements RP_Care_Backup_Provider {
 
     // ── Private helpers ────────────────────────────────────────────────────────
 
-    private static function dump_db( string $dest_file ): true|\WP_Error {
+    private static function dump_db( string $dest_file ): bool|\WP_Error {
         global $wpdb;
         $tables = $wpdb->get_col( 'SHOW TABLES' );
         if ( empty( $tables ) ) {
@@ -305,7 +305,7 @@ class RP_Care_LocalSnapshot implements RP_Care_Backup_Provider {
         return true;
     }
 
-    private static function restore_db( string $sql_file ): true|\WP_Error {
+    private static function restore_db( string $sql_file ): bool|\WP_Error {
         if ( ! file_exists( $sql_file ) ) {
             return new \WP_Error( 'restore_failed', "SQL file $sql_file not found." );
         }

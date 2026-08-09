@@ -1917,6 +1917,12 @@ class RP_Care_Task_Updates {
         $download_url    = $url_data['download_url'];
         $expected_sha256 = $url_data['sha256'] ?? ( $artifact['sha256'] ?? '' );
 
+        // wp_tempnam() lives in wp-admin/includes/file.php, which is not
+        // auto-loaded in WP-CLI cron context.
+        if ( ! function_exists( 'wp_tempnam' ) ) {
+            require_once ABSPATH . 'wp-admin/includes/file.php';
+        }
+
         $tmp_file = wp_tempnam( 'rpcare-artifact-' );
         if ( ! $tmp_file ) {
             return new \WP_Error( 'tmp_file_failed', 'Could not create temporary file for artifact download.' );
@@ -2343,6 +2349,10 @@ class RP_Care_Task_Updates {
             $stmt = trim( $stmt );
             if ( empty( $stmt ) || str_starts_with( $stmt, '--' ) ) {
                 continue;
+            }
+            // Drop the table first so restore succeeds on a live database.
+            if ( preg_match( '/^CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?[`"]?(\w+)[`"]?/i', $stmt, $tm ) ) {
+                $wpdb->query( 'DROP TABLE IF EXISTS `' . $tm[1] . '`' );
             }
             $result = $wpdb->query( $stmt );
             if ( $result === false && ! empty( $wpdb->last_error ) ) {

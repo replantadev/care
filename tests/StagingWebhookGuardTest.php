@@ -144,4 +144,47 @@ class StagingWebhookGuardTest extends TestCase {
         );
         $this->assertSame( $existing, $result, 'Pre-handled response must not be blocked' );
     }
+
+    public function test_put_to_external_blocked_when_not_in_allowlist(): void {
+        update_option( RP_Care_Pipeline_Client::OPT_ENVIRONMENT, 'staging' );
+        $result = RP_Care_Staging_Webhook_Guard::maybe_block(
+            false,
+            [ 'method' => 'PUT' ],
+            'https://api.example.com/resource/1'
+        );
+        $this->assertInstanceOf( WP_Error::class, $result );
+        $this->assertSame( 'rpcare_staging_webhook_blocked', $result->get_error_code() );
+    }
+
+    public function test_patch_to_external_blocked_when_not_in_allowlist(): void {
+        update_option( RP_Care_Pipeline_Client::OPT_ENVIRONMENT, 'staging' );
+        $result = RP_Care_Staging_Webhook_Guard::maybe_block(
+            false,
+            [ 'method' => 'PATCH' ],
+            'https://api.example.com/resource/1'
+        );
+        $this->assertInstanceOf( WP_Error::class, $result );
+        $this->assertSame( 'rpcare_staging_webhook_blocked', $result->get_error_code() );
+    }
+
+    public function test_delete_to_external_blocked_when_not_in_allowlist(): void {
+        update_option( RP_Care_Pipeline_Client::OPT_ENVIRONMENT, 'staging' );
+        $result = RP_Care_Staging_Webhook_Guard::maybe_block(
+            false,
+            [ 'method' => 'DELETE' ],
+            'https://api.example.com/resource/1'
+        );
+        $this->assertInstanceOf( WP_Error::class, $result );
+        $this->assertSame( 'rpcare_staging_webhook_blocked', $result->get_error_code() );
+    }
+
+    public function test_head_request_always_allowed(): void {
+        update_option( RP_Care_Pipeline_Client::OPT_ENVIRONMENT, 'staging' );
+        $result = RP_Care_Staging_Webhook_Guard::maybe_block(
+            false,
+            [ 'method' => 'HEAD' ],
+            'https://external.example.com/endpoint'
+        );
+        $this->assertFalse( $result, 'HEAD requests must not be blocked (read-only)' );
+    }
 }

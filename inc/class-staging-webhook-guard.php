@@ -2,9 +2,14 @@
 /**
  * Replanta Care — Staging Webhook Guard
  *
- * Blocks outgoing HTTP POST requests from staging environments to prevent
- * staging sites from triggering production-side webhooks (payment processors,
- * notification services, CRMs, etc.).
+ * Blocks outgoing state-mutating HTTP requests (POST, PUT, PATCH, DELETE) from
+ * staging environments to prevent staging sites from triggering production-side
+ * webhooks (payment processors, notification services, CRMs, etc.).
+ *
+ * Scope limitation: this guard only covers requests made via the WordPress HTTP
+ * API (wp_remote_*, WP_Http). Outgoing calls made directly via cURL, PHP stream
+ * wrappers, or any HTTP client that bypasses wp_remote_*() cannot be intercepted
+ * from the pre_http_request filter.
  *
  * Requests to hosts in the allowlist are permitted; all others are blocked and
  * logged. Internal requests (localhost, 127.x.x.x, *.local, *.test, *.invalid)
@@ -38,7 +43,7 @@ class RP_Care_Staging_Webhook_Guard {
 	}
 
 	/**
-	 * Blocks POST requests to non-allowlisted external hosts.
+	 * Blocks state-mutating requests (POST, PUT, PATCH, DELETE) to non-allowlisted external hosts.
 	 *
 	 * @param false|array|\WP_Error $response Existing response (false = not yet handled).
 	 * @param array                 $args     Request arguments.
@@ -51,8 +56,9 @@ class RP_Care_Staging_Webhook_Guard {
 			return $response;
 		}
 
-		$method = strtoupper( $args['method'] ?? 'GET' );
-		if ( $method !== 'POST' ) {
+		$method         = strtoupper( $args['method'] ?? 'GET' );
+		$state_mutating = [ 'POST', 'PUT', 'PATCH', 'DELETE' ];
+		if ( ! in_array( $method, $state_mutating, true ) ) {
 			return $response;
 		}
 
@@ -66,15 +72,17 @@ class RP_Care_Staging_Webhook_Guard {
 		}
 
 		error_log( sprintf(
-			'Replanta Care Staging: Blocked outgoing POST to %s (not in allowlist).',
+			'Replanta Care Staging: Blocked outgoing %s to %s (not in allowlist).',
+			$method,
 			$url
 		) );
 
 		return new \WP_Error(
 			'rpcare_staging_webhook_blocked',
 			sprintf(
-				'Staging webhook guard: outgoing POST to %s is blocked. ' .
+				'Staging webhook guard: outgoing %s to %s is blocked. ' .
 				'Add the host to RPCARE_STAGING_WEBHOOK_ALLOWLIST to permit it.',
+				$method,
 				$host
 			)
 		);

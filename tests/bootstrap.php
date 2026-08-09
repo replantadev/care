@@ -1,7 +1,7 @@
 <?php
 // Minimal bootstrap for offline unit tests — no WP or DB required.
 define( 'ABSPATH', __DIR__ . '/../' );
-define( 'RPCARE_VERSION', '1.15.71' );
+define( 'RPCARE_VERSION', '1.15.72' );
 define( 'RPCARE_TESTING', true );
 
 // ── WP option store ────────────────────────────────────────────────────────

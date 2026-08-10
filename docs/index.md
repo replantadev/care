@@ -37,6 +37,7 @@ Replanta Care instala un sistema de mantenimiento automatico en el sitio WordPre
 - [Instalacion y activacion](getting-started.md)
 - [Configuracion y planes](configuration.md)
 - [Tareas de mantenimiento](tasks.md)
+- [Hoja de ruta](ROADMAP.md)
 - [Changelog](changelog.md)
 
 ## Recursos

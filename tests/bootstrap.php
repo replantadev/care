@@ -1,7 +1,7 @@
 <?php
 // Minimal bootstrap for offline unit tests — no WP or DB required.
 define( 'ABSPATH', __DIR__ . '/../' );
-define( 'RPCARE_VERSION', '1.15.72' );
+define( 'RPCARE_VERSION', '1.15.75' );
 define( 'RPCARE_TESTING', true );
 
 // ── WP option store ────────────────────────────────────────────────────────
@@ -241,4 +241,135 @@ if ( ! class_exists( 'RP_Care_Utils' ) ) {
     class RP_Care_Utils {
         public static function log( string $cat, string $level, string $msg, array $ctx = [] ): void {}
     }
+}
+
+// ── REST API stubs ─────────────────────────────────────────────────────────
+// Minimal stubs for testing REST endpoint handlers offline (no WP loaded).
+
+if ( ! class_exists( 'WP_REST_Request' ) ) {
+    class WP_REST_Request {
+        private array $headers = [];
+        private array $params  = [];
+
+        /**
+         * Set a header on the request.
+         * Key format mirrors what WP stores internally: lowercase, hyphens → underscores.
+         * e.g. 'X-Hub-Token' → 'x_hub_token'
+         */
+        public function set_header( string $key, string $value ): void {
+            $this->headers[ strtolower( str_replace( '-', '_', $key ) ) ] = $value;
+        }
+
+        /**
+         * Retrieve a header by WP-normalized key (lowercase, underscored).
+         */
+        public function get_header( string $key ): ?string {
+            return $this->headers[ strtolower( str_replace( '-', '_', $key ) ) ] ?? null;
+        }
+
+        public function set_param( string $key, $value ): void {
+            $this->params[ $key ] = $value;
+        }
+
+        public function get_param( string $key ) {
+            return $this->params[ $key ] ?? null;
+        }
+
+        public function get_json_params(): array {
+            return $this->params;
+        }
+    }
+}
+
+if ( ! class_exists( 'WP_REST_Response' ) ) {
+    class WP_REST_Response {
+        private $data;
+        private int $status;
+
+        public function __construct( $data = null, int $status = 200 ) {
+            $this->data   = $data;
+            $this->status = $status;
+        }
+
+        public function get_data() { return $this->data; }
+        public function get_status(): int { return $this->status; }
+    }
+}
+
+// Track routes registered during test; reset in setUp() via
+// $GLOBALS['_rest_routes'] = [].
+$GLOBALS['_rest_routes'] = [];
+if ( ! function_exists( 'register_rest_route' ) ) {
+    function register_rest_route( string $namespace, string $route, array $args, bool $override = false ): bool {
+        $GLOBALS['_rest_routes'][] = [
+            'namespace' => $namespace,
+            'route'     => $route,
+            'args'      => $args,
+        ];
+        return true;
+    }
+}
+
+// gmdate stub — returns a fixed deterministic timestamp for tests.
+if ( ! function_exists( 'gmdate' ) ) {
+    function gmdate( string $format, ?int $timestamp = null ): string {
+        return \gmdate( $format, $timestamp ?? time() );
+    }
+}
+
+// esc_url_raw stub (used by bootstrap handler in class-rest.php).
+if ( ! function_exists( 'esc_url_raw' ) ) {
+    function esc_url_raw( string $url ): string { return $url; }
+}
+
+// Additional WP stubs required by RP_Care_Golden_Snapshot and class-rest.php
+// when test files are run in isolation (not as part of the full suite).
+if ( ! function_exists( 'wp_parse_url' ) ) {
+    function wp_parse_url( string $url, int $component = -1 ): array|string|int|false|null {
+        return $component === -1 ? parse_url( $url ) : parse_url( $url, $component );
+    }
+}
+if ( ! function_exists( 'sanitize_text_field' ) ) {
+    function sanitize_text_field( $s ): string { return trim( (string) $s ); }
+}
+if ( ! function_exists( 'get_bloginfo' ) ) {
+    function get_bloginfo( string $show = '', string $filter = 'raw' ): string {
+        return match ( $show ) {
+            'version'  => '6.5',
+            'name'     => 'Test Site',
+            'url'      => 'http://localhost',
+            default    => '',
+        };
+    }
+}
+if ( ! function_exists( 'wp_generate_password' ) ) {
+    function wp_generate_password( int $length = 12, bool $special_chars = true, bool $extra_special_chars = false ): string {
+        return str_pad( '', $length, 'abcdefghij', STR_PAD_RIGHT );
+    }
+}
+if ( ! function_exists( 'wc_get_page_id' ) ) {
+    function wc_get_page_id( string $page ): int { return -1; }
+}
+if ( ! function_exists( 'wp_check_filetype' ) ) {
+    function wp_check_filetype( string $filename, ?array $mimes = null ): array {
+        $ext = pathinfo( $filename, PATHINFO_EXTENSION );
+        return [ 'ext' => $ext, 'type' => "text/$ext" ];
+    }
+}
+if ( ! function_exists( 'wp_upload_dir' ) ) {
+    function wp_upload_dir( ?string $time = null, bool $create_dir = true, bool $refresh_cache = false ): array {
+        $base = ABSPATH . 'wp-content/uploads';
+        return [
+            'path'    => $base,
+            'url'     => 'http://localhost/wp-content/uploads',
+            'subdir'  => '',
+            'basedir' => $base,
+            'baseurl' => 'http://localhost/wp-content/uploads',
+            'error'   => false,
+        ];
+    }
+}
+if ( ! function_exists( 'glob' ) ) {
+    // glob is a PHP built-in — this guard is defensive only.
+    function glob( string $pattern, int $flags = 0 ): array|false { return []; }
 }

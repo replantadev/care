@@ -110,6 +110,34 @@ class RP_Care_REST {
             'permission_callback' => '__return_true',
         ]);
 
+        // ── Woo autonomous maintenance endpoints (Capa 2) ────────────────────────
+        // All five are read-only Hub-authenticated operations.
+        register_rest_route( $this->control_ns, '/woo/telemetry', [
+            'methods'             => 'POST',
+            'callback'            => [ $this, 'hub_woo_telemetry' ],
+            'permission_callback' => '__return_true',
+        ] );
+        register_rest_route( $this->control_ns, '/woo/routes', [
+            'methods'             => 'POST',
+            'callback'            => [ $this, 'hub_woo_routes' ],
+            'permission_callback' => '__return_true',
+        ] );
+        register_rest_route( $this->control_ns, '/woo/snapshot', [
+            'methods'             => 'POST',
+            'callback'            => [ $this, 'hub_woo_snapshot' ],
+            'permission_callback' => '__return_true',
+        ] );
+        register_rest_route( $this->control_ns, '/woo/hygiene-dry', [
+            'methods'             => 'POST',
+            'callback'            => [ $this, 'hub_woo_hygiene_dry' ],
+            'permission_callback' => '__return_true',
+        ] );
+        register_rest_route( $this->control_ns, '/woo/anomalies', [
+            'methods'             => 'POST',
+            'callback'            => [ $this, 'hub_woo_anomalies' ],
+            'permission_callback' => '__return_true',
+        ] );
+
         // Main task execution endpoint
         register_rest_route($this->namespace, '/run', [
             'methods' => 'POST',
@@ -2364,6 +2392,230 @@ class RP_Care_REST {
             'generated_at' => $entry['generated_at'] ?? '',
             'plan'         => $entry['plan']          ?? '',
             'html'         => $html,
+        ], 200 );
+    }
+
+    // ── Woo Autonomous Maintenance — Capa 2 endpoints ─────────────────────────
+    // All five are read-only, Hub-authenticated, and return versioned envelopes.
+    // PC calls these via PC_Hub_Care::remote_action() with X-Hub-Token auth.
+
+    /**
+     * POST /wp-json/replanta-care/v1/woo/telemetry
+     *
+     * Returns the Care telemetry ring buffer (warning+ events, capped at 20).
+     * Safe and read-only: never modifies state.
+     *
+     * Response schema v1:
+     *   schema_version  int
+     *   generated_at    ISO-8601
+     *   event_count     int   — events at warning+ in buffer
+     *   buffer_size     int   — total events currently in ring buffer
+     *   max_buffer      int   — ring buffer capacity
+     *   events          array — up to 20 most-recent warning+ events (already redacted)
+     */
+    public function hub_woo_telemetry( WP_REST_Request $request ): WP_REST_Response {
+        if ( ! $this->validate_hub_token( $request, true ) ) {
+            return new WP_REST_Response( [ 'error' => 'Unauthorized' ], 403 );
+        }
+        if ( ! class_exists( 'RP_Care_Telemetry' ) ) {
+            return new WP_REST_Response( [ 'error' => 'Telemetry module not available' ], 503 );
+        }
+
+        $buf    = RP_Care_Telemetry::get_buffer();
+        $events = RP_Care_Telemetry::get_events_above( 'warning' );
+
+        // Return at most 20 events, most-recent first, to bound response size.
+        $events = array_slice( array_reverse( $events ), 0, 20 );
+
+        return new WP_REST_Response( [
+            'schema_version' => 1,
+            'generated_at'   => gmdate( 'c' ),
+            'event_count'    => count( $events ),
+            'buffer_size'    => count( $buf ),
+            'max_buffer'     => RP_Care_Telemetry::MAX_BUFFER_EVENTS,
+            'events'         => $events,
+        ], 200 );
+    }
+
+    /**
+     * POST /wp-json/replanta-care/v1/woo/routes
+     *
+     * Returns the last stored route monitor results.
+     * Read-only: never probes routes on demand (avoids self-loop and latency).
+     * Callers should trigger a route check separately if data is stale.
+     *
+     * Response schema v1:
+     *   schema_version  int
+     *   generated_at    ISO-8601
+     *   status          'ok' | 'no_data' | 'unhealthy'
+     *   healthy         bool   (absent when status=no_data)
+     *   checked_at      ISO-8601 (absent when status=no_data)
+     *   routes          object — per-route fingerprints (no body content)
+     *   issues          array  — routes with non-200 status
+     *   is_stale        bool   — true when a fresh check is overdue
+     */
+    public function hub_woo_routes( WP_REST_Request $request ): WP_REST_Response {
+        if ( ! $this->validate_hub_token( $request, true ) ) {
+            return new WP_REST_Response( [ 'error' => 'Unauthorized' ], 403 );
+        }
+        if ( ! class_exists( 'RP_Care_Route_Monitor' ) ) {
+            return new WP_REST_Response( [ 'error' => 'Route monitor module not available' ], 503 );
+        }
+
+        $results = RP_Care_Route_Monitor::get_last_results();
+        if ( $results === null ) {
+            return new WP_REST_Response( [
+                'schema_version' => 1,
+                'generated_at'   => gmdate( 'c' ),
+                'status'         => 'no_data',
+                'is_stale'       => true,
+                'message'        => 'No route check has run yet.',
+            ], 200 );
+        }
+
+        return new WP_REST_Response( [
+            'schema_version' => 1,
+            'generated_at'   => gmdate( 'c' ),
+            'status'         => ( $results['healthy'] ?? true ) ? 'ok' : 'unhealthy',
+            'healthy'        => $results['healthy']  ?? true,
+            'checked_at'     => $results['checked_at'] ?? '',
+            'routes'         => $results['routes']   ?? [],
+            'issues'         => $results['issues']   ?? [],
+            'is_stale'       => RP_Care_Route_Monitor::is_check_due(),
+        ], 200 );
+    }
+
+    /**
+     * POST /wp-json/replanta-care/v1/woo/snapshot
+     *
+     * Returns the golden snapshot diff against current state.
+     * Read-only: calls diff_against_golden() which captures current state
+     * but does NOT promote or persist anything.
+     *
+     * Response schema v1:
+     *   schema_version      int
+     *   generated_at        ISO-8601
+     *   has_golden          bool
+     *   has_drift           bool   (absent when has_golden=false)
+     *   diffs               object — field → {golden, current} (empty when no drift)
+     *   snapshot_age_sec    int
+     *   repair_steps        string[]
+     *   golden_captured_at  ISO-8601
+     *   golden_snapshot_id  string
+     */
+    public function hub_woo_snapshot( WP_REST_Request $request ): WP_REST_Response {
+        if ( ! $this->validate_hub_token( $request, true ) ) {
+            return new WP_REST_Response( [ 'error' => 'Unauthorized' ], 403 );
+        }
+        if ( ! class_exists( 'RP_Care_Golden_Snapshot' ) ) {
+            return new WP_REST_Response( [ 'error' => 'Golden snapshot module not available' ], 503 );
+        }
+
+        $golden = RP_Care_Golden_Snapshot::get_golden();
+        if ( $golden === null ) {
+            return new WP_REST_Response( [
+                'schema_version' => 1,
+                'generated_at'   => gmdate( 'c' ),
+                'has_golden'     => false,
+                'status'         => 'no_snapshot',
+                'message'        => 'No golden snapshot exists. Promote a snapshot first.',
+            ], 200 );
+        }
+
+        $diff = RP_Care_Golden_Snapshot::diff_against_golden();
+
+        return new WP_REST_Response( [
+            'schema_version'     => 1,
+            'generated_at'       => gmdate( 'c' ),
+            'has_golden'         => true,
+            'has_drift'          => $diff['has_drift']          ?? false,
+            'diffs'              => $diff['diffs']               ?? [],
+            'snapshot_age_sec'   => $diff['snapshot_age_sec']   ?? 0,
+            'repair_steps'       => $diff['repair_steps']        ?? [],
+            'golden_captured_at' => $golden['captured_at']      ?? '',
+            'golden_snapshot_id' => $golden['snapshot_id']      ?? '',
+        ], 200 );
+    }
+
+    /**
+     * POST /wp-json/replanta-care/v1/woo/hygiene-dry
+     *
+     * Runs a hygiene estimate in strict dry-run mode: counts rows eligible for
+     * cleanup but makes ZERO database mutations. The dry_run flag is hardcoded
+     * to true and cannot be overridden by the caller.
+     *
+     * Response schema v1:
+     *   schema_version      int
+     *   generated_at        ISO-8601
+     *   dry_run             bool   (always true — explicit guarantee)
+     *   operations          object — per-operation row counts
+     *   total_rows_deleted  int    — total eligible rows (not deleted)
+     *   wall_seconds        float
+     *   errors              string[]
+     */
+    public function hub_woo_hygiene_dry( WP_REST_Request $request ): WP_REST_Response {
+        if ( ! $this->validate_hub_token( $request, true ) ) {
+            return new WP_REST_Response( [ 'error' => 'Unauthorized' ], 403 );
+        }
+        if ( ! class_exists( 'RP_Care_Woo_Hygiene' ) ) {
+            return new WP_REST_Response( [ 'error' => 'Hygiene module not available' ], 503 );
+        }
+
+        // STRICT: dry_run=true is hardcoded — the caller cannot override this.
+        $result = RP_Care_Woo_Hygiene::run( [
+            'dry_run'     => true,
+            'max_rows'    => 500,
+            'max_seconds' => 20, // tighter budget for a synchronous API response
+        ] );
+
+        if ( is_wp_error( $result ) ) {
+            return new WP_REST_Response( [
+                'error' => $result->get_error_message(),
+                'code'  => $result->get_error_code(),
+            ], 503 );
+        }
+
+        return new WP_REST_Response( [
+            'schema_version'     => 1,
+            'generated_at'       => gmdate( 'c' ),
+            'dry_run'            => true,
+            'operations'         => $result['operations']         ?? [],
+            'total_rows_deleted' => $result['total_rows_deleted'] ?? 0,
+            'wall_seconds'       => $result['wall_seconds']       ?? 0.0,
+            'errors'             => $result['errors']             ?? [],
+        ], 200 );
+    }
+
+    /**
+     * POST /wp-json/replanta-care/v1/woo/anomalies
+     *
+     * Returns all active integration anomalies.
+     * Read-only: never resolves anomalies or modifies state.
+     *
+     * Response schema v1:
+     *   schema_version  int
+     *   generated_at    ISO-8601
+     *   anomaly_count   int
+     *   anomalies       array — see RP_Care_Integration_Detector::get_active_anomalies()
+     *                           Each entry: family, count, threshold, escalate_at,
+     *                           escalated, detected_at, message_hash, context_keys.
+     *                           No message content is stored or returned.
+     */
+    public function hub_woo_anomalies( WP_REST_Request $request ): WP_REST_Response {
+        if ( ! $this->validate_hub_token( $request, true ) ) {
+            return new WP_REST_Response( [ 'error' => 'Unauthorized' ], 403 );
+        }
+        if ( ! class_exists( 'RP_Care_Integration_Detector' ) ) {
+            return new WP_REST_Response( [ 'error' => 'Integration detector module not available' ], 503 );
+        }
+
+        $anomalies = RP_Care_Integration_Detector::get_active_anomalies();
+
+        return new WP_REST_Response( [
+            'schema_version' => 1,
+            'generated_at'   => gmdate( 'c' ),
+            'anomaly_count'  => count( $anomalies ),
+            'anomalies'      => $anomalies,
         ], 200 );
     }
 }

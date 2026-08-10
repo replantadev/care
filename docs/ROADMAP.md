@@ -143,7 +143,7 @@ backup verificado y aprobacion del operador para cualquier cambio sensible.
 - Piloto primero en laboratorio; despues staging controlado; finalmente un sitio
   real no critico con ventana, backup verificado y plan de rollback.
 
-### Estado de implementacion (Care v1.15.74)
+### Estado de implementacion (Care v1.15.75 + PC v1.1.88)
 
 | Componente | Clase | Estado |
 |---|---|---|
@@ -154,9 +154,26 @@ backup verificado y aprobacion del operador para cualquier cambio sensible.
 | Higiene WooCommerce | `RP_Care_Woo_Hygiene` | Implementado — sesiones, transients, AS completadas/canceladas, logs WC; lock+budget; dry_run; 10 tests |
 | Detector de anomalias | `RP_Care_Integration_Detector` | Implementado — 6 familias, umbral/ventana/escalacion, message_hash no contenido, nunca desactiva pasarelas; 15 tests |
 | Vista PC Woo Ops | `ajax_care_woo_health` + JS | Implementado — tab "Woo Ops" en panel per-site de PC; cinco secciones visuales |
+| REST endpoints Care | `RP_Care_REST` (Capa 2) | Implementado — 5 endpoints Hub-autenticados bajo `replanta-care/v1`; 40 tests |
 
-**Pendiente de capa 2:**
-- REST endpoints de Care que exponen los datos al Plugin Center (`/woo/telemetry`, `/woo/routes`, `/woo/snapshot`, `/woo/hygiene-dry`, `/woo/anomalies`).
+### Endpoints REST Capa 2 (replanta-care/v1)
+
+Todos usan metodo POST, autenticacion X-Hub-Token (sha256 del site_token), fail-closed cuando el token no esta configurado.
+
+| Ruta | Handler | Descripcion |
+|---|---|---|
+| `POST /woo/telemetry` | `hub_woo_telemetry` | Eventos warning+ del buffer de telemetria; max 20 entradas; sin contenido PII |
+| `POST /woo/routes` | `hub_woo_routes` | Resultados cacheados del monitor de rutas; nunca hace probe en tiempo real |
+| `POST /woo/snapshot` | `hub_woo_snapshot` | Diff del snapshot golden contra estado actual; sin promover ni persistir |
+| `POST /woo/hygiene-dry` | `hub_woo_hygiene_dry` | Estimacion de higiene en modo dry_run ESTRICTO — nunca modifica la BD |
+| `POST /woo/anomalies` | `hub_woo_anomalies` | Anomalias activas del detector de integraciones; sin contenido de mensaje |
+
+**Envelope de respuesta comun (schema_version=1):**
+```json
+{ "schema_version": 1, "generated_at": "ISO-8601", ...datos }
+```
+
+**Pendiente:**
 - Tests E2E con WordPress/WooCommerce reales en Docker.
 - Escenarios de laboratorio: rutas 404 con home cacheada, drift multidioma, limpieza idempotente, `Commands out of sync` sintetico, PII redaction, aprobacion, rollback.
 

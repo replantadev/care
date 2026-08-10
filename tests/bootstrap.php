@@ -228,6 +228,7 @@ if ( ! class_exists( 'wpdb' ) ) {
             }, $sql );
         }
         public function _real_escape( string $s ): string { return addslashes( $s ); }
+        public function esc_like( string $text ): string { return addcslashes( $text, '_%\\' ); }
     }
 }
 if ( ! isset( $GLOBALS['wpdb'] ) || ! $GLOBALS['wpdb'] ) {

@@ -3,7 +3,7 @@
  * Plugin Name: Replanta Care
  * Plugin URI: https://replanta.dev
  * Description: Plugin de mantenimiento WordPress automatizado para clientes de Replanta con integracion Hub
- * Version: 1.15.73
+ * Version: 1.15.74
  * Author: Replanta
  * Author URI: https://replanta.dev
  * License: GPL v2 or later
@@ -18,7 +18,7 @@ if (!defined('ABSPATH')) {
 
 // Define plugin constants
 if ( ! defined( 'RPCARE_VERSION' ) ) {
-    define( 'RPCARE_VERSION', '1.15.73' );
+    define( 'RPCARE_VERSION', '1.15.74' );
 }
 define('RPCARE_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('RPCARE_PLUGIN_PATH', plugin_dir_path(__FILE__));
@@ -207,6 +207,14 @@ class ReplantaCare {
             'inc/class-staging-provider.php',
             'inc/class-test-runner.php',
             'inc/class-approval-screen.php',
+
+            // Block B — Woo Autonomous Maintenance
+            'inc/class-rp-care-woo-policy-registry.php',
+            'inc/class-rp-care-telemetry.php',
+            'inc/class-rp-care-route-monitor.php',
+            'inc/class-rp-care-golden-snapshot.php',
+            'inc/class-rp-care-woo-hygiene.php',
+            'inc/class-rp-care-integration-detector.php',
         ];
 
         foreach ($required_files as $file) {
@@ -290,6 +298,11 @@ class ReplantaCare {
             // Register pipeline AS callbacks (production backup, etc.).
             if ( class_exists( 'RP_Care_Task_Updates' ) ) {
                 RP_Care_Task_Updates::register_pipeline_hooks();
+            }
+
+            // Telemetry: shutdown handler + WC logger hook (no WP_DEBUG side-effects).
+            if ( class_exists( 'RP_Care_Telemetry' ) ) {
+                RP_Care_Telemetry::register();
             }
 
             // Staging isolation: email sink, webhook guard, admin banner.

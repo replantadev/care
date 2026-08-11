@@ -194,6 +194,32 @@ Todos usan metodo POST, autenticacion X-Hub-Token (sha256 del site_token), fail-
 **Pendiente (fuera de Capa 2):**
 - Escenarios de laboratorio E2E avanzados: rutas 404 con home cacheada, drift multidioma, limpieza idempotente, `Commands out of sync` sintetico, PII redaction, aprobacion, rollback.
 
+## Smart Updates — Capa 2 (Care v1.15.76 + PC v1.1.89)
+
+| Bloque | Descripción | Estado |
+|---|---|---|
+| Block D | Separación update_executor / WP Toolkit detection en Care | ✅ Implementado |
+| Block A | Modelo PC_Smart_Update_Policy + migración DB 1.6.0 | ✅ Implementado |
+| Block B | UI Smart Updates en tab Operations de PC | ✅ Implementado |
+| Block C | Allowlist semántica Bridge + verify_isolation_capabilities estructurado | ✅ Implementado |
+| Block E | Batch structure inmutable | ✅ Confirmado (existente desde v1.15.75) |
+| Block F | Pre-flight read-only para dev/dev2.banbancosmetics.com | ✅ Implementado |
+| Block G | Tests nuevos (UE-01–15 Care, SP-01–19 PC) | ✅ 299 Care + 252 PC — todos verdes |
+
+**Política piloto (pendiente aplicar en PC):**
+```
+mode=staging_required, approval_policy=always, update_executor=care_pipeline,
+native_auto_updates=disabled, maximum_batch_size=1, maintenance_window_auto=false
+```
+
+**Pendiente antes de activar piloto:**
+1. Ejecutar `run-smart-updates-preflight.ps1` contra dev/dev2.banbancosmetics.com
+2. Verificar Care activo en ambos sitios piloto
+3. Registrar sitios en PC → crear grupo → asignar instancias
+4. Aplicar política piloto en PC → Smart Updates tab
+5. Validar executor=care_pipeline en Care settings de cada sitio
+6. WP Toolkit bridge: NO declarar validado hasta probar en entorno real aislado
+
 ## Integracion WP Toolkit
 
 La capa generica de proveedores, la boveda de conexiones, los jobs asincronos, el

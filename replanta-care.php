@@ -3,7 +3,7 @@
  * Plugin Name: Replanta Care
  * Plugin URI: https://replanta.dev
  * Description: Plugin de mantenimiento WordPress automatizado para clientes de Replanta con integracion Hub
- * Version: 1.15.75
+ * Version: 1.15.76
  * Author: Replanta
  * Author URI: https://replanta.dev
  * License: GPL v2 or later
@@ -18,7 +18,7 @@ if (!defined('ABSPATH')) {
 
 // Define plugin constants
 if ( ! defined( 'RPCARE_VERSION' ) ) {
-    define( 'RPCARE_VERSION', '1.15.75' );
+    define( 'RPCARE_VERSION', '1.15.76' );
 }
 define('RPCARE_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('RPCARE_PLUGIN_PATH', plugin_dir_path(__FILE__));
@@ -132,6 +132,13 @@ class ReplantaCare {
 
         // Auto-onboarding: if license key is set but no Hub token, register with Hub
         add_action('init', [$this, 'maybe_auto_onboard'], 99);
+
+        // Native WP auto-updater: disable when rpcare_options['native_auto_updates'] !== 'enabled'.
+        // Care's own task-updates.php is the sole update executor by default (fail-closed).
+        add_filter( 'auto_update_core',        [ $this, 'filter_native_auto_update' ] );
+        add_filter( 'auto_update_plugin',      [ $this, 'filter_native_auto_update' ] );
+        add_filter( 'auto_update_theme',       [ $this, 'filter_native_auto_update' ] );
+        add_filter( 'auto_update_translation', [ $this, 'filter_native_auto_update' ] );
 
         // Daily check hook ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ also run maintenance cleanup
         add_action('rpcare_daily_check', ['RP_Care_Utils', 'cleanup_all']);
@@ -570,6 +577,22 @@ class ReplantaCare {
         }
     }
     
+    /**
+     * Suppress WordPress native auto-updates when Care is the update executor.
+     * Returns false when native_auto_updates !== 'enabled' (fail-closed default).
+     * The filter is called with the current value and the update item; we ignore the item
+     * and return false to block, or return the incoming value unchanged to allow.
+     *
+     * @param mixed $update  Current filter value (bool|null).
+     * @return mixed         false to suppress, or $update to pass through.
+     */
+    public function filter_native_auto_update( $update ) {
+        if ( ! class_exists( 'RP_Care_Environment' ) ) {
+            return $update;
+        }
+        return RP_Care_Environment::native_auto_updates_disabled() ? false : $update;
+    }
+
     /**
      * Auto-onboarding: if Care has a license key but no Hub token, attempt to register
      * with Hub so the operator doesn't need to manually add the site in Plugin Center.

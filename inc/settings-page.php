@@ -131,7 +131,23 @@ class RP_Care_Settings_Page {
             'rpcare_settings',
             'rpcare_tasks'
         );
-        
+
+        add_settings_field(
+            'update_executor',
+            'Ejecutor de actualizaciones',
+            [$this, 'update_executor_field'],
+            'rpcare_settings',
+            'rpcare_tasks'
+        );
+
+        add_settings_field(
+            'native_auto_updates',
+            'Auto-actualizaciones nativas de WP',
+            [$this, 'native_auto_updates_field'],
+            'rpcare_settings',
+            'rpcare_tasks'
+        );
+
         // Notifications Section
         add_settings_section(
             'rpcare_notifications',
@@ -1272,6 +1288,40 @@ class RP_Care_Settings_Page {
         <?php
     }
     
+    public function update_executor_field() {
+        $options  = get_option( 'rpcare_options', [] );
+        $current  = $options['update_executor'] ?? 'care_pipeline';
+        $choices  = [
+            'care_pipeline' => 'Care pipeline (por defecto) — Care ejecuta todas las actualizaciones',
+            'external'      => 'Externo — WP Toolkit u otro gestor externo; Care omite su propio ciclo',
+            'disabled'      => 'Desactivado — ningún executor automático; solo manual',
+        ];
+        echo '<select name="rpcare_options[update_executor]">';
+        foreach ( $choices as $val => $label ) {
+            printf(
+                '<option value="%s"%s>%s</option>',
+                esc_attr( $val ),
+                selected( $current, $val, false ),
+                esc_html( $label )
+            );
+        }
+        echo '</select>';
+        echo '<p class="description">Controla qué sistema ejecuta las actualizaciones de WordPress en este sitio. '
+           . '"Externo" preserva el comportamiento anterior cuando WP Toolkit Pro estaba activo.</p>';
+    }
+
+    public function native_auto_updates_field() {
+        $options = get_option( 'rpcare_options', [] );
+        $current = $options['native_auto_updates'] ?? 'disabled';
+        ?>
+        <select name="rpcare_options[native_auto_updates]">
+            <option value="disabled" <?php selected( $current, 'disabled' ); ?>>Desactivado (por defecto) — Care es el único executor</option>
+            <option value="enabled"  <?php selected( $current, 'enabled' );  ?>>Activado — WP gestiona también sus propias auto-actualizaciones</option>
+        </select>
+        <p class="description">Por defecto, Care suprime las auto-actualizaciones nativas de WordPress para evitar conflictos. Actívalas solo si sabes lo que haces.</p>
+        <?php
+    }
+
     public function notification_email_field() {
         $options = get_option('rpcare_options', []);
         $value = isset($options['notification_email']) ? $options['notification_email'] : get_option('admin_email');
@@ -1345,6 +1395,17 @@ class RP_Care_Settings_Page {
         $sanitized['backup_enabled'] = isset($input['backup_enabled']);
         $sanitized['cache_clearing'] = isset($input['cache_clearing']);
         $sanitized['security_monitoring'] = isset($input['security_monitoring']);
+
+        if ( isset( $input['update_executor'] ) ) {
+            $valid_executors = [ 'care_pipeline', 'external', 'disabled' ];
+            $sanitized['update_executor'] = in_array( $input['update_executor'], $valid_executors, true )
+                ? $input['update_executor']
+                : 'care_pipeline';
+        }
+
+        if ( isset( $input['native_auto_updates'] ) ) {
+            $sanitized['native_auto_updates'] = $input['native_auto_updates'] === 'enabled' ? 'enabled' : 'disabled';
+        }
         
         if (isset($input['notification_email'])) {
             $sanitized['notification_email'] = sanitize_email($input['notification_email']);

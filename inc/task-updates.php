@@ -18,24 +18,26 @@ class RP_Care_Task_Updates {
             return [ 'success' => true, 'pipeline_blocked' => true, 'message' => $msg, 'skipped' => true ];
         }
 
-        // When Hub/WP Toolkit Pro manages updates for this site, skip Care's own task
-        if (get_option('rpcare_update_managed', false)) {
-            $msg = 'Actualizaciones gestionadas por Replanta Hub vía WP Toolkit Pro';
-            RP_Care_Utils::log('updates', 'info', $msg);
-            return [
-                'success'         => true,
-                'managed_by_hub'  => true,
-                'message'         => $msg,
-                'skipped'         => true,
-            ];
-        }
+        // Guard: update_executor controls who runs updates — check before doing any work.
+        if ( class_exists( 'RP_Care_Environment' ) ) {
+            $executor = RP_Care_Environment::get_update_executor();
 
-        // Bug #5: Auto-detect WP Toolkit even when Hub never pushed rpcare_update_managed.
-        // Prevents Care running its own update loop alongside WP Toolkit on StablePoint sites.
-        if ( class_exists( 'RP_Care_Environment' ) && RP_Care_Environment::updates_externally_managed() ) {
-            $msg = 'Actualizaciones gestionadas externamente (WP Toolkit detectado automáticamente)';
-            RP_Care_Utils::log( 'updates', 'info', $msg );
-            return [ 'success' => true, 'managed_externally' => true, 'message' => $msg, 'skipped' => true ];
+            if ( $executor === 'disabled' ) {
+                $msg = 'Executor de actualizaciones desactivado (update_executor=disabled)';
+                RP_Care_Utils::log( 'updates', 'info', $msg );
+                return [ 'success' => true, 'executor_disabled' => true, 'message' => $msg, 'skipped' => true ];
+            }
+
+            // 'external': explicit operator override OR legacy WP Toolkit auto-detect.
+            // Also honour the legacy rpcare_update_managed flag pushed by older Hub versions.
+            $legacy_managed = (bool) get_option( 'rpcare_update_managed', false );
+            if ( $executor === 'external' || $legacy_managed ) {
+                $msg = $legacy_managed
+                    ? 'Actualizaciones gestionadas externamente (rpcare_update_managed)'
+                    : 'Actualizaciones gestionadas externamente (update_executor=external)';
+                RP_Care_Utils::log( 'updates', 'info', $msg );
+                return [ 'success' => true, 'managed_externally' => true, 'message' => $msg, 'skipped' => true ];
+            }
         }
 
         $plan       = RP_Care_Plan::get_current();

@@ -4,10 +4,14 @@
  *
  * Identifies the hosting context so Care can adapt its behaviour:
  * - cyberpanel  → Cedro/CyberPanel (full server control)
- * - wptoolkit   → WP Toolkit Pro active (defer updates to toolkit)
- * - cpanel      → cPanel/WHM without WP Toolkit (e.g. StablePoint manual)
+ * - wptoolkit   → WP Toolkit Pro active on this site
+ * - cpanel      → cPanel/WHM without WP Toolkit
  * - local       → localhost / dev environment
  * - external    → any other hosting
+ *
+ * WP Toolkit detection is INFORMATIONAL only.  It no longer implies
+ * that Care must skip its own update task.  The update executor is a
+ * separate concern controlled by rpcare_options['update_executor'].
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -68,9 +72,14 @@ class RP_Care_Environment {
 
 	/**
 	 * WP Toolkit Pro sets identifiable options when it manages a site.
-	 * If active, Care must NOT run its own update task.
+	 * Detection is INFORMATIONAL only — it does not directly control update delegation.
 	 */
 	public static function is_wptoolkit(): bool {
+		// Test seam: allow overriding detection result without WordPress.
+		if ( defined( 'RPCARE_TESTING' ) && isset( $GLOBALS['_is_wptoolkit'] ) ) {
+			return (bool) $GLOBALS['_is_wptoolkit'];
+		}
+
 		static $result = null;
 		if ( $result !== null ) return $result;
 
@@ -110,11 +119,53 @@ class RP_Care_Environment {
 	// ── Helpers for consuming code ───────────────────────────────────────
 
 	/**
-	 * Whether an external tool (WP Toolkit Pro) manages updates for this site.
-	 * When true, Care must skip its own update task entirely.
+	 * Resolved update executor for this site.
+	 *
+	 * Priority order:
+	 *   1. Explicit rpcare_options['update_executor'] setting (operator override).
+	 *   2. Legacy backwards-compat: WP Toolkit detected + no explicit setting
+	 *      → 'external' (preserves prior auto-skip behaviour for existing sites).
+	 *   3. Default: 'care_pipeline'.
+	 *
+	 * Valid values: 'care_pipeline' | 'external' | 'disabled'
+	 */
+	public static function get_update_executor(): string {
+		$opts     = get_option( 'rpcare_options', [] );
+		$explicit = $opts['update_executor'] ?? '';
+
+		if ( $explicit !== '' ) {
+			return in_array( $explicit, [ 'care_pipeline', 'external', 'disabled' ], true )
+				? $explicit
+				: 'care_pipeline';
+		}
+
+		// Backwards-compat: if WP Toolkit is detected but no setting was saved,
+		// preserve previous behaviour (skip Care's own task).
+		if ( self::is_wptoolkit() ) {
+			return 'external';
+		}
+
+		return 'care_pipeline';
+	}
+
+	/**
+	 * Whether an external tool manages updates for this site.
+	 *
+	 * Checks the explicit 'update_executor' option first; falls back to WP Toolkit
+	 * detection for backwards compatibility with sites that never saved the option.
+	 *
+	 * @deprecated Use get_update_executor() for new code; this wrapper remains for
+	 *             legacy callers and still has the correct semantic under the new model.
 	 */
 	public static function updates_externally_managed(): bool {
-		return self::detect() === 'wptoolkit';
+		return self::get_update_executor() === 'external';
+	}
+
+	/** Whether the native WordPress auto-updater should be disabled by Care. */
+	public static function native_auto_updates_disabled(): bool {
+		$opts = get_option( 'rpcare_options', [] );
+		// Default: disabled (fail-closed).  Must be explicitly opted-in to enable.
+		return ( $opts['native_auto_updates'] ?? 'disabled' ) !== 'enabled';
 	}
 
 	/** Human-readable label for UI display. */

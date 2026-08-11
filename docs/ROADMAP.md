@@ -173,9 +173,26 @@ Todos usan metodo POST, autenticacion X-Hub-Token (sha256 del site_token), fail-
 { "schema_version": 1, "generated_at": "ISO-8601", ...datos }
 ```
 
-**Pendiente:**
-- Tests E2E con WordPress/WooCommerce reales en Docker.
-- Escenarios de laboratorio: rutas 404 con home cacheada, drift multidioma, limpieza idempotente, `Commands out of sync` sintetico, PII redaction, aprobacion, rollback.
+**Contratos verificados (Care v1.15.75 + PC v1.1.88 — Capa 2 cerrada):**
+
+| Aspecto | Verificacion |
+|---|---|
+| URL exacta | `{site_url}/wp-json/replanta-care/v1/woo/{slug}` — WO-08, WO-11 |
+| Metodo HTTP | POST en los 5 endpoints — WO-01 |
+| Cabecera auth | `X-Hub-Token: hash('sha256', raw_token)` — WO-09, WO-21 |
+| dry_run hardcoded | Care nunca acepta dry_run=false del llamante — WO-12, RE-33 |
+| Aislamiento de seccion | Una seccion en error no bloquea las otras cuatro — WO-02, WO-06 |
+| Envelope | `{schema_version:1, generated_at:ISO-8601, ...}` — RE-01 a RE-05 |
+| Sin secretos | token, credenciales, PII redactados antes de persistir — RE-24, RE-38 |
+
+**E2E de laboratorio (`run-woo-ops-e2e.ps1`):**
+- W5 endpoints directos: telemetria, rutas, snapshot, higiene, anomalias — todos HTTP 200, schema_version=1
+- W6 rechazo de auth: token ausente → 403; token incorrecto → 403; sitio sin registrar → WP_Error not_found
+- W7 dry-run sin mutaciones: wp_options count identico antes y despues
+- W8 degradacion por seccion: token erroneo en PC → los 5 secciones devuelven ['error' => ...]
+
+**Pendiente (fuera de Capa 2):**
+- Escenarios de laboratorio E2E avanzados: rutas 404 con home cacheada, drift multidioma, limpieza idempotente, `Commands out of sync` sintetico, PII redaction, aprobacion, rollback.
 
 ## Integracion WP Toolkit
 

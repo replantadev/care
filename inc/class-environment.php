@@ -168,6 +168,49 @@ class RP_Care_Environment {
 		return ( $opts['native_auto_updates'] ?? 'disabled' ) !== 'enabled';
 	}
 
+	/**
+	 * Structured executor/pipeline status report for Plugin Center drift detection.
+	 *
+	 * Returns a JSON-serialisable array describing the effective executor configuration
+	 * on this Care instance.  Called by the /smart-updates/status REST endpoint.
+	 *
+	 * SECURITY: Never includes raw tokens, credentials, binary paths, or secrets.
+	 */
+	public static function get_status_report(): array {
+		$opts     = get_option( 'rpcare_options', [] );
+		$explicit = $opts['update_executor'] ?? '';
+
+		if ( $explicit !== '' ) {
+			$source = 'explicit';
+		} elseif ( self::is_wptoolkit() ) {
+			$source = 'wptoolkit_fallback';
+		} else {
+			$source = 'default';
+		}
+
+		$executor   = self::get_update_executor();
+		$native_raw = $opts['native_auto_updates'] ?? 'disabled';
+		$native     = in_array( $native_raw, [ 'disabled', 'enabled' ], true ) ? $native_raw : 'disabled';
+
+		$pipeline = false;
+		if ( class_exists( 'RP_Care_Pipeline_Client' ) ) {
+			$pipeline = (bool) RP_Care_Pipeline_Client::is_pipeline_enabled();
+		}
+
+		return [
+			'schema_version'         => 1,
+			'generated_at'           => gmdate( 'c' ),
+			'plugin_version'         => defined( 'RPCARE_VERSION' ) ? RPCARE_VERSION : '',
+			'update_executor'        => $executor,
+			'update_executor_source' => $source,
+			'native_auto_updates'    => $native,
+			'pipeline_enabled'       => $pipeline,
+			'staging_role'           => $opts['staging_role'] ?? 'unset',
+			'wp_toolkit_detected'    => self::is_wptoolkit(),
+			'direct_updates_blocked' => self::native_auto_updates_disabled(),
+		];
+	}
+
 	/** Human-readable label for UI display. */
 	public static function label( ?string $type = null ): string {
 		$type = $type ?? self::detect();

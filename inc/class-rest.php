@@ -138,6 +138,15 @@ class RP_Care_REST {
             'permission_callback' => '__return_true',
         ] );
 
+        // ── Smart Updates: executor/pipeline status for drift detection ────────
+        // Called by PC ajax_smart_updates_overview to compare desired policy vs
+        // effective Care configuration.  Returns schema_version=1 envelope.
+        register_rest_route( $this->control_ns, '/smart-updates/status', [
+            'methods'             => 'POST',
+            'callback'            => [ $this, 'hub_smart_updates_status' ],
+            'permission_callback' => '__return_true',
+        ] );
+
         // Main task execution endpoint
         register_rest_route($this->namespace, '/run', [
             'methods' => 'POST',
@@ -2617,5 +2626,35 @@ class RP_Care_REST {
             'anomaly_count'  => count( $anomalies ),
             'anomalies'      => $anomalies,
         ], 200 );
+    }
+
+    /**
+     * POST /wp-json/replanta-care/v1/smart-updates/status
+     *
+     * Returns the effective executor/pipeline configuration of this Care instance
+     * for Plugin Center drift detection.  Requires X-Hub-Token auth (strict).
+     *
+     * Response fields:
+     *   schema_version         int    always 1
+     *   generated_at           string ISO-8601
+     *   plugin_version         string Care version (RPCARE_VERSION)
+     *   update_executor        string care_pipeline | external | disabled
+     *   update_executor_source string explicit | wptoolkit_fallback | default
+     *   native_auto_updates    string disabled | enabled
+     *   pipeline_enabled       bool   whether PC↔Care pipeline is active
+     *   staging_role           string production | staging | unset
+     *   wp_toolkit_detected    bool   informational — does NOT imply executor
+     *   direct_updates_blocked bool   true when native WP auto-updates are suppressed
+     *
+     * SECURITY: never includes raw token, credentials, binary paths, or secrets.
+     */
+    public function hub_smart_updates_status( WP_REST_Request $request ): WP_REST_Response {
+        if ( ! $this->validate_hub_token( $request, true ) ) {
+            return new WP_REST_Response( [ 'error' => 'Unauthorized' ], 403 );
+        }
+        if ( ! class_exists( 'RP_Care_Environment' ) ) {
+            return new WP_REST_Response( [ 'error' => 'RP_Care_Environment not available' ], 503 );
+        }
+        return new WP_REST_Response( RP_Care_Environment::get_status_report(), 200 );
     }
 }

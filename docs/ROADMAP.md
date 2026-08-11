@@ -206,19 +206,49 @@ Todos usan metodo POST, autenticacion X-Hub-Token (sha256 del site_token), fail-
 | Block F | Pre-flight read-only para dev/dev2.banbancosmetics.com | ✅ Implementado |
 | Block G | Tests nuevos (UE-01–15 Care, SP-01–19 PC) | ✅ 299 Care + 252 PC — todos verdes |
 
-**Política piloto (pendiente aplicar en PC):**
+## Smart Updates — Gap Closure (Care v1.15.77 + PC v1.1.90 + Bridge v1.2.0)
+
+Siete brechas identificadas antes de autorizar el piloto. Estado de cierre:
+
+| Gap | Descripción | Estado |
+|---|---|---|
+| Gap 1 | Bridge contract: `capabilities` implementado; `verify_restore_point` eliminado | ✅ Cerrado |
+| Gap 2 | Preflight: FAIL gates reales (executor, native_auto_updates, Care ausente, drift) | ✅ Cerrado |
+| Gap 3 | PC expone PC policy + Care status por instancia + drift + blockers en overview | ✅ Cerrado |
+| Gap 3b | Care expone `/smart-updates/status` con executor/source/role/flags | ✅ Cerrado |
+| Gap 4 | `ajax_smart_updates_set()` bloquea staging_required con drift activo | ✅ Cerrado |
+| Gap 5 | Política piloto extendida: 10 campos nuevos + DB migration 1.7.0 | ✅ Cerrado |
+| Gap 6 | Tests de aceptación (SEC-28–35 Bridge, HES-01–12 Care, SP-20–30 PC) | ✅ Cerrado |
+| Gap 7 | Preflight: MANUAL_REQUIRED + exit code ≠ 0 cuando pilot_activation_allowed=false | ✅ Cerrado |
+
+**Suites tras gap closure:**
+
+| Repo | Tests totales | Estado |
+|---|---|---|
+| wp-toolkit-bridge | 36 (35 + 1 skip Windows) | ✅ Todo verde |
+| care | 312 | ✅ Todo verde (3 WARN informativos staging guard) |
+| plugin-center | 263 | ✅ Todo verde |
+
+**update_executor_source — campo crítico nuevo:**
+- `explicit` → usuario configuró explícitamente care_pipeline → PASS
+- `wptoolkit_fallback` → WP Toolkit detectado pero executor no explícito → WARN + BLOCKER
+- `default` → sin WP Toolkit, sin configuración explícita → requiere verificar executor en Care settings
+
+**Política piloto extendida (pendiente aplicar en PC):**
 ```
 mode=staging_required, approval_policy=always, update_executor=care_pipeline,
-native_auto_updates=disabled, maximum_batch_size=1, maintenance_window_auto=false
+native_auto_updates=disabled, maximum_batch_size=1, maintenance_window_auto=false,
+staging_provider=manual, maximum_risk=low, backup_required=true, rollback_required=true
 ```
 
-**Pendiente antes de activar piloto:**
-1. Ejecutar `run-smart-updates-preflight.ps1` contra dev/dev2.banbancosmetics.com
-2. Verificar Care activo en ambos sitios piloto
-3. Registrar sitios en PC → crear grupo → asignar instancias
-4. Aplicar política piloto en PC → Smart Updates tab
-5. Validar executor=care_pipeline en Care settings de cada sitio
+**Checklist humano antes de activar piloto:**
+1. Ejecutar `run-smart-updates-preflight.ps1` — debe salir con exit code 0
+2. Resolver todos los FAIL (executor, native_auto_updates, Care ausente, drift)
+3. Completar todos los MANUAL_REQUIRED (noindex staging, email sink, payment gateways, webhooks, cron/cache, backup)
+4. Registrar dev/dev2.banbancosmetics.com en PC → crear grupo → asignar instancias production/staging
+5. Aplicar política piloto en PC → Smart Updates tab
 6. WP Toolkit bridge: NO declarar validado hasta probar en entorno real aislado
+7. NO registrar todavía, NO aplicar política, NO ejecutar mutaciones hasta que preflight dé exit 0
 
 ## Integracion WP Toolkit
 

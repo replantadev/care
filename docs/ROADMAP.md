@@ -250,6 +250,29 @@ staging_provider=manual, maximum_risk=low, backup_required=true, rollback_requir
 6. WP Toolkit bridge: NO declarar validado hasta probar en entorno real aislado
 7. NO registrar todavía, NO aplicar política, NO ejecutar mutaciones hasta que preflight dé exit 0
 
+## Deuda de seguridad conocida
+
+| ID | Componente | Descripcion | Impacto actual | Mitigacion requerida antes de |
+|---|---|---|---|---|
+| SD-01 | Care REST / X-Hub-Token | Token estatico SHA-256; sin nonce, timestamp ni HMAC-por-peticion | Bajo: solo endpoints de lectura usan este modelo; hash_equals() previene timing attacks | Cualquier endpoint mutante (activacion de politica, trigger de actualizacion) |
+
+**SD-01 — Detalle:**
+
+El modelo actual es `X-Hub-Token: hash('sha256', raw_site_token)`. Esto es aceptable para:
+- Endpoints de solo lectura (`/smart-updates/status`, Capa 2 Woo endpoints)
+- Mientras el piloto permanezca en `observe_only` sin operaciones de escritura automatizadas
+
+No es aceptable para:
+- Activar politicas remotamente
+- Disparar actualizaciones automatizadas
+- Cualquier operacion que modifique estado en produccion
+
+**Requisitos para endpoints mutantes:**
+1. HMAC-SHA256 sobre `METHOD:PATH:TIMESTAMP:NONCE:BODY_HASH`
+2. Ventana de tiempo `+/-60 s` verificada en servidor
+3. Log anti-replay de corta duracion (TTL = ventana * 2)
+4. Nonce de un solo uso almacenado en `wp_options` con expiracion
+
 ## Integracion WP Toolkit
 
 La capa generica de proveedores, la boveda de conexiones, los jobs asincronos, el

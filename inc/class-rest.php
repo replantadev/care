@@ -2647,6 +2647,16 @@ class RP_Care_REST {
      *   direct_updates_blocked bool   true when native WP auto-updates are suppressed
      *
      * SECURITY: never includes raw token, credentials, binary paths, or secrets.
+     *
+     * SECURITY DEBT (SD-01): X-Hub-Token is a static SHA-256 bearer
+     * (hash('sha256', raw_site_token)).  Constant-time comparison via hash_equals()
+     * prevents timing attacks, and this endpoint is READ-ONLY, making replay attacks
+     * low-impact.  However, the static bearer model MUST NOT be used for any
+     * mutating endpoint.  Future write operations (policy activation, update triggers)
+     * require HMAC-per-request (HMAC-SHA256 over method+path+timestamp+nonce),
+     * a server-checked timestamp window (+/-60 s), and a short-lived anti-replay log.
+     * Tracking issue: SD-01 — replace static bearer with HMAC+timestamp+nonce for
+     * mutating Hub endpoints before removing the pilot_activation_allowed guard.
      */
     public function hub_smart_updates_status( WP_REST_Request $request ): WP_REST_Response {
         if ( ! $this->validate_hub_token( $request, true ) ) {

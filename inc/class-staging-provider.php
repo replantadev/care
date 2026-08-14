@@ -79,19 +79,36 @@ interface RP_Care_Staging_Provider_Interface {
 class RP_Care_Staging_Provider {
 
     /**
-     * Return the best available provider for this installation.
-     * Priority: paired > WP Staging Pro/Free > null (manual).
+     * Return the provider for this installation.
+     *
+     * Reads staging_method from rpcare_options (set by Plugin Center policy):
+     *   'auto'      → paired > wptoolkit > wpstaging > manual (default)
+     *   'wptoolkit' → WP Toolkit CLI provider (cPanel/Plesk)
+     *   'wpstaging' → WP Staging Pro/Free
+     *   'paired'    → paired existing staging site
+     *   'none'      → never reaches here; 'none' is handled in check_staging_gate()
      */
     public static function get(): RP_Care_Staging_Provider_Interface {
-        if ( RP_Care_Staging_Provider_Paired::is_available() ) {
-            return new RP_Care_Staging_Provider_Paired();
-        }
+        $opts   = get_option( 'rpcare_options', [] );
+        $method = (string) ( $opts['staging_method'] ?? 'auto' );
 
-        if ( RP_Care_Staging_Provider_WPStaging::is_available() ) {
-            return new RP_Care_Staging_Provider_WPStaging();
+        switch ( $method ) {
+            case 'wptoolkit':
+                return new RP_Care_Staging_Provider_WPToolkit();
+            case 'wpstaging':
+                return RP_Care_Staging_Provider_WPStaging::is_available()
+                    ? new RP_Care_Staging_Provider_WPStaging()
+                    : new RP_Care_Staging_Provider_Manual();
+            case 'paired':
+                return RP_Care_Staging_Provider_Paired::is_available()
+                    ? new RP_Care_Staging_Provider_Paired()
+                    : new RP_Care_Staging_Provider_Manual();
+            default: // 'auto'
+                if ( RP_Care_Staging_Provider_Paired::is_available() )    return new RP_Care_Staging_Provider_Paired();
+                if ( RP_Care_Staging_Provider_WPToolkit::is_available() ) return new RP_Care_Staging_Provider_WPToolkit();
+                if ( RP_Care_Staging_Provider_WPStaging::is_available() ) return new RP_Care_Staging_Provider_WPStaging();
+                return new RP_Care_Staging_Provider_Manual();
         }
-
-        return new RP_Care_Staging_Provider_Manual();
     }
 
     /**
@@ -281,6 +298,210 @@ class RP_Care_Staging_Provider_WPStaging implements RP_Care_Staging_Provider_Int
             'manual_required' => true,
             'instructions'    => 'WP Staging Pro found but the documented hook is not available in this version. Please refresh manually.',
         ];
+    }
+}
+
+// ── WP Toolkit provider ────────────────────────────────────────────────────
+
+/**
+ * Runs WP Toolkit CLI directly on the local server.
+ *
+ * Supports cPanel (wp-toolkit binary) and Plesk (plesk ext wp-toolkit).
+ * Binary is never invoked via a shell string — argv is passed as an array
+ * to proc_open() to prevent injection. Each argument is validated against
+ * a blocklist of shell metacharacters before exec.
+ *
+ * Requires staging_url to be set in rpcare_options (Care settings).
+ */
+class RP_Care_Staging_Provider_WPToolkit implements RP_Care_Staging_Provider_Interface {
+
+    const CPANEL_PATHS = [
+        '/usr/local/cpanel/3rdparty/wp-toolkit/bin/wp-toolkit',
+        '/opt/cpanel/wp-toolkit/bin/wp-toolkit',
+    ];
+
+    private string $binary;
+    private bool   $is_plesk;
+
+    public function __construct() {
+        [ $this->binary, $this->is_plesk ] = self::locate_binary();
+    }
+
+    public static function is_available(): bool {
+        [ $binary ] = self::locate_binary();
+        return $binary !== '';
+    }
+
+    public function capabilities(): array {
+        return [
+            'can_create'           => true,
+            'can_refresh'          => true,
+            'can_verify_isolation' => true,
+            'provider_name'        => 'wptoolkit',
+        ];
+    }
+
+    public function create_or_refresh(): array|\WP_Error {
+        if ( $this->binary === '' ) {
+            return new \WP_Error( 'wptk_no_binary', 'WP Toolkit binary not found.' );
+        }
+
+        $prod_url    = (string) home_url();
+        $staging_url = $this->get_url();
+
+        if ( ! $staging_url ) {
+            return new \WP_Error( 'wptk_no_staging_url', 'staging_url not configured in Care settings.' );
+        }
+
+        $staging_domain = (string) parse_url( $staging_url, PHP_URL_HOST );
+        if ( ! $staging_domain ) {
+            return new \WP_Error( 'wptk_bad_staging_url', 'staging_url is not a valid URL with a hostname.' );
+        }
+
+        // Detect if staging clone already exists; if so, reset (sync), else clone.
+        $list_result    = $this->run_command( 'list', [] );
+        $staging_exists = ! is_wp_error( $list_result )
+            && $list_result['exit_code'] === 0
+            && strpos( $list_result['stdout'], $staging_domain ) !== false;
+
+        $result = $staging_exists
+            ? $this->run_command( 'reset', [ 'source-url' => $prod_url, 'target-url' => $staging_url ] )
+            : $this->run_command( 'clone', [ 'source-url' => $prod_url, 'target-domain' => $staging_domain ] );
+
+        if ( is_wp_error( $result ) ) {
+            return $result;
+        }
+
+        if ( $result['exit_code'] !== 0 ) {
+            return new \WP_Error(
+                'wptk_exec_error',
+                'wp-toolkit exited ' . $result['exit_code'] . ': ' . trim( $result['stderr'] )
+            );
+        }
+
+        return [
+            'triggered'   => true,
+            'status'      => $staging_exists ? 'staging_sync_requested' : 'staging_clone_requested',
+            'staging_url' => $staging_url,
+            'provider'    => 'wptoolkit',
+        ];
+    }
+
+    public function status(): array {
+        $url = $this->get_url();
+        return [
+            'status'      => $url ? 'ready' : 'unconfigured',
+            'staging_url' => $url,
+            'ready'       => $url !== null,
+            'provider'    => 'wptoolkit',
+        ];
+    }
+
+    public function get_url(): ?string {
+        $opts = get_option( 'rpcare_options', [] );
+        return ! empty( $opts['staging_url'] ) ? (string) $opts['staging_url'] : null;
+    }
+
+    public function verify_isolation(): array {
+        return RP_Care_Isolation_Checker::run();
+    }
+
+    public function cleanup(): bool|\WP_Error {
+        if ( $this->binary === '' ) {
+            return new \WP_Error( 'wptk_no_binary', 'WP Toolkit binary not found.' );
+        }
+
+        $staging_url = $this->get_url();
+        if ( ! $staging_url ) {
+            return true;
+        }
+
+        $result = $this->run_command( 'delete', [ 'url' => $staging_url ] );
+        if ( is_wp_error( $result ) ) {
+            return $result;
+        }
+
+        return $result['exit_code'] === 0;
+    }
+
+    // ── Internal helpers ──────────────────────────────────────────────────
+
+    private function run_command( string $command, array $params ): array|\WP_Error {
+        $argv = $this->is_plesk
+            ? [ $this->binary, 'ext', 'wp-toolkit', '--', $command ]
+            : [ $this->binary, $command ];
+
+        foreach ( $params as $key => $value ) {
+            $argv[] = '--' . ltrim( $key, '-' );
+            $argv[] = (string) $value;
+        }
+
+        return $this->exec_argv( $argv );
+    }
+
+    /**
+     * Execute an argv array via proc_open (no shell involvement).
+     * Each argument is checked against a blocklist before exec.
+     */
+    private function exec_argv( array $argv ): array|\WP_Error {
+        $forbidden = [ '..', ';', '&&', '||', '|', '`', '$', '(', "\n", "\r", "\0" ];
+        foreach ( $argv as $arg ) {
+            foreach ( $forbidden as $bad ) {
+                if ( strpos( (string) $arg, $bad ) !== false ) {
+                    return new \WP_Error( 'wptk_injection', "Rejected argument containing '{$bad}'." );
+                }
+            }
+        }
+
+        $descriptors = [ [ 'pipe', 'r' ], [ 'pipe', 'w' ], [ 'pipe', 'w' ] ];
+        $proc        = proc_open( $argv, $descriptors, $pipes );
+
+        if ( ! is_resource( $proc ) ) {
+            return new \WP_Error( 'wptk_proc_open', 'proc_open() failed.' );
+        }
+
+        fclose( $pipes[0] );
+        $stdout    = (string) stream_get_contents( $pipes[1] );
+        $stderr    = (string) stream_get_contents( $pipes[2] );
+        fclose( $pipes[1] );
+        fclose( $pipes[2] );
+        $exit_code = proc_close( $proc );
+
+        return [ 'stdout' => $stdout, 'stderr' => $stderr, 'exit_code' => $exit_code ];
+    }
+
+    /**
+     * Locate the WP Toolkit binary on this server.
+     * Returns [path, is_plesk]. Path is '' when not found.
+     *
+     * Test seam: set $GLOBALS['_wptk_binary_seam'] to a path string or ''
+     * to override detection in unit tests without touching the filesystem.
+     *
+     * @return array{string, bool}
+     */
+    private static function locate_binary(): array {
+        if ( defined( 'RPCARE_TESTING' ) && array_key_exists( '_wptk_binary_seam', $GLOBALS ) ) {
+            $seam = $GLOBALS['_wptk_binary_seam'];
+            return [ ( $seam === false || $seam === null ) ? '' : (string) $seam, false ];
+        }
+
+        foreach ( self::CPANEL_PATHS as $path ) {
+            if ( is_executable( $path ) ) {
+                return [ $path, false ];
+            }
+        }
+
+        // Plesk: locate 'plesk' in PATH (shell_exec with a literal, safe).
+        // The subsequent CLI calls use proc_open() with an array — no shell.
+        $plesk = @shell_exec( 'which plesk 2>/dev/null' );
+        if ( $plesk ) {
+            $plesk = trim( $plesk );
+            if ( is_executable( $plesk ) ) {
+                return [ $plesk, true ];
+            }
+        }
+
+        return [ '', false ];
     }
 }
 

@@ -227,6 +227,12 @@ class RP_Care_Task_Updates {
     }
 
     private static function requires_staging($plan) {
+        // PC-level override: staging_method='none' disables the gate for all plans and addons.
+        $opts = get_option( 'rpcare_options', [] );
+        if ( ( $opts['staging_method'] ?? 'auto' ) === 'none' ) {
+            return false;
+        }
+
         $plan = RP_Care_Plan::normalize_plan($plan);
         if ($plan === RP_Care_Plan::PLAN_ECOSISTEMA) {
             return true;

@@ -1660,12 +1660,12 @@ class RP_Care_REST {
             $backup_status  = 'completed';
         }
 
-        // Pending plugin updates (cached by WP — no extra HTTP calls).
-        $updates_pending = 0;
-        $update_obj = get_site_transient('update_plugins');
-        if ($update_obj && is_array($update_obj->response ?? null)) {
-            $updates_pending = count($update_obj->response);
-        }
+        // Plugin update inventory — raw count unfiltered by plan/policy.
+        // RP_Care_Update_Control::read_inventory() uses try/finally to restore
+        // bypass_for_task even if get_site_transient throws.
+        $inv = class_exists( 'RP_Care_Update_Control' )
+            ? RP_Care_Update_Control::read_inventory()
+            : [ 'total' => null, 'checked_at' => null, 'inventory_stale' => true ];
 
         // SSL certificate expiry — non-blocking, 10s timeout, cached 12h.
         $ssl_expires_at = '';
@@ -1762,9 +1762,12 @@ class RP_Care_REST {
             'site_url'             => get_site_url(),
             'backup_last_at'       => $backup_last_at,
             'backup_status'        => $backup_status,
-            'backup_stale'         => $backup_stale,
-            'updates_pending'      => $updates_pending,
-            'ssl_expires_at'       => $ssl_expires_at,
+            'backup_stale'             => $backup_stale,
+            'updates_pending_total'    => $inv['total'],
+            'updates_checked_at'       => $inv['checked_at'],
+            'updates_inventory_stale'  => $inv['inventory_stale'],
+            'updates_pending'          => $inv['total'],   // alias: backwards compat with PC ≤ 1.2.5
+            'ssl_expires_at'           => $ssl_expires_at,
             'ssl_days_left'        => $ssl_days_left,
             'ttfb_ms'              => $ttfb_ms,
             'db_cleanup_last_at'   => get_option( 'rpcare_last_db_cleanup', [] )['at'] ?? '',

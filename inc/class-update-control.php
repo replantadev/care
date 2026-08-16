@@ -14,6 +14,10 @@ class RP_Care_Update_Control {
     // read filter doesn't hide free plugins from Care's own update loop.
     public static $bypass_for_task = false;
 
+    // Test-only seam: inject a callable to replace get_site_transient in read_inventory().
+    // Must be null in production. Allows testing try/finally restore on exception.
+    public static $transient_reader = null;
+
     public function __construct() {
         add_action('init', [$this, 'init']);
     }
@@ -33,31 +37,82 @@ class RP_Care_Update_Control {
             return;
         }
         
-        // Hook into update checks — read filter only.
-        // Hooking pre_set_site_transient_update_plugins (the write filter) would
-        // permanently strip free plugins from the stored DB transient, which causes
-        // Care's own update task to see 0 pending updates via get_plugin_updates().
-        add_filter('site_transient_update_plugins', [$this, 'filter_plugin_updates']);
-        
-        // Hook into plugin actions
+        // Plugin action links: adds an informational label only.
+        // Never removes the 'update' link — the administrator can always update manually.
         add_filter('plugin_action_links', [$this, 'modify_plugin_action_links'], 10, 2);
         add_filter('network_admin_plugin_action_links', [$this, 'modify_plugin_action_links'], 10, 2);
-        
-        // Hook into bulk actions
-        add_filter('bulk_actions-plugins', [$this, 'remove_bulk_update_action']);
-        
+
         // Add admin notices
         add_action('admin_notices', [$this, 'add_update_control_notice']);
-        
-        // Hide update notices for controlled plugins
-        add_action('admin_head', [$this, 'hide_update_notices']);
-        
+
         // Add AJAX handler for licensed plugin detection
         add_action('wp_ajax_rpcare_check_licensed_plugin', [$this, 'ajax_check_licensed_plugin']);
     }
     
     /**
-     * Filter plugin updates to hide them for non-licensed plugins
+     * Read the raw update inventory from the WP transient, bypassing any active policy filter.
+     *
+     * Returns total plugin update count and metadata independent of plan, licence, or policy.
+     * Uses try/finally so the global state is always restored even if get_site_transient throws.
+     *
+     * @return array{total: int, checked_at: string|null, inventory_stale: bool}
+     */
+    public static function read_inventory(): array {
+        $prev = self::$bypass_for_task;
+        try {
+            self::$bypass_for_task = true;
+            $reader     = self::$transient_reader ?? 'get_site_transient';
+            $update_obj = $reader( 'update_plugins' );
+        } finally {
+            self::$bypass_for_task = $prev;
+        }
+
+        // Absent or non-object: null signals "no data", not "zero pending".
+        if ( ! is_object( $update_obj ) ) {
+            return [
+                'total'           => null,
+                'checked_at'      => null,
+                'inventory_stale' => true,
+            ];
+        }
+
+        // Extract checked_at from last_checked — reject zero/negative timestamps.
+        $checked = null;
+        $stale   = true;
+        $ts      = isset( $update_obj->last_checked ) ? (int) $update_obj->last_checked : 0;
+        if ( $ts > 0 ) {
+            $checked = gmdate( 'c', $ts );
+            $stale   = ( time() - $ts ) > 26 * HOUR_IN_SECONDS;
+        }
+
+        // Malformed transient: object present but no response array.
+        if ( ! is_array( $update_obj->response ?? null ) ) {
+            return [
+                'total'           => null,
+                'checked_at'      => $checked,
+                'inventory_stale' => true,   // malformed = stale regardless of age
+            ];
+        }
+
+        // Valid transient: count may be 0 (no updates pending) or N.
+        return [
+            'total'           => count( $update_obj->response ),
+            'checked_at'      => $checked,
+            'inventory_stale' => $stale,
+        ];
+    }
+
+    /**
+     * @deprecated heurística legacy — no usar como fuente de verdad para política de actualizaciones.
+     *
+     * Conocidas limitaciones:
+     * - slug mismatch: si la clave del transient (p.ej. "advanced-db-cleaner/...") no coincide con
+     *   el directorio instalado ("advanced-db-cleaner-pro/"), get_plugin_data() devuelve vacío y
+     *   todos los indicadores de texto fallan.
+     * - License header: get_plugin_data() no incluye 'License' en sus default_headers; ese check
+     *   nunca dispara (código muerto).
+     * - Falsos positivos: "pro" en el texto libre produce falsos positivos para plugins libres.
+     * A futuro reemplazar por un registro explícito de producto/licencia.
      */
     public function filter_plugin_updates($transient) {
         if (self::$bypass_for_task) {
@@ -67,16 +122,17 @@ class RP_Care_Update_Control {
         if (!isset($transient->response) || !is_array($transient->response)) {
             return $transient;
         }
-        
+
         foreach ($transient->response as $plugin_file => $plugin_data) {
             if (!$this->is_plugin_update_allowed($plugin_file)) {
                 unset($transient->response[$plugin_file]);
             }
         }
-        
+
         return $transient;
     }
-    
+
+
     /**
      * Check if a plugin update is allowed
      */
@@ -95,60 +151,41 @@ class RP_Care_Update_Control {
     }
     
     /**
-     * Check if a plugin is licensed/premium
+     * Heurística legacy: intenta determinar si un plugin es de pago/licenciado.
+     *
+     * @deprecated usar solo para etiquetado de UI, no para decisiones de inventario.
+     *   Ver docblock de filter_plugin_updates() para limitaciones conocidas.
      */
     public function is_licensed_plugin($plugin_file) {
-        // Get plugin data
         $plugin_data = get_plugin_data(WP_PLUGIN_DIR . '/' . $plugin_file);
-        
-        // Common indicators of premium/licensed plugins
-        $premium_indicators = [
-            'license',
-            'premium',
-            'pro',
-            'commercial',
-            'paid',
-            'subscription'
-        ];
-        
-        // Check plugin name, description, and author
+
+        $premium_indicators = ['license', 'premium', 'pro', 'commercial', 'paid', 'subscription'];
         $search_text = strtolower($plugin_data['Name'] . ' ' . $plugin_data['Description'] . ' ' . $plugin_data['Author']);
-        
+
         foreach ($premium_indicators as $indicator) {
             if (strpos($search_text, $indicator) !== false) {
                 return true;
             }
         }
-        
-        // Check for license fields in plugin headers
-        if (isset($plugin_data['License']) && $plugin_data['License'] !== 'GPL' && $plugin_data['License'] !== 'GPLv2' && $plugin_data['License'] !== 'GPLv3') {
-            return true;
-        }
-        
-        // Check for common premium plugin patterns
+
+        // Note: 'License' header check removed — get_plugin_data() does not return
+        // that field (not in WP default_headers), so the check was dead code.
+
         $premium_plugins = [
-            'elementor-pro',
-            'gravityforms',
-            'wpml',
-            'acf-pro',
-            'wp-rocket',
-            'updraftplus',
-            'wordfence-premium',
-            'yoast-seo-premium',
-            'wp-all-in-one-seo-pack-pro'
+            'elementor-pro', 'gravityforms', 'wpml', 'acf-pro', 'wp-rocket',
+            'updraftplus', 'wordfence-premium', 'yoast-seo-premium', 'wp-all-in-one-seo-pack-pro',
         ];
-        
+
         foreach ($premium_plugins as $premium_plugin) {
             if (strpos($plugin_file, $premium_plugin) !== false) {
                 return true;
             }
         }
-        
-        // Check if plugin has a license management system
+
         if ($this->has_license_management($plugin_file)) {
             return true;
         }
-        
+
         return false;
     }
     
@@ -177,33 +214,13 @@ class RP_Care_Update_Control {
     }
     
     /**
-     * Modify plugin action links
+     * Add an informational label for plugins managed by Care's automatic pipeline.
+     * Does NOT remove the 'update' action link — the administrator can always update manually.
      */
     public function modify_plugin_action_links($actions, $plugin_file) {
         if (!$this->is_plugin_update_allowed($plugin_file)) {
-            // Remove update link
-            unset($actions['update']);
-            
-            // Add controlled update notice
-            if ($this->is_licensed_plugin($plugin_file)) {
-                $actions['rpcare_licensed'] = '<span style="color: #00a32a;"><span class="dashicons dashicons-yes-alt" style="font-size:14px;vertical-align:middle;"></span> Plugin con licencia — Actualizaciones permitidas</span>';
-            } else {
-                $actions['rpcare_controlled'] = '<span style="display:inline-flex;align-items:center;gap:4px;background:#eaf4ee;color:#1a5e36;border:1px solid #c3e6cd;border-radius:3px;padding:2px 8px;font-size:11px;font-weight:500;line-height:1.6;">&#9679; Gestionado por Replanta</span>';
-            }
+            $actions['rpcare_controlled'] = '<span style="display:inline-flex;align-items:center;gap:4px;background:#eaf4ee;color:#1a5e36;border:1px solid #c3e6cd;border-radius:3px;padding:2px 8px;font-size:11px;font-weight:500;line-height:1.6;">&#9679; Gestionado por Replanta</span>';
         }
-        
-        return $actions;
-    }
-    
-    /**
-     * Remove bulk update action
-     */
-    public function remove_bulk_update_action($actions) {
-        if (isset($actions['update-selected'])) {
-            unset($actions['update-selected']);
-            $actions['rpcare_note'] = 'Las actualizaciones están gestionadas por Replanta Care';
-        }
-        
         return $actions;
     }
     
@@ -218,28 +235,9 @@ class RP_Care_Update_Control {
             $plan_name = RP_Care_Plan::get_plan_name($plan);
             
             echo '<div class="notice notice-info">
-                <p><span class="dashicons dashicons-shield-alt" style="color:#00a32a;vertical-align:middle;"></span> <strong>Replanta Care — Control de Actualizaciones</strong></p>
-                <p>Las actualizaciones de plugins están gestionadas automáticamente por Replanta según tu plan <strong>' . esc_html($plan_name) . '</strong>. Los plugins con licencia pueden actualizarse libremente.</p>
-                <p><em>Esto garantiza la estabilidad y seguridad de tu sitio web.</em></p>
+                <p><span class="dashicons dashicons-shield-alt" style="color:#00a32a;vertical-align:middle;"></span> <strong>Replanta Care — Gestión de Actualizaciones</strong></p>
+                <p>Replanta Care gestiona las actualizaciones automáticas de plugins según tu plan <strong>' . esc_html($plan_name) . '</strong>. Puedes actualizar cualquier plugin manualmente desde esta pantalla en cualquier momento.</p>
             </div>';
-        }
-    }
-    
-    /**
-     * Hide update notices for controlled plugins
-     */
-    public function hide_update_notices() {
-        $screen = get_current_screen();
-
-        if ($screen->id === 'plugins') {
-            // Hide update rows for plugins that are NOT allowed under the current plan.
-            // Replanta-managed plugins (replanta-*) keep their update notices visible
-            // so admins can apply Care/Hub updates manually from plugins.php.
-            echo '<style>
-                tr.plugin-update-tr:not([id^="replanta-"]) {
-                    display: none !important;
-                }
-            </style>';
         }
     }
     

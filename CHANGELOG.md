@@ -1,5 +1,33 @@
 # Changelog — Replanta Care
 
+## [1.16.0]
+
+### Inventario de actualizaciones — contrato /ping
+
+- `hub_ping()`: corregido — antes leía `update_plugins` con el filtro de política activo (`bypass_for_task=false`), resultando en conteo filtrado (ej. Advanced DB Cleaner PRO excluido por slug-mismatch). Ahora usa `RP_Care_Update_Control::read_inventory()` con bypass try/finally.
+- Nuevos campos en `/ping`: `updates_pending_total` (conteo bruto sin filtrar), `updates_checked_at` (ISO-8601 o null), `updates_inventory_stale` (bool).
+- `updates_pending`: semántica actualizada — alias de `updates_pending_total`. Antes devolvía el conteo filtrado por política. Plugin Center ≤ 1.2.5 sigue interpretándolo (el valor puede subir).
+- Contrato null/0: transient ausente o malformado → `total=null`, nunca `0`. Transient válido vacío → `total=0`. PC debe mostrar "Sin datos" para null, nunca convertir ausencia en 0.
+- `RP_Care_Update_Control::read_inventory()`: método estático nuevo. Devuelve `{total, checked_at, inventory_stale}`. Try/finally garantiza restauración de `$bypass_for_task` incluso ante excepción. Seam `$transient_reader` para tests.
+
+### Administración WordPress — control del administrador
+
+- **Eliminado**: filtro global `site_transient_update_plugins`. WP core, otros plugins y Care ven el transient sin modificar.
+- **Eliminado**: `hide_update_notices()` y `add_action('admin_head', ...)`. El CSS `tr.plugin-update-tr:not([id^="replanta-"]) { display:none !important }` ya no existe. El administrador ve todas las filas de actualización en plugins.php.
+- **Eliminado**: `add_filter('bulk_actions-plugins', 'remove_bulk_update_action')`. Bulk update visible y funcional.
+- **Corregido**: `modify_plugin_action_links()` ya no hace `unset($actions['update'])`. Solo añade etiqueta informativa "Gestionado por Replanta". El administrador puede actualizar cualquier plugin manualmente.
+- **Actualizado**: aviso notice-info en plugins.php — refleja que el administrador puede actualizar manualmente en cualquier momento.
+
+### Heurística premium — documentación
+
+- `is_licensed_plugin()`: marcada `@deprecated heurística legacy`. Documentadas: slug-mismatch (path del transient ≠ directorio instalado → get_plugin_data vacío → fallo silencioso), License header check muerto (campo no devuelto por WP default_headers), falsos positivos por "pro" en texto libre.
+- `filter_plugin_updates()`: conservado sin hook como método interno, marcado deprecated.
+
+### Tests
+
+- `tests/bootstrap.php`: stubs `get_site_transient`, `get_plugin_data` (configurable via `$GLOBALS['_wp_plugin_data_mock']`), `remove_filter`, `WP_PLUGIN_DIR` (temp dir real con dummy file). `add_filter` registra en `$GLOBALS['_registered_filters']`. Corrige regresión en `PipelineContractTest::test_create_pipeline_backup_fails_with_db_export_failed_when_wpdb_unavailable`.
+- `tests/UpdateInventoryTest.php`: 26 tests nuevos — UI-01…UI-25 cubren: null/0/N/malformado, ISO-8601, stale, bypass restaurado, excepción, alias REST, acción update preservada, bulk preservado, CSS eliminado, filtro global eliminado.
+
 ## [1.15.11]
 
 - task-updates: force-refresh `update_core` transient + `wp_version_check()` antes de comprobar actualizaciones de WP core (mismo patrón que plugins — evita quedarse con el transient stale semanas)

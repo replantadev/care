@@ -17,6 +17,11 @@ if ( ! function_exists( 'get_transient' ) ) {
     function set_transient( string $k, $v, int $expiration = 0 ): bool { $GLOBALS['_wp_options'][ '_transient_' . $k ] = $v; return true; }
     function delete_transient( string $k ): bool { unset( $GLOBALS['_wp_options'][ '_transient_' . $k ] ); return true; }
 }
+if ( ! function_exists( 'get_site_transient' ) ) {
+    function get_site_transient( string $k ) { return $GLOBALS['_wp_options'][ '_site_transient_' . $k ] ?? false; }
+    function set_site_transient( string $k, $v, int $expiration = 0 ): bool { $GLOBALS['_wp_options'][ '_site_transient_' . $k ] = $v; return true; }
+    function delete_site_transient( string $k ): bool { unset( $GLOBALS['_wp_options'][ '_site_transient_' . $k ] ); return true; }
+}
 
 // ── WP core shims ──────────────────────────────────────────────────────────
 if ( ! function_exists( 'trailingslashit' ) ) {
@@ -52,8 +57,15 @@ if ( ! function_exists( 'load_plugin_textdomain' ) ) {
 if ( ! function_exists( 'add_action' ) ) {
     function add_action( string $tag, $cb, int $pri = 10, int $args = 1 ): bool { return true; }
 }
+$GLOBALS['_registered_filters'] = [];
 if ( ! function_exists( 'add_filter' ) ) {
-    function add_filter( string $tag, $cb, int $pri = 10, int $args = 1 ): bool { return true; }
+    function add_filter( string $tag, $cb, int $pri = 10, int $args = 1 ): bool {
+        $GLOBALS['_registered_filters'][] = $tag;
+        return true;
+    }
+}
+if ( ! function_exists( 'remove_filter' ) ) {
+    function remove_filter( string $tag, $cb, int $pri = 10 ): bool { return true; }
 }
 if ( ! function_exists( 'register_activation_hook' ) ) {
     function register_activation_hook( string $file, callable $cb ): void {}
@@ -183,6 +195,33 @@ if ( ! function_exists( 'wp_next_scheduled' ) ) {
         $had = isset( $GLOBALS['_wp_cron'][ $hook ] );
         unset( $GLOBALS['_wp_cron'][ $hook ] );
         return $had ? 1 : false;
+    }
+}
+
+// ── WP plugin stubs ────────────────────────────────────────────────────────
+if ( ! defined( 'WP_PLUGIN_DIR' ) ) {
+    // Create a real temp directory with a dummy file so that copy_directory() in
+    // PipelineContractTest and other filesystem tests can succeed.
+    // Each test file may override this with a more specific path IF it is loaded
+    // before this bootstrap runs — they guard with if (!defined('WP_PLUGIN_DIR')).
+    $_bootstrap_plugin_dir = sys_get_temp_dir() . '/care-test-plugins-' . getmypid();
+    if ( ! is_dir( $_bootstrap_plugin_dir ) ) {
+        mkdir( $_bootstrap_plugin_dir, 0755, true );
+    }
+    file_put_contents( $_bootstrap_plugin_dir . '/dummy-bootstrap-plugin.php', '<?php // test placeholder' );
+    define( 'WP_PLUGIN_DIR', $_bootstrap_plugin_dir );
+    unset( $_bootstrap_plugin_dir );
+}
+if ( ! function_exists( 'get_plugin_data' ) ) {
+    // Configurable via $GLOBALS['_wp_plugin_data_mock'][$full_path] = [...].
+    // Unregistered paths return all-empty headers (simulates file-not-found or
+    // headers-absent scenario, the "slug-mismatch" case for is_licensed_plugin).
+    function get_plugin_data( string $plugin_file, bool $markup = true, bool $translate = true ): array {
+        $defaults = [ 'Name' => '', 'Description' => '', 'Author' => '', 'Version' => '' ];
+        if ( isset( $GLOBALS['_wp_plugin_data_mock'][ $plugin_file ] ) ) {
+            return array_merge( $defaults, $GLOBALS['_wp_plugin_data_mock'][ $plugin_file ] );
+        }
+        return $defaults;
     }
 }
 

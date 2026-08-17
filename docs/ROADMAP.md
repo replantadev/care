@@ -5,6 +5,8 @@ layout: default
 
 # Hoja de ruta de Replanta Care
 
+> Seguimiento operativo activo: [Checklist de release de Care y Smart Updates](CARE-RELEASE-CHECKLIST.md).
+
 Este documento recoge capacidades previstas. No debe utilizarse para declarar una
 funcion disponible en produccion hasta que su criterio de finalizacion este
 completo y exista una release desplegable y validada.
@@ -280,4 +282,3 @@ Bridge semantico y el proveedor fake estan implementados. Sigue pendiente cerrar
 adaptador real de Plugin Center que invoque el Bridge para cPanel/Plesk y validar el
 contrato contra una instalacion real aislada de WP Toolkit. Hasta entonces esta
 capacidad se considera implementada parcialmente, no lista para produccion.
-

@@ -147,6 +147,15 @@ class RP_Care_REST {
             'permission_callback' => '__return_true',
         ] );
 
+        // ── Update inventory: full raw transient dump for 4-way count reconciliation ─
+        // Returns every plugin/theme entry from the raw update_plugins transient,
+        // bypassing Care's policy filter.  Requires X-Hub-Token auth (strict).
+        register_rest_route( $this->control_ns, '/updates/inventory', [
+            'methods'             => 'POST',
+            'callback'            => [ $this, 'hub_updates_inventory' ],
+            'permission_callback' => '__return_true',
+        ] );
+
         // Main task execution endpoint
         register_rest_route($this->namespace, '/run', [
             'methods' => 'POST',
@@ -2699,5 +2708,162 @@ class RP_Care_REST {
             return new WP_REST_Response( [ 'error' => 'RP_Care_Environment not available' ], 503 );
         }
         return new WP_REST_Response( RP_Care_Environment::get_status_report(), 200 );
+    }
+
+    /**
+     * POST /wp-json/replanta-care/v1/updates/inventory
+     *
+     * Returns the full update inventory (raw transient, bypassing Care's policy filter)
+     * for Plugin Center diagnostics and 4-way count reconciliation.
+     *
+     * Authentication: X-Hub-Token required (strict, sha256(site_token)).
+     * Response fields:
+     *   schema_version  int    always 1
+     *   generated_at    string ISO-8601 UTC timestamp of this response
+     *   checked_at      string|null ISO-8601 of last WP update check; null when transient absent
+     *   stale           bool   true when transient absent, malformed, or older than 26 h
+     *   plugins_total   int|null count(plugins); null when transient absent or malformed
+     *   plugins         array  per-plugin entries (always an array; empty when no updates or no data)
+     *   themes_total    int|null count(themes); null when theme transient absent or malformed
+     *   themes          array  per-theme entries
+     *   inventory_hash  string sha256 of deterministic json(plugins+themes), stable per content
+     *
+     * Per-plugin fields (plugins[]):
+     *   plugin_file        string  path relative to wp-content/plugins (transient key)
+     *   slug               string  plugin slug (from transient; dirname fallback)
+     *   name               string  plugin Name header (empty when file absent/orphaned)
+     *   installed_version  string  Version header (empty when file absent/orphaned)
+     *   available_version  string  new_version from WP update transient
+     *   package_available  bool    whether a download package URL is present in the transient
+     *
+     * Orphaned entries: plugins in the transient whose file no longer exists on disk have
+     * name='' and installed_version=''. WP admin excludes these from its display count.
+     * Care's read_inventory() counts them (raw).  This endpoint exposes them transparently
+     * so Plugin Center can apply the same exclusion and match the WP admin count.
+     *
+     * SECURITY: Never includes package URLs, license keys, raw tokens, or any credential.
+     *           Read-only; does not trigger update checks or modify any state.
+     *           translations[] and no_update[] entries are NOT included in plugins or plugins_total.
+     */
+    public function hub_updates_inventory( WP_REST_Request $request ): WP_REST_Response {
+        if ( ! $this->validate_hub_token( $request, true ) ) {
+            return new WP_REST_Response( [ 'error' => 'Unauthorized' ], 403 );
+        }
+
+        $generated_at = gmdate( 'c' );
+
+        // Read raw transients, bypassing Care's policy filter (bypass_for_task=true).
+        $prev = RP_Care_Update_Control::$bypass_for_task;
+        try {
+            RP_Care_Update_Control::$bypass_for_task = true;
+            $reader         = RP_Care_Update_Control::$transient_reader ?? 'get_site_transient';
+            $update_plugins = $reader( 'update_plugins' );
+            $update_themes  = $reader( 'update_themes' );
+        } finally {
+            RP_Care_Update_Control::$bypass_for_task = $prev;
+        }
+
+        $pdata_fn = RP_Care_Update_Control::$plugin_data_reader;
+
+        // ── Plugins ──────────────────────────────────────────────────────────
+
+        $plugins_checked = null;
+        $plugins_stale   = true;
+        $plugins_total   = null;
+        $plugins         = [];
+
+        if ( is_object( $update_plugins ) ) {
+            $ts = isset( $update_plugins->last_checked ) ? (int) $update_plugins->last_checked : 0;
+            if ( $ts > 0 ) {
+                $plugins_checked = gmdate( 'c', $ts );
+                $plugins_stale   = ( time() - $ts ) > 26 * HOUR_IN_SECONDS;
+            }
+
+            if ( is_array( $update_plugins->response ?? null ) ) {
+                $plugins_total = 0;
+                foreach ( $update_plugins->response as $plugin_file => $entry ) {
+                    if ( ! is_string( $plugin_file ) || '' === $plugin_file ) continue;
+                    if ( ! is_object( $entry ) && ! is_array( $entry ) ) continue;
+                    $entry = (object) $entry;
+
+                    // Resolve installed plugin headers (name + version).
+                    // Empty strings signal an orphaned transient entry (file absent on disk).
+                    if ( $pdata_fn !== null ) {
+                        $pdata = $pdata_fn( $plugin_file );
+                    } else {
+                        if ( ! function_exists( 'get_plugin_data' ) ) {
+                            require_once ABSPATH . 'wp-admin/includes/plugin.php';
+                        }
+                        $pdata = get_plugin_data( WP_PLUGIN_DIR . '/' . $plugin_file, false, false );
+                    }
+                    $installed_name = (string) ( $pdata['Name']    ?? '' );
+                    $installed_ver  = (string) ( $pdata['Version'] ?? '' );
+
+                    $slug = (string) ( $entry->slug ?? dirname( $plugin_file ) );
+                    if ( '.' === $slug || '' === $slug ) $slug = $plugin_file;
+
+                    $plugins[ $plugin_file ] = [
+                        'plugin_file'       => $plugin_file,
+                        'slug'              => $slug,
+                        'name'              => $installed_name,
+                        'installed_version' => $installed_ver,
+                        'available_version' => (string) ( $entry->new_version ?? '' ),
+                        'package_available' => ! empty( $entry->package ),
+                    ];
+                    $plugins_total++;
+                }
+                ksort( $plugins );
+                $plugins = array_values( $plugins );
+            }
+        }
+
+        // ── Themes ───────────────────────────────────────────────────────────
+
+        $themes_total = null;
+        $themes       = [];
+
+        if ( is_object( $update_themes ) && is_array( $update_themes->response ?? null ) ) {
+            $themes_total = 0;
+            foreach ( $update_themes->response as $theme_file => $data ) {
+                if ( ! is_string( $theme_file ) || '' === $theme_file ) continue;
+                if ( ! is_array( $data ) ) continue;
+
+                $themes[ $theme_file ] = [
+                    'theme_file'        => $theme_file,
+                    'slug'              => $theme_file,
+                    'installed_version' => (string) ( $data['Version'] ?? '' ),
+                    'available_version' => (string) ( $data['new_version'] ?? '' ),
+                    'package_available' => ! empty( $data['package'] ),
+                ];
+                $themes_total++;
+            }
+            ksort( $themes );
+            $themes = array_values( $themes );
+        }
+
+        // ── Inventory hash ────────────────────────────────────────────────────
+        // Stable sha256 over content only (no timestamps), so PC can detect changes cheaply.
+        $inventory_hash = hash(
+            'sha256',
+            json_encode(
+                [ 'plugins' => $plugins, 'themes' => $themes ],
+                JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+            ) ?: ''
+        );
+
+        return new WP_REST_Response(
+            [
+                'schema_version' => 1,
+                'generated_at'   => $generated_at,
+                'checked_at'     => $plugins_checked,
+                'stale'          => $plugins_stale,
+                'plugins_total'  => $plugins_total,
+                'plugins'        => $plugins,
+                'themes_total'   => $themes_total,
+                'themes'         => $themes,
+                'inventory_hash' => $inventory_hash,
+            ],
+            200
+        );
     }
 }

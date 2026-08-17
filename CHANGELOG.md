@@ -1,5 +1,34 @@
 # Changelog — Replanta Care
 
+## [1.16.2]
+
+### POST /replanta-care/v1/updates/inventory (nuevo endpoint)
+
+- Nuevo endpoint autenticado (X-Hub-Token estricto, igual que /ping) que devuelve el inventario completo del transient RAW `update_plugins`, sin aplicar filtros de política.
+- Campos de respuesta: `schema_version`, `generated_at`, `checked_at`, `stale`, `plugins_total`, `plugins[]`, `themes_total`, `themes[]`, `inventory_hash`.
+- Por plugin: `plugin_file`, `slug`, `name`, `installed_version`, `available_version`, `package_available` (booleano). Nunca incluye URLs de descarga, licencias ni secretos.
+- `plugins_total` = count(plugins), exactamente. Las entradas de `no_update[]` y `translations[]` no se cuentan.
+- Entradas huérfanas (plugin_file en el transient pero el archivo no existe en disco) tienen `name=""` e `installed_version=""`. WP admin las excluye de su conteo; el endpoint las expone para que Plugin Center pueda aplicar la misma exclusión y concordar con WP admin.
+- `inventory_hash`: sha256 sobre json determinístico de plugins+themes (sin timestamps). Permite a PC detectar cambios sin necesidad de diff completo.
+- Seam de test `RP_Care_Update_Control::$plugin_data_reader`: callable `(string $plugin_file) => array{Name,Version}` inyectable en tests. Null en producción.
+- 29 tests en `UpdatesInventoryTest.php` (IN-01..IN-29): auth gate, estados del transient, enumeración, precisión de campos, seguridad, no_update/translations excluidos, ordenación, hash, temas.
+
+### Pre-pairing gate (portado de 1.16.1)
+
+- `hub_ping()`: gate de tres estados — site sin token → 200 `{status:unpaired, pairing_required:true}`; token configurado + header ausente/incorrecto → 403; token + header válido → payload completo.
+- 16 tests en `PairingResponseTest.php` (PG-01..PG-16).
+
+### `hub_config` — staging_role
+
+- Nuevo parámetro `staging_role` (`production|staging|unset`) en `POST /replanta-care/v1/config`.
+- Permite a PC configurar remotamente el rol del sitio sin desplegar Care manualmente.
+
+## [1.16.1]
+
+### Pre-pairing gate
+
+- Idéntico a lo descrito en 1.16.2 (commit 7965a85). Versión 1.16.2 incluye además el endpoint de inventario y el seam de plugin_data_reader; no desplegar 1.16.1 directamente.
+
 ## [1.16.0]
 
 ### Inventario de actualizaciones — contrato /ping

@@ -18,6 +18,10 @@ class RP_Care_Update_Control {
     // Must be null in production. Allows testing try/finally restore on exception.
     public static $transient_reader = null;
 
+    // Test-only seam: inject a callable (string $plugin_file_relative) => array{Name:string, Version:string}
+    // to replace get_plugin_data() in hub_updates_inventory(). Must be null in production.
+    public static $plugin_data_reader = null;
+
     public function __construct() {
         add_action('init', [$this, 'init']);
     }

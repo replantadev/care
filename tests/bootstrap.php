@@ -115,6 +115,16 @@ if ( ! function_exists( 'wp_remote_retrieve_body' ) ) {
         return is_array( $response ) ? (string) ( $response['body'] ?? '' ) : '';
     }
 }
+if ( ! function_exists( 'wp_remote_retrieve_headers' ) ) {
+    function wp_remote_retrieve_headers( $response ) {
+        return is_array( $response ) ? ( $response['headers'] ?? [] ) : [];
+    }
+}
+if ( ! function_exists( 'wp_remote_head' ) ) {
+    function wp_remote_head( string $url, array $args = [] ): array|\WP_Error {
+        return [ 'response' => [ 'code' => 200 ], 'headers' => [], 'body' => '' ];
+    }
+}
 if ( ! function_exists( 'add_query_arg' ) ) {
     function add_query_arg( $args, string $url = '' ): string {
         if ( is_array( $args ) ) {

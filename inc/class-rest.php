@@ -1639,11 +1639,32 @@ class RP_Care_REST {
 
     /**
      * GET /wp-json/replanta-care/v1/ping
-     * Hub health check. Permissive: responds even before bootstrap.
+     * Hub health check.
+     *
+     * Three-state auth gate:
+     *   1. No site_token configured (unpaired) → minimal pre-pairing response.
+     *      Reveals only plugin_ver and schema_version; no operational data.
+     *   2. Token configured, X-Hub-Token header absent or wrong → 403.
+     *   3. Token configured, header matches → full health payload.
      */
     public function hub_ping(WP_REST_Request $request) {
-        if (!$this->validate_hub_token($request, false)) {
-            return new WP_REST_Response(['error' => 'Unauthorized'], 403);
+        $options    = get_option( 'rpcare_options', [] );
+        $site_token = $options['site_token'] ?? '';
+
+        // State 1 — unpaired: no token has been provisioned by Plugin Center yet.
+        if ( empty( $site_token ) ) {
+            return new WP_REST_Response( [
+                'status'         => 'unpaired',
+                'pairing_required' => true,
+                'plugin_ver'     => defined( 'RPCARE_VERSION' ) ? RPCARE_VERSION : '?',
+                'schema_version' => 1,
+            ], 200 );
+        }
+
+        // States 2 & 3 — paired: token present, validate the header.
+        $header = $request->get_header( 'x_hub_token' ) ?: '';
+        if ( empty( $header ) || ! hash_equals( hash( 'sha256', $site_token ), $header ) ) {
+            return new WP_REST_Response( [ 'error' => 'Unauthorized' ], 403 );
         }
 
         $plan = class_exists('RP_Care_Plan') ? (RP_Care_Plan::get_current() ?: '') : '';

@@ -1880,6 +1880,15 @@ class RP_Care_REST {
             }
         }
 
+        // Staging role — set production/staging relationship so get_status_report() reflects it.
+        $staging_role = $request->get_param( 'staging_role' );
+        if ( $staging_role !== null && in_array( $staging_role, [ 'production', 'staging', 'unset' ], true ) ) {
+            $opts                 = get_option( 'rpcare_options', [] );
+            $opts['staging_role'] = $staging_role;
+            update_option( 'rpcare_options', $opts );
+            $updated['staging_role'] = $staging_role;
+        }
+
         return new WP_REST_Response([
             'status'  => 'ok',
             'updated' => $updated,

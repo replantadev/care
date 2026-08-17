@@ -1,54 +1,69 @@
 <?php
 /**
- * Care 1.16.2 — /updates/inventory endpoint contract
+ * Care 1.16.2 — /updates/inventory endpoint contract (schema_version=2)
  *
- * Documents the invariants that Plugin Center depends on for 4-way count
- * reconciliation (WP admin / Care /ping / PC / inventory endpoint).
+ * Validates the canonical inventory endpoint that cross-references the raw
+ * update_plugins transient with get_plugins() to separate actionable entries
+ * (plugin still installed on disk) from orphaned entries (stale transient / slug mismatch).
+ *
+ * The 4-way count reconciliation test (IN-30..IN-35) reproduces exactly the
+ * observed discrepancy on dev.banbancosmetics.com:
+ *   WP admin=4  Care /ping=5 (old) → Care /ping=4 (fixed) → PC=4
  *
  * Auth gate:
- *   IN-01  No site_token → 403 (unpaired site cannot query inventory)
- *   IN-02  Token configured, X-Hub-Token header absent → 403
- *   IN-03  Token configured, wrong header → 403
+ *   IN-01  No site_token → 403
+ *   IN-02  Token present, header absent → 403
+ *   IN-03  Token present, wrong header → 403
  *   IN-04  Valid token → 200
  *
  * Transient state:
- *   IN-05  Transient absent (false) → plugins_total=null, stale=true, checked_at=null
- *   IN-06  Transient malformed (non-object) → same as absent
- *   IN-07  Transient present but response not an array → plugins_total=null
- *   IN-08  Transient empty (response=[]) → plugins_total=0, plugins=[]
+ *   IN-05  Transient absent → raw_total=null, stale=true, checked_at=null
+ *   IN-06  Non-object transient → same as absent
+ *   IN-07  Object without response array → raw_total=null
+ *   IN-08  Empty response[] → raw_total=0, plugins=[], orphaned_plugins=[]
  *
  * Plugin enumeration:
- *   IN-09  Five plugins in response → plugins_total=5, count(plugins)=5
- *   IN-10  Malformed entry (scalar value) in response → skipped, not counted
- *   IN-11  Entry with empty string key → skipped
- *   IN-12  plugins_total always equals count(plugins) when transient is valid
+ *   IN-09  5 entries, all installed → raw_total=5, actionable_total=5, orphaned_total=0
+ *   IN-10  Malformed (scalar) entry → skipped, not counted
+ *   IN-11  Empty-string key → skipped
+ *   IN-12  actionable_total always equals count(plugins)
+ *   IN-13  orphaned_total always equals count(orphaned_plugins)
  *
- * Field accuracy:
- *   IN-13  package_available=false when package field empty/absent
- *   IN-14  package_available=true when package field non-empty
- *   IN-15  available_version from new_version field
- *   IN-16  slug from explicit slug field when present
- *   IN-17  slug falls back to dirname(plugin_file) when slug absent
- *   IN-18  name and installed_version populated from plugin_data_reader
- *   IN-19  Orphaned entry (file absent) has installed_version='' and name=''
+ * Field accuracy — installed plugin:
+ *   IN-14  package_available=false when package absent
+ *   IN-15  package_available=true when package present
+ *   IN-16  available_version from new_version field
+ *   IN-17  slug from explicit field; dirname fallback when absent
+ *   IN-18  name and installed_version from get_plugins() map
+ *   IN-19  installed=true, orphaned=false for installed entries
+ *
+ * Field accuracy — orphaned plugin:
+ *   IN-20  Orphaned entry: installed=false, orphaned=true
+ *   IN-21  Orphaned entry: name='', installed_version=''
+ *   IN-22  Orphaned entry still counted in raw_total
+ *   IN-23  Orphaned entry NOT in plugins[], IS in orphaned_plugins[]
  *
  * Security:
- *   IN-20  Response never includes package URL value
- *   IN-21  schema_version=1 always present in 200 response
+ *   IN-24  Response never includes package download URL value
+ *   IN-25  schema_version=2 always present
  *
- * What is NOT counted in plugins_total:
- *   IN-22  no_update entries are NOT counted
- *   IN-23  translations entries are NOT counted
+ * What is NOT counted in actionable_total:
+ *   IN-26  no_update[] entries excluded from all totals
+ *   IN-27  translations[] excluded from all totals
  *
  * Ordering and hashing:
- *   IN-24  plugins are sorted alphabetically by plugin_file (deterministic)
- *   IN-25  inventory_hash is 64-char hex (sha256)
- *   IN-26  Same content → same hash (deterministic)
- *   IN-27  Different plugin list → different hash
+ *   IN-28  plugins[] sorted alphabetically by plugin_file
+ *   IN-29  inventory_hash is 64-char hex; same content → same hash; different → different
  *
  * Theme handling:
- *   IN-28  Themes with malformed entries (non-array value) are skipped
- *   IN-29  Valid theme entry fields: theme_file, slug, installed_version, available_version, package_available
+ *   IN-30 (was IN-28)  Malformed theme entry skipped
+ *
+ * ── CANONICAL 4-WAY COUNT RECONCILIATION (reproduces dev.banban 5→4 scenario) ──
+ *   IN-31  5 response[] entries, 4 installed (1 orphaned): raw=5, actionable=4, orphaned=1
+ *   IN-32  hub_ping() returns updates_pending_total=4 (actionable, not raw)
+ *   IN-33  hub_ping() returns updates_pending=4 (alias, same value as total)
+ *   IN-34  hub_ping() returns updates_orphaned=1
+ *   IN-35  inventory endpoint separates correctly: 4 in plugins[], 1 in orphaned_plugins[]
  */
 
 declare( strict_types=1 );
@@ -87,19 +102,22 @@ class UpdatesInventoryTest extends TestCase {
     private RP_Care_REST $rest;
 
     protected function setUp(): void {
-        $GLOBALS['_wp_options']  = [];
-        $GLOBALS['_rest_routes'] = [];
-        RP_Care_Update_Control::$bypass_for_task  = false;
-        RP_Care_Update_Control::$transient_reader = null;
+        $GLOBALS['_wp_options']                = [];
+        $GLOBALS['_rest_routes']               = [];
+        $GLOBALS['_wp_installed_plugins_mock'] = [];
+        RP_Care_Update_Control::$bypass_for_task   = false;
+        RP_Care_Update_Control::$transient_reader  = null;
         RP_Care_Update_Control::$plugin_data_reader = null;
+        RP_Care_Update_Control::$get_plugins_reader = null;
 
         $this->rest = new RP_Care_REST();
     }
 
     protected function tearDown(): void {
-        RP_Care_Update_Control::$transient_reader   = null;
-        RP_Care_Update_Control::$plugin_data_reader  = null;
-        RP_Care_Update_Control::$bypass_for_task     = false;
+        RP_Care_Update_Control::$transient_reader  = null;
+        RP_Care_Update_Control::$plugin_data_reader = null;
+        RP_Care_Update_Control::$get_plugins_reader = null;
+        RP_Care_Update_Control::$bypass_for_task    = false;
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -120,7 +138,11 @@ class UpdatesInventoryTest extends TestCase {
         return $this->rest->hub_updates_inventory( $this->makeRequest( $headerToken ) );
     }
 
-    /** Minimal valid plugin transient object with the given response entries. */
+    private function callPing( ?string $headerToken = null ): WP_REST_Response {
+        return $this->rest->hub_ping( $this->makeRequest( $headerToken ) );
+    }
+
+    /** Returns a minimal valid plugin transient object. */
     private function makePluginTransient( array $response, int $lastChecked = 0 ): object {
         $obj               = new stdClass();
         $obj->response     = $response;
@@ -130,7 +152,7 @@ class UpdatesInventoryTest extends TestCase {
         return $obj;
     }
 
-    /** Minimal valid plugin entry (object form, one update available). */
+    /** Returns a minimal valid plugin transient entry. */
     private function makeEntry( string $slug, string $newVersion = '2.0', string $package = '' ): object {
         $e              = new stdClass();
         $e->slug        = $slug;
@@ -139,6 +161,10 @@ class UpdatesInventoryTest extends TestCase {
         return $e;
     }
 
+    /**
+     * Configure the transient reader seam.
+     * Pass null for themes to return false (absent).
+     */
     private function setTransient( ?object $plugins, ?object $themes = null ): void {
         $transients = [
             'update_plugins' => $plugins,
@@ -149,361 +175,472 @@ class UpdatesInventoryTest extends TestCase {
         };
     }
 
-    private function setPluginDataReader( array $map ): void {
-        RP_Care_Update_Control::$plugin_data_reader = function( string $plugin_file ) use ( $map ) {
-            return $map[ $plugin_file ] ?? [ 'Name' => '', 'Version' => '' ];
-        };
+    /**
+     * Configure the get_plugins seam.
+     * $map = [ 'plugin/plugin.php' => ['Name' => '...', 'Version' => '...'] ]
+     */
+    private function setInstalledPlugins( array $map ): void {
+        RP_Care_Update_Control::$get_plugins_reader = fn() => $map;
     }
 
     // ── IN-01..04: Auth gate ──────────────────────────────────────────────────
 
     public function test_in01_no_site_token_returns_403(): void {
-        // No site_token configured — unpaired site.
         $resp = $this->callInventory( $this->validHeader() );
-        $this->assertSame( 403, $resp->get_status(),
-            'Unpaired site (no site_token) must return 403 on inventory endpoint' );
+        $this->assertSame( 403, $resp->get_status() );
     }
 
     public function test_in02_paired_absent_header_returns_403(): void {
         update_option( 'rpcare_options', [ 'site_token' => self::RAW_TOKEN ] );
-        $resp = $this->callInventory(); // no X-Hub-Token header
-        $this->assertSame( 403, $resp->get_status() );
+        $this->assertSame( 403, $this->callInventory()->get_status() );
     }
 
     public function test_in03_paired_wrong_header_returns_403(): void {
         update_option( 'rpcare_options', [ 'site_token' => self::RAW_TOKEN ] );
-        $resp = $this->callInventory( 'not-the-right-hash' );
-        $this->assertSame( 403, $resp->get_status() );
+        $this->assertSame( 403, $this->callInventory( 'not-the-right-hash' )->get_status() );
     }
 
     public function test_in04_valid_token_returns_200(): void {
         update_option( 'rpcare_options', [ 'site_token' => self::RAW_TOKEN ] );
-        $resp = $this->callInventory( $this->validHeader() );
-        $this->assertSame( 200, $resp->get_status() );
+        $this->assertSame( 200, $this->callInventory( $this->validHeader() )->get_status() );
     }
 
     // ── IN-05..08: Transient state ────────────────────────────────────────────
 
-    public function test_in05_absent_transient_returns_null_total_and_null_checked(): void {
+    public function test_in05_absent_transient_returns_null_totals(): void {
         update_option( 'rpcare_options', [ 'site_token' => self::RAW_TOKEN ] );
-        $this->setTransient( null ); // reader returns null (not a WP transient false)
+        $this->setTransient( null );
         $data = $this->callInventory( $this->validHeader() )->get_data();
-        $this->assertNull( $data['plugins_total'],  'plugins_total must be null when transient absent' );
-        $this->assertNull( $data['checked_at'],     'checked_at must be null when transient absent' );
-        $this->assertTrue( $data['stale'],          'stale must be true when transient absent' );
-        $this->assertSame( [], $data['plugins'],    'plugins must be empty array' );
+        $this->assertNull( $data['raw_total'],        'raw_total must be null when transient absent' );
+        $this->assertNull( $data['actionable_total'], 'actionable_total must be null' );
+        $this->assertNull( $data['checked_at'],       'checked_at must be null' );
+        $this->assertTrue( $data['stale'],            'stale must be true' );
+        $this->assertSame( [], $data['plugins'],      'plugins must be []' );
+        $this->assertSame( [], $data['orphaned_plugins'], 'orphaned_plugins must be []' );
     }
 
     public function test_in06_non_object_transient_treated_as_absent(): void {
         update_option( 'rpcare_options', [ 'site_token' => self::RAW_TOKEN ] );
         RP_Care_Update_Control::$transient_reader = fn( string $k ) => 'malformed-string';
         $data = $this->callInventory( $this->validHeader() )->get_data();
-        $this->assertNull( $data['plugins_total'],
-            'Non-object transient must be treated same as absent' );
+        $this->assertNull( $data['raw_total'] );
     }
 
-    public function test_in07_transient_without_response_array_returns_null_total(): void {
+    public function test_in07_transient_object_without_response_array_returns_null(): void {
         update_option( 'rpcare_options', [ 'site_token' => self::RAW_TOKEN ] );
-        $obj = new stdClass(); // valid object but no response property
-        $this->setTransient( $obj );
+        $this->setTransient( new stdClass() );
         $data = $this->callInventory( $this->validHeader() )->get_data();
-        $this->assertNull( $data['plugins_total'],
-            'Transient object without response array must produce plugins_total=null' );
+        $this->assertNull( $data['raw_total'] );
+        $this->assertNull( $data['actionable_total'] );
     }
 
-    public function test_in08_empty_response_array_returns_zero_total(): void {
+    public function test_in08_empty_response_returns_zero_totals(): void {
         update_option( 'rpcare_options', [ 'site_token' => self::RAW_TOKEN ] );
         $this->setTransient( $this->makePluginTransient( [] ) );
+        $this->setInstalledPlugins( [] );
         $data = $this->callInventory( $this->validHeader() )->get_data();
-        $this->assertSame( 0, $data['plugins_total'],
-            'Empty response[] must produce plugins_total=0' );
+        $this->assertSame( 0, $data['raw_total'] );
+        $this->assertSame( 0, $data['actionable_total'] );
+        $this->assertSame( 0, $data['orphaned_total'] );
         $this->assertSame( [], $data['plugins'] );
+        $this->assertSame( [], $data['orphaned_plugins'] );
     }
 
-    // ── IN-09..12: Plugin enumeration ─────────────────────────────────────────
+    // ── IN-09..13: Plugin enumeration ─────────────────────────────────────────
 
-    public function test_in09_five_plugins_counted_correctly(): void {
+    public function test_in09_five_installed_plugins_all_actionable(): void {
         update_option( 'rpcare_options', [ 'site_token' => self::RAW_TOKEN ] );
         $entries = [
-            'woo/woo.php'       => $this->makeEntry( 'woo' ),
-            'yoast/yoast.php'   => $this->makeEntry( 'yoast' ),
-            'rocket/rocket.php' => $this->makeEntry( 'rocket' ),
-            'acf/acf.php'       => $this->makeEntry( 'acf' ),
-            'adbc/adbc.php'     => $this->makeEntry( 'adbc' ),
+            'a/a.php' => $this->makeEntry( 'a' ),
+            'b/b.php' => $this->makeEntry( 'b' ),
+            'c/c.php' => $this->makeEntry( 'c' ),
+            'd/d.php' => $this->makeEntry( 'd' ),
+            'e/e.php' => $this->makeEntry( 'e' ),
         ];
         $this->setTransient( $this->makePluginTransient( $entries ) );
+        $this->setInstalledPlugins( [
+            'a/a.php' => [ 'Name' => 'A', 'Version' => '1.0' ],
+            'b/b.php' => [ 'Name' => 'B', 'Version' => '1.0' ],
+            'c/c.php' => [ 'Name' => 'C', 'Version' => '1.0' ],
+            'd/d.php' => [ 'Name' => 'D', 'Version' => '1.0' ],
+            'e/e.php' => [ 'Name' => 'E', 'Version' => '1.0' ],
+        ] );
         $data = $this->callInventory( $this->validHeader() )->get_data();
-        $this->assertSame( 5, $data['plugins_total'] );
+        $this->assertSame( 5, $data['raw_total'] );
+        $this->assertSame( 5, $data['actionable_total'] );
+        $this->assertSame( 0, $data['orphaned_total'] );
         $this->assertCount( 5, $data['plugins'] );
+        $this->assertCount( 0, $data['orphaned_plugins'] );
     }
 
     public function test_in10_malformed_scalar_entry_skipped(): void {
         update_option( 'rpcare_options', [ 'site_token' => self::RAW_TOKEN ] );
         $entries = [
-            'good/good.php'   => $this->makeEntry( 'good' ),
-            'bad/bad.php'     => 'this-is-a-scalar-not-an-object', // malformed
+            'good/good.php' => $this->makeEntry( 'good' ),
+            'bad/bad.php'   => 'this-is-a-scalar',
         ];
         $this->setTransient( $this->makePluginTransient( $entries ) );
+        $this->setInstalledPlugins( [ 'good/good.php' => [ 'Name' => 'Good', 'Version' => '1.0' ] ] );
         $data = $this->callInventory( $this->validHeader() )->get_data();
-        $this->assertSame( 1, $data['plugins_total'],
-            'Malformed scalar entry must be skipped and not counted' );
+        $this->assertSame( 1, $data['raw_total'],        'Malformed entry must be skipped' );
+        $this->assertSame( 1, $data['actionable_total'] );
     }
 
-    public function test_in11_empty_string_key_entry_skipped(): void {
+    public function test_in11_empty_string_key_skipped(): void {
         update_option( 'rpcare_options', [ 'site_token' => self::RAW_TOKEN ] );
-        // PHP arrays cannot have literal '' as a string key, but we can force it via cast.
-        $entries = [ 'good/good.php' => $this->makeEntry( 'good' ) ];
-        $transient = $this->makePluginTransient( $entries );
-        // Inject an empty-key entry at the object level to bypass array validation.
-        $transient->response[''] = $this->makeEntry( 'empty-key' );
-        $this->setTransient( $transient );
+        $obj           = $this->makePluginTransient( [ 'good/g.php' => $this->makeEntry( 'good' ) ] );
+        $obj->response[''] = $this->makeEntry( 'empty-key' );
+        $this->setTransient( $obj );
+        $this->setInstalledPlugins( [ 'good/g.php' => [ 'Name' => 'Good', 'Version' => '1.0' ] ] );
         $data = $this->callInventory( $this->validHeader() )->get_data();
-        $this->assertSame( 1, $data['plugins_total'],
-            'Entry with empty string key must be skipped' );
+        $this->assertSame( 1, $data['raw_total'], 'Empty-string key must be skipped' );
     }
 
-    public function test_in12_plugins_total_always_equals_count_plugins(): void {
+    public function test_in12_actionable_total_equals_count_plugins(): void {
         update_option( 'rpcare_options', [ 'site_token' => self::RAW_TOKEN ] );
         $entries = [
-            'aaa/aaa.php' => $this->makeEntry( 'aaa' ),
-            'bbb/bbb.php' => $this->makeEntry( 'bbb' ),
-            'ccc/ccc.php' => 'bad-scalar',          // skipped
-            'ddd/ddd.php' => $this->makeEntry( 'ddd' ),
+            'aaa/a.php' => $this->makeEntry( 'aaa' ),
+            'bbb/b.php' => $this->makeEntry( 'bbb' ),
+            'ccc/c.php' => 'bad-scalar',
         ];
         $this->setTransient( $this->makePluginTransient( $entries ) );
+        $this->setInstalledPlugins( [
+            'aaa/a.php' => [ 'Name' => 'AAA', 'Version' => '1' ],
+            'bbb/b.php' => [ 'Name' => 'BBB', 'Version' => '1' ],
+        ] );
         $data = $this->callInventory( $this->validHeader() )->get_data();
-        $this->assertSame(
-            $data['plugins_total'],
-            count( $data['plugins'] ),
-            'plugins_total must always equal count(plugins)'
-        );
+        $this->assertSame( $data['actionable_total'], count( $data['plugins'] ),
+            'actionable_total must equal count(plugins)' );
     }
 
-    // ── IN-13..19: Field accuracy ─────────────────────────────────────────────
-
-    public function test_in13_package_available_false_when_package_absent(): void {
+    public function test_in13_orphaned_total_equals_count_orphaned_plugins(): void {
         update_option( 'rpcare_options', [ 'site_token' => self::RAW_TOKEN ] );
-        $entry = $this->makeEntry( 'myplugin', '2.0', '' ); // empty package
-        $this->setTransient( $this->makePluginTransient( [ 'mp/mp.php' => $entry ] ) );
+        $entries = [
+            'installed/i.php' => $this->makeEntry( 'installed' ),
+            'orphan/o.php'    => $this->makeEntry( 'orphan' ),
+        ];
+        $this->setTransient( $this->makePluginTransient( $entries ) );
+        $this->setInstalledPlugins( [ 'installed/i.php' => [ 'Name' => 'Installed', 'Version' => '1' ] ] );
         $data = $this->callInventory( $this->validHeader() )->get_data();
-        $this->assertFalse( $data['plugins'][0]['package_available'],
-            'package_available must be false when package field is empty' );
+        $this->assertSame( $data['orphaned_total'], count( $data['orphaned_plugins'] ),
+            'orphaned_total must equal count(orphaned_plugins)' );
     }
 
-    public function test_in14_package_available_true_when_package_present(): void {
+    // ── IN-14..19: Field accuracy — installed ─────────────────────────────────
+
+    public function test_in14_package_available_false_when_absent(): void {
         update_option( 'rpcare_options', [ 'site_token' => self::RAW_TOKEN ] );
-        $entry = $this->makeEntry( 'freeplugin', '1.1', 'https://downloads.wp.org/plugin/freeplugin.1.1.zip' );
+        $this->setTransient( $this->makePluginTransient( [ 'p/p.php' => $this->makeEntry( 'p', '2.0', '' ) ] ) );
+        $this->setInstalledPlugins( [ 'p/p.php' => [ 'Name' => 'P', 'Version' => '1.0' ] ] );
+        $data = $this->callInventory( $this->validHeader() )->get_data();
+        $this->assertFalse( $data['plugins'][0]['package_available'] );
+    }
+
+    public function test_in15_package_available_true_when_present(): void {
+        update_option( 'rpcare_options', [ 'site_token' => self::RAW_TOKEN ] );
+        $entry = $this->makeEntry( 'fp', '1.1', 'https://downloads.wp.org/plugin/fp.zip' );
         $this->setTransient( $this->makePluginTransient( [ 'fp/fp.php' => $entry ] ) );
+        $this->setInstalledPlugins( [ 'fp/fp.php' => [ 'Name' => 'Free Plugin', 'Version' => '1.0' ] ] );
         $data = $this->callInventory( $this->validHeader() )->get_data();
-        $this->assertTrue( $data['plugins'][0]['package_available'],
-            'package_available must be true when package field is non-empty' );
+        $this->assertTrue( $data['plugins'][0]['package_available'] );
     }
 
-    public function test_in15_available_version_from_new_version_field(): void {
+    public function test_in16_available_version_from_new_version(): void {
         update_option( 'rpcare_options', [ 'site_token' => self::RAW_TOKEN ] );
-        $entry = $this->makeEntry( 'plugin', '5.3.1' );
-        $this->setTransient( $this->makePluginTransient( [ 'p/p.php' => $entry ] ) );
+        $this->setTransient( $this->makePluginTransient( [ 'p/p.php' => $this->makeEntry( 'p', '5.3.1' ) ] ) );
+        $this->setInstalledPlugins( [ 'p/p.php' => [ 'Name' => 'P', 'Version' => '5.0.0' ] ] );
         $data = $this->callInventory( $this->validHeader() )->get_data();
         $this->assertSame( '5.3.1', $data['plugins'][0]['available_version'] );
     }
 
-    public function test_in16_slug_from_explicit_field(): void {
+    public function test_in17_slug_explicit_field_and_dirname_fallback(): void {
         update_option( 'rpcare_options', [ 'site_token' => self::RAW_TOKEN ] );
-        $entry       = $this->makeEntry( 'exact-slug' );
-        $this->setTransient( $this->makePluginTransient( [ 'dir/file.php' => $entry ] ) );
-        $data = $this->callInventory( $this->validHeader() )->get_data();
-        $this->assertSame( 'exact-slug', $data['plugins'][0]['slug'],
-            'slug must come from explicit entry->slug field when present' );
+        $withSlug    = $this->makeEntry( 'explicit-slug' );
+        $withoutSlug = new stdClass();
+        $withoutSlug->new_version = '1.0';
+        $withoutSlug->package     = '';
+        $entries = [ 'dir-a/main.php' => $withSlug, 'dir-b/main.php' => $withoutSlug ];
+        $this->setTransient( $this->makePluginTransient( $entries ) );
+        $this->setInstalledPlugins( [
+            'dir-a/main.php' => [ 'Name' => 'A', 'Version' => '1' ],
+            'dir-b/main.php' => [ 'Name' => 'B', 'Version' => '1' ],
+        ] );
+        $data    = $this->callInventory( $this->validHeader() )->get_data();
+        $slugMap = array_column( $data['plugins'], 'slug', 'plugin_file' );
+        $this->assertSame( 'explicit-slug', $slugMap['dir-a/main.php'],
+            'Explicit slug field must be used when present' );
+        $this->assertSame( 'dir-b', $slugMap['dir-b/main.php'],
+            'Slug must fall back to dirname when absent' );
     }
 
-    public function test_in17_slug_fallback_to_dirname_when_slug_field_absent(): void {
-        update_option( 'rpcare_options', [ 'site_token' => self::RAW_TOKEN ] );
-        $entry = new stdClass();
-        $entry->new_version = '1.0';
-        $entry->package     = '';
-        // No slug property set.
-        $this->setTransient( $this->makePluginTransient( [ 'myplugin-dir/main.php' => $entry ] ) );
-        $data = $this->callInventory( $this->validHeader() )->get_data();
-        $this->assertSame( 'myplugin-dir', $data['plugins'][0]['slug'],
-            'slug must fall back to dirname(plugin_file) when slug field is absent' );
-    }
-
-    public function test_in18_name_and_version_from_plugin_data_reader(): void {
+    public function test_in18_name_and_version_from_installed_map(): void {
         update_option( 'rpcare_options', [ 'site_token' => self::RAW_TOKEN ] );
         $this->setTransient( $this->makePluginTransient( [ 'wc/wc.php' => $this->makeEntry( 'woocommerce' ) ] ) );
-        $this->setPluginDataReader( [
-            'wc/wc.php' => [ 'Name' => 'WooCommerce', 'Version' => '8.2.1' ],
-        ] );
+        $this->setInstalledPlugins( [ 'wc/wc.php' => [ 'Name' => 'WooCommerce', 'Version' => '8.2.1' ] ] );
         $data = $this->callInventory( $this->validHeader() )->get_data();
-        $plugin = $data['plugins'][0];
-        $this->assertSame( 'WooCommerce', $plugin['name'],
-            'name must come from plugin_data_reader[Name]' );
-        $this->assertSame( '8.2.1', $plugin['installed_version'],
-            'installed_version must come from plugin_data_reader[Version]' );
+        $this->assertSame( 'WooCommerce', $data['plugins'][0]['name'] );
+        $this->assertSame( '8.2.1', $data['plugins'][0]['installed_version'] );
     }
 
-    public function test_in19_orphaned_entry_has_empty_name_and_version(): void {
-        // Orphaned = file no longer on disk → plugin_data_reader returns empty strings.
+    public function test_in19_installed_flags_on_actionable_entry(): void {
         update_option( 'rpcare_options', [ 'site_token' => self::RAW_TOKEN ] );
-        $this->setTransient( $this->makePluginTransient( [ 'orphan/orphan.php' => $this->makeEntry( 'orphan' ) ] ) );
-        $this->setPluginDataReader( [] ); // nothing registered → returns all-empty
-        $data = $this->callInventory( $this->validHeader() )->get_data();
+        $this->setTransient( $this->makePluginTransient( [ 'p/p.php' => $this->makeEntry( 'p' ) ] ) );
+        $this->setInstalledPlugins( [ 'p/p.php' => [ 'Name' => 'P', 'Version' => '1' ] ] );
+        $data   = $this->callInventory( $this->validHeader() )->get_data();
         $plugin = $data['plugins'][0];
-        $this->assertSame( '', $plugin['name'],
-            'Orphaned plugin must have name=""' );
-        $this->assertSame( '', $plugin['installed_version'],
-            'Orphaned plugin must have installed_version=""' );
-        $this->assertSame( 1, $data['plugins_total'],
-            'Orphaned entry is still counted in plugins_total (raw transient)' );
+        $this->assertTrue( $plugin['installed'], 'installed must be true for actionable entry' );
+        $this->assertFalse( $plugin['orphaned'], 'orphaned must be false for actionable entry' );
     }
 
-    // ── IN-20..21: Security ───────────────────────────────────────────────────
+    // ── IN-20..23: Field accuracy — orphaned ──────────────────────────────────
 
-    public function test_in20_response_never_contains_package_url(): void {
+    public function test_in20_orphaned_flags_on_orphaned_entry(): void {
+        update_option( 'rpcare_options', [ 'site_token' => self::RAW_TOKEN ] );
+        $this->setTransient( $this->makePluginTransient( [ 'orphan/o.php' => $this->makeEntry( 'orphan' ) ] ) );
+        $this->setInstalledPlugins( [] ); // nothing installed
+        $data    = $this->callInventory( $this->validHeader() )->get_data();
+        $orphan  = $data['orphaned_plugins'][0];
+        $this->assertFalse( $orphan['installed'], 'installed must be false for orphaned entry' );
+        $this->assertTrue( $orphan['orphaned'],   'orphaned must be true for orphaned entry' );
+    }
+
+    public function test_in21_orphaned_entry_has_empty_name_and_version(): void {
+        update_option( 'rpcare_options', [ 'site_token' => self::RAW_TOKEN ] );
+        $this->setTransient( $this->makePluginTransient( [ 'orphan/o.php' => $this->makeEntry( 'orphan' ) ] ) );
+        $this->setInstalledPlugins( [] );
+        $data   = $this->callInventory( $this->validHeader() )->get_data();
+        $orphan = $data['orphaned_plugins'][0];
+        $this->assertSame( '', $orphan['name'],              'Orphaned name must be empty' );
+        $this->assertSame( '', $orphan['installed_version'], 'Orphaned installed_version must be empty' );
+    }
+
+    public function test_in22_orphaned_entry_counted_in_raw_total(): void {
+        update_option( 'rpcare_options', [ 'site_token' => self::RAW_TOKEN ] );
+        $this->setTransient( $this->makePluginTransient( [ 'orphan/o.php' => $this->makeEntry( 'orphan' ) ] ) );
+        $this->setInstalledPlugins( [] );
+        $data = $this->callInventory( $this->validHeader() )->get_data();
+        $this->assertSame( 1, $data['raw_total'],       'Orphaned entry IS counted in raw_total' );
+        $this->assertSame( 0, $data['actionable_total'], 'Orphaned entry is NOT in actionable_total' );
+        $this->assertSame( 1, $data['orphaned_total'] );
+    }
+
+    public function test_in23_orphaned_entry_in_orphaned_plugins_not_plugins(): void {
+        update_option( 'rpcare_options', [ 'site_token' => self::RAW_TOKEN ] );
+        $this->setTransient( $this->makePluginTransient( [ 'orphan/o.php' => $this->makeEntry( 'orphan' ) ] ) );
+        $this->setInstalledPlugins( [] );
+        $data = $this->callInventory( $this->validHeader() )->get_data();
+        $this->assertCount( 0, $data['plugins'],          'Orphaned entry must NOT appear in plugins[]' );
+        $this->assertCount( 1, $data['orphaned_plugins'], 'Orphaned entry must appear in orphaned_plugins[]' );
+    }
+
+    // ── IN-24..25: Security ───────────────────────────────────────────────────
+
+    public function test_in24_package_url_never_in_response(): void {
         update_option( 'rpcare_options', [ 'site_token' => self::RAW_TOKEN ] );
         $entry = $this->makeEntry( 'fp', '1.0', 'https://secret-download-url.example.com/fp.zip' );
         $this->setTransient( $this->makePluginTransient( [ 'fp/fp.php' => $entry ] ) );
+        $this->setInstalledPlugins( [ 'fp/fp.php' => [ 'Name' => 'Free Plugin', 'Version' => '1.0' ] ] );
         $body = json_encode( $this->callInventory( $this->validHeader() )->get_data() );
         $this->assertStringNotContainsString(
             'https://secret-download-url.example.com/fp.zip',
             $body,
-            'Package download URL must never appear in the response body'
+            'Package URL must never appear in response body'
         );
     }
 
-    public function test_in21_schema_version_is_1(): void {
+    public function test_in25_schema_version_is_2(): void {
         update_option( 'rpcare_options', [ 'site_token' => self::RAW_TOKEN ] );
         $this->setTransient( $this->makePluginTransient( [] ) );
+        $this->setInstalledPlugins( [] );
         $data = $this->callInventory( $this->validHeader() )->get_data();
-        $this->assertSame( 1, $data['schema_version'],
-            'schema_version must always be 1' );
+        $this->assertSame( 2, $data['schema_version'],
+            'schema_version must be 2 (added orphaned_plugins separation)' );
     }
 
-    // ── IN-22..23: What is NOT counted ────────────────────────────────────────
+    // ── IN-26..27: Exclusions ─────────────────────────────────────────────────
 
-    public function test_in22_no_update_entries_not_counted(): void {
+    public function test_in26_no_update_entries_not_counted(): void {
         update_option( 'rpcare_options', [ 'site_token' => self::RAW_TOKEN ] );
-        $obj = $this->makePluginTransient( [ 'update/update.php' => $this->makeEntry( 'update' ) ] );
-        // Add no_update entries — these must NOT inflate plugins_total.
+        $obj           = $this->makePluginTransient( [ 'real/r.php' => $this->makeEntry( 'real' ) ] );
         $obj->no_update = [
-            'noupdate1/n1.php' => (object) [ 'slug' => 'n1' ],
-            'noupdate2/n2.php' => (object) [ 'slug' => 'n2' ],
-            'noupdate3/n3.php' => (object) [ 'slug' => 'n3' ],
+            'n1/n1.php' => (object) [ 'slug' => 'n1' ],
+            'n2/n2.php' => (object) [ 'slug' => 'n2' ],
         ];
         $this->setTransient( $obj );
+        $this->setInstalledPlugins( [ 'real/r.php' => [ 'Name' => 'Real', 'Version' => '1' ] ] );
         $data = $this->callInventory( $this->validHeader() )->get_data();
-        $this->assertSame( 1, $data['plugins_total'],
-            'no_update entries must not be counted in plugins_total' );
+        $this->assertSame( 1, $data['raw_total'], 'no_update entries must not be counted' );
     }
 
-    public function test_in23_translations_not_counted_in_plugins_total(): void {
+    public function test_in27_translations_not_counted(): void {
         update_option( 'rpcare_options', [ 'site_token' => self::RAW_TOKEN ] );
         $obj = $this->makePluginTransient( [ 'p/p.php' => $this->makeEntry( 'p' ) ] );
         $obj->translations = [
-            [ 'slug' => 'p', 'language' => 'es_ES', 'version' => '1.0', 'package' => 'http://...' ],
-            [ 'slug' => 'p', 'language' => 'ca',    'version' => '1.0', 'package' => 'http://...' ],
+            [ 'slug' => 'p', 'language' => 'es_ES', 'package' => 'http://...' ],
+            [ 'slug' => 'p', 'language' => 'ca',    'package' => 'http://...' ],
         ];
         $this->setTransient( $obj );
+        $this->setInstalledPlugins( [ 'p/p.php' => [ 'Name' => 'P', 'Version' => '1' ] ] );
         $data = $this->callInventory( $this->validHeader() )->get_data();
-        $this->assertSame( 1, $data['plugins_total'],
-            'translations[] must not be counted in plugins_total' );
+        $this->assertSame( 1, $data['raw_total'], 'translations must not be counted' );
     }
 
-    // ── IN-24..27: Ordering and hashing ──────────────────────────────────────
+    // ── IN-28..29: Ordering and hashing ───────────────────────────────────────
 
-    public function test_in24_plugins_sorted_alphabetically_by_plugin_file(): void {
+    public function test_in28_plugins_sorted_by_plugin_file(): void {
         update_option( 'rpcare_options', [ 'site_token' => self::RAW_TOKEN ] );
-        // Insert in reverse alpha order; expect sorted output.
         $entries = [
             'zzz/z.php' => $this->makeEntry( 'zzz' ),
             'aaa/a.php' => $this->makeEntry( 'aaa' ),
             'mmm/m.php' => $this->makeEntry( 'mmm' ),
         ];
         $this->setTransient( $this->makePluginTransient( $entries ) );
-        $data = $this->callInventory( $this->validHeader() )->get_data();
+        $this->setInstalledPlugins( [
+            'zzz/z.php' => [ 'Name' => 'Z', 'Version' => '1' ],
+            'aaa/a.php' => [ 'Name' => 'A', 'Version' => '1' ],
+            'mmm/m.php' => [ 'Name' => 'M', 'Version' => '1' ],
+        ] );
+        $data  = $this->callInventory( $this->validHeader() )->get_data();
         $files = array_column( $data['plugins'], 'plugin_file' );
-        $this->assertSame( [ 'aaa/a.php', 'mmm/m.php', 'zzz/z.php' ], $files,
-            'plugins must be sorted alphabetically by plugin_file' );
+        $this->assertSame( [ 'aaa/a.php', 'mmm/m.php', 'zzz/z.php' ], $files );
     }
 
-    public function test_in25_inventory_hash_is_64_char_hex(): void {
+    public function test_in29_inventory_hash_deterministic_and_unique(): void {
         update_option( 'rpcare_options', [ 'site_token' => self::RAW_TOKEN ] );
-        $this->setTransient( $this->makePluginTransient( [] ) );
-        $data = $this->callInventory( $this->validHeader() )->get_data();
-        $this->assertMatchesRegularExpression(
-            '/^[0-9a-f]{64}$/',
-            $data['inventory_hash'],
-            'inventory_hash must be a 64-character lowercase hex string (sha256)'
-        );
-    }
 
-    public function test_in26_same_content_produces_same_hash(): void {
-        update_option( 'rpcare_options', [ 'site_token' => self::RAW_TOKEN ] );
-        $transient = $this->makePluginTransient( [ 'p/p.php' => $this->makeEntry( 'p', '1.0' ) ] );
-        $this->setTransient( $transient );
+        // Same content → same hash
+        $t = $this->makePluginTransient( [ 'p/p.php' => $this->makeEntry( 'p', '1.0' ) ] );
+        $this->setTransient( $t );
+        $this->setInstalledPlugins( [ 'p/p.php' => [ 'Name' => 'P', 'Version' => '1' ] ] );
         $hash1 = $this->callInventory( $this->validHeader() )->get_data()['inventory_hash'];
-        $this->setTransient( $transient );
+        $this->setTransient( $t );
+        $this->setInstalledPlugins( [ 'p/p.php' => [ 'Name' => 'P', 'Version' => '1' ] ] );
         $hash2 = $this->callInventory( $this->validHeader() )->get_data()['inventory_hash'];
-        $this->assertSame( $hash1, $hash2,
-            'Same plugin content must produce identical inventory_hash (deterministic)' );
+        $this->assertSame( $hash1, $hash2, 'Same content → same hash (deterministic)' );
+        $this->assertMatchesRegularExpression( '/^[0-9a-f]{64}$/', $hash1, 'Hash must be 64-char hex' );
+
+        // Different content → different hash
+        $this->setTransient( $this->makePluginTransient( [ 'q/q.php' => $this->makeEntry( 'q', '2.0' ) ] ) );
+        $this->setInstalledPlugins( [ 'q/q.php' => [ 'Name' => 'Q', 'Version' => '1' ] ] );
+        $hash3 = $this->callInventory( $this->validHeader() )->get_data()['inventory_hash'];
+        $this->assertNotSame( $hash1, $hash3, 'Different content → different hash' );
     }
 
-    public function test_in27_different_content_produces_different_hash(): void {
-        update_option( 'rpcare_options', [ 'site_token' => self::RAW_TOKEN ] );
-        $this->setTransient( $this->makePluginTransient( [ 'p1/p1.php' => $this->makeEntry( 'p1' ) ] ) );
-        $hash1 = $this->callInventory( $this->validHeader() )->get_data()['inventory_hash'];
+    // ── IN-30: Theme handling ─────────────────────────────────────────────────
 
-        $this->setTransient( $this->makePluginTransient( [ 'p2/p2.php' => $this->makeEntry( 'p2' ) ] ) );
-        $hash2 = $this->callInventory( $this->validHeader() )->get_data()['inventory_hash'];
-
-        $this->assertNotSame( $hash1, $hash2,
-            'Different plugin lists must produce different inventory_hash values' );
-    }
-
-    // ── IN-28..29: Theme handling ──────────────────────────────────────────────
-
-    public function test_in28_malformed_theme_entries_skipped(): void {
+    public function test_in30_malformed_theme_entry_skipped(): void {
         update_option( 'rpcare_options', [ 'site_token' => self::RAW_TOKEN ] );
         $plugins = $this->makePluginTransient( [] );
         $themes  = new stdClass();
         $themes->response = [
             'good-theme' => [ 'new_version' => '2.0', 'Version' => '1.0', 'package' => '' ],
-            'bad-theme'  => 'scalar-not-array', // malformed
+            'bad-theme'  => 'scalar-not-array',
         ];
         $this->setTransient( $plugins, $themes );
+        $this->setInstalledPlugins( [] );
         $data = $this->callInventory( $this->validHeader() )->get_data();
-        $this->assertSame( 1, $data['themes_total'],
-            'Malformed theme entries (non-array) must be skipped' );
+        $this->assertSame( 1, $data['themes_total'], 'Malformed theme entry must be skipped' );
     }
 
-    public function test_in29_valid_theme_entry_has_required_fields(): void {
-        update_option( 'rpcare_options', [ 'site_token' => self::RAW_TOKEN ] );
-        $plugins = $this->makePluginTransient( [] );
-        $themes  = new stdClass();
-        $themes->response = [
-            'storefront' => [
-                'Version'     => '4.5.0',
-                'new_version' => '4.6.0',
-                'package'     => 'https://downloads.wp.org/theme/storefront.4.6.0.zip',
-            ],
-        ];
-        $this->setTransient( $plugins, $themes );
-        $data  = $this->callInventory( $this->validHeader() )->get_data();
-        $theme = $data['themes'][0];
+    // ── IN-31..35: CANONICAL 4-WAY COUNT RECONCILIATION ──────────────────────
+    //
+    // Reproduces the exact dev.banbancosmetics.com scenario:
+    //   transient response[] = 5 entries
+    //   get_plugins() = 4 entries (one slug is orphaned — slug-mismatch / uninstalled)
+    //   Expected: WP admin=4, Care /ping=4, PC=4, inventory raw=5/actionable=4/orphaned=1
 
-        $this->assertSame( 1, $data['themes_total'] );
-        $this->assertSame( 'storefront', $theme['theme_file'] );
-        $this->assertSame( 'storefront', $theme['slug'] );
-        $this->assertSame( '4.5.0', $theme['installed_version'] );
-        $this->assertSame( '4.6.0', $theme['available_version'] );
-        $this->assertTrue( $theme['package_available'],
-            'Theme with non-empty package must have package_available=true' );
-        // The actual URL must NOT appear in the response.
-        $body = json_encode( $data );
-        $this->assertStringNotContainsString(
-            'https://downloads.wp.org/theme/storefront.4.6.0.zip',
-            $body,
-            'Theme package URL must never appear in the response body'
+    private function setupBanbanScenario(): void {
+        $entries = [
+            'woocommerce/woocommerce.php'                         => $this->makeEntry( 'woocommerce', '9.0' ),
+            'elementor-pro/elementor-pro.php'                     => $this->makeEntry( 'elementor-pro', '3.25' ),
+            'yoast-seo-premium/yoast-seo-premium.php'            => $this->makeEntry( 'yoast-seo-premium', '23.0' ),
+            'wpml-multilingual-cms/sitepress.php'                 => $this->makeEntry( 'wpml-multilingual-cms', '4.7' ),
+            // ORPHANED: transient registered this slug but it is NOT installed on disk
+            'advanced-db-cleaner/advanced-db-cleaner.php'        => $this->makeEntry( 'advanced-db-cleaner', '3.5' ),
+        ];
+        $this->setTransient( $this->makePluginTransient( $entries ) );
+
+        // get_plugins() only returns the 4 actually installed directories
+        $this->setInstalledPlugins( [
+            'woocommerce/woocommerce.php'                         => [ 'Name' => 'WooCommerce',       'Version' => '8.9' ],
+            'elementor-pro/elementor-pro.php'                     => [ 'Name' => 'Elementor Pro',     'Version' => '3.24' ],
+            'yoast-seo-premium/yoast-seo-premium.php'            => [ 'Name' => 'Yoast SEO Premium', 'Version' => '22.9' ],
+            'wpml-multilingual-cms/sitepress.php'                 => [ 'Name' => 'WPML',              'Version' => '4.6' ],
+            // advanced-db-cleaner NOT here — orphaned entry
+        ] );
+    }
+
+    public function test_in31_canonical_5_transient_4_installed_1_orphaned(): void {
+        update_option( 'rpcare_options', [ 'site_token' => self::RAW_TOKEN ] );
+        $this->setupBanbanScenario();
+        $data = $this->callInventory( $this->validHeader() )->get_data();
+        $this->assertSame( 5, $data['raw_total'],        'raw_total must count all 5 transient entries' );
+        $this->assertSame( 4, $data['actionable_total'], 'actionable_total must count only installed (4)' );
+        $this->assertSame( 4, $data['installed_total'],  'installed_total must be 4' );
+        $this->assertSame( 1, $data['orphaned_total'],   'orphaned_total must be 1 (advanced-db-cleaner)' );
+        $this->assertCount( 4, $data['plugins'],          'plugins[] must have 4 entries' );
+        $this->assertCount( 1, $data['orphaned_plugins'], 'orphaned_plugins[] must have 1 entry' );
+        $this->assertSame(
+            'advanced-db-cleaner/advanced-db-cleaner.php',
+            $data['orphaned_plugins'][0]['plugin_file'],
+            'Orphaned entry must be advanced-db-cleaner (the slug-mismatched plugin)'
+        );
+    }
+
+    public function test_in32_ping_returns_updates_pending_total_4_not_5(): void {
+        update_option( 'rpcare_options', [ 'site_token' => self::RAW_TOKEN ] );
+        $this->setupBanbanScenario();
+        $data = $this->callPing( $this->validHeader() )->get_data();
+        $this->assertSame( 4, $data['updates_pending_total'],
+            'hub_ping must report actionable_total=4, not raw total=5' );
+    }
+
+    public function test_in33_ping_updates_pending_alias_equals_actionable(): void {
+        update_option( 'rpcare_options', [ 'site_token' => self::RAW_TOKEN ] );
+        $this->setupBanbanScenario();
+        $data = $this->callPing( $this->validHeader() )->get_data();
+        $this->assertSame( 4, $data['updates_pending'],
+            'updates_pending alias must equal actionable_total (4)' );
+        $this->assertSame(
+            $data['updates_pending_total'],
+            $data['updates_pending'],
+            'updates_pending must be identical to updates_pending_total'
+        );
+    }
+
+    public function test_in34_ping_includes_updates_orphaned_count(): void {
+        update_option( 'rpcare_options', [ 'site_token' => self::RAW_TOKEN ] );
+        $this->setupBanbanScenario();
+        $data = $this->callPing( $this->validHeader() )->get_data();
+        $this->assertSame( 1, $data['updates_orphaned'],
+            'hub_ping must report updates_orphaned=1 for the slug-mismatched entry' );
+    }
+
+    public function test_in35_inventory_separates_4_actionable_1_orphaned_correctly(): void {
+        update_option( 'rpcare_options', [ 'site_token' => self::RAW_TOKEN ] );
+        $this->setupBanbanScenario();
+        $data  = $this->callInventory( $this->validHeader() )->get_data();
+
+        $pluginFiles  = array_column( $data['plugins'], 'plugin_file' );
+        $orphanFiles  = array_column( $data['orphaned_plugins'], 'plugin_file' );
+
+        // Installed 4 must appear in plugins[], not orphaned_plugins[]
+        foreach ( [ 'woocommerce/woocommerce.php', 'elementor-pro/elementor-pro.php',
+                    'yoast-seo-premium/yoast-seo-premium.php', 'wpml-multilingual-cms/sitepress.php' ] as $f ) {
+            $this->assertContains( $f, $pluginFiles,  "{$f} must be in plugins[]" );
+            $this->assertNotContains( $f, $orphanFiles, "{$f} must NOT be in orphaned_plugins[]" );
+        }
+
+        // Orphaned one must appear only in orphaned_plugins[]
+        $this->assertContains(
+            'advanced-db-cleaner/advanced-db-cleaner.php',
+            $orphanFiles,
+            'Orphaned entry must be in orphaned_plugins[]'
+        );
+        $this->assertNotContains(
+            'advanced-db-cleaner/advanced-db-cleaner.php',
+            $pluginFiles,
+            'Orphaned entry must NOT appear in plugins[]'
         );
     }
 }

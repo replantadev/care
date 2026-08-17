@@ -3,13 +3,13 @@
  * Care 1.16.0 — Update Inventory Contract Tests
  *
  * Inventory state contract (read_inventory):
- *   UI-01  absent transient → total=null, checked_at=null, inventory_stale=true.
- *   UI-02  malformed transient (object, no response array) → total=null, stale=true,
+ *   UI-01  absent transient → raw_total=null, checked_at=null, inventory_stale=true.
+ *   UI-02  malformed transient (object, no response array) → raw_total=null, stale=true,
  *          checked_at extracted if last_checked valid.
- *   UI-03  valid transient, response=[] → total=0, checked_at=ISO8601, stale per age.
- *   UI-04  valid transient, N entries → total=N, all fields populated.
- *   UI-05  total includes free and premium plugins alike — bypasses policy filter.
- *   UI-06  total is not affected by $bypass_for_task being false on entry.
+ *   UI-03  valid transient, response=[] → raw_total=0, actionable_total=0, checked_at=ISO8601.
+ *   UI-04  valid transient, N entries → raw_total=N, actionable_total=N, orphaned_total=0.
+ *   UI-05  counts include free and premium plugins alike — bypasses policy filter.
+ *   UI-06  counts not affected by $bypass_for_task being false on entry.
  *   UI-07  alias: updates_pending === updates_pending_total in the REST payload.
  *   UI-08  valid last_checked → checked_at is a parseable ISO-8601 string.
  *   UI-09  last_checked = 0 → checked_at=null (not 1970-01-01).
@@ -60,17 +60,20 @@ if ( ! class_exists( 'RP_Care_Plan' ) ) {
 class UpdateInventoryTest extends TestCase {
 
     protected function setUp(): void {
-        $GLOBALS['_wp_options']          = [];
-        $GLOBALS['_wp_plugin_data_mock'] = [];
-        $GLOBALS['_registered_filters']  = [];
-        RP_Care_Update_Control::$bypass_for_task  = false;
-        RP_Care_Update_Control::$transient_reader = null;
+        $GLOBALS['_wp_options']                = [];
+        $GLOBALS['_wp_plugin_data_mock']       = [];
+        $GLOBALS['_registered_filters']        = [];
+        $GLOBALS['_wp_installed_plugins_mock'] = [];
+        RP_Care_Update_Control::$bypass_for_task    = false;
+        RP_Care_Update_Control::$transient_reader   = null;
+        RP_Care_Update_Control::$get_plugins_reader = null;
     }
 
     protected function tearDown(): void {
         // Always clean seam in case a test leaves it set.
-        RP_Care_Update_Control::$transient_reader = null;
-        RP_Care_Update_Control::$bypass_for_task  = false;
+        RP_Care_Update_Control::$transient_reader   = null;
+        RP_Care_Update_Control::$get_plugins_reader = null;
+        RP_Care_Update_Control::$bypass_for_task    = false;
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────────
@@ -91,15 +94,19 @@ class UpdateInventoryTest extends TestCase {
 
     private function setUpdateTransient( array $plugins, ?int $last_checked ): void {
         set_site_transient( 'update_plugins', $this->makeTransient( $plugins, $last_checked ) );
+        // Mark all listed plugins as installed so entries are actionable (not orphaned).
+        foreach ( $plugins as $file ) {
+            $GLOBALS['_wp_installed_plugins_mock'][ $file ] = [ 'Name' => $file, 'Version' => '1.0' ];
+        }
     }
 
     /** Build the subset of hub_ping() response fields that relate to the inventory. */
     private function buildPingUpdatesPayload( array $inv ): array {
         return [
-            'updates_pending_total'   => $inv['total'],
+            'updates_pending_total'   => $inv['actionable_total'],
             'updates_checked_at'      => $inv['checked_at'],
             'updates_inventory_stale' => $inv['inventory_stale'],
-            'updates_pending'         => $inv['total'],
+            'updates_pending'         => $inv['actionable_total'],
         ];
     }
 
@@ -108,9 +115,10 @@ class UpdateInventoryTest extends TestCase {
     public function test_ui01_absent_transient_returns_null_total(): void {
         $inv = RP_Care_Update_Control::read_inventory();
 
-        $this->assertNull( $inv['total'],       'absent transient: total must be null, not 0' );
-        $this->assertNull( $inv['checked_at'],  'absent transient: checked_at must be null' );
-        $this->assertTrue( $inv['inventory_stale'], 'absent transient: inventory_stale must be true' );
+        $this->assertNull( $inv['raw_total'],        'absent transient: raw_total must be null, not 0' );
+        $this->assertNull( $inv['actionable_total'],  'absent transient: actionable_total must be null' );
+        $this->assertNull( $inv['checked_at'],        'absent transient: checked_at must be null' );
+        $this->assertTrue( $inv['inventory_stale'],   'absent transient: inventory_stale must be true' );
     }
 
     // ── UI-02: malformed transient (object, no response array) ────────────────
@@ -123,8 +131,8 @@ class UpdateInventoryTest extends TestCase {
 
         $inv = RP_Care_Update_Control::read_inventory();
 
-        $this->assertNull( $inv['total'],
-            'malformed transient (no response): total must be null' );
+        $this->assertNull( $inv['raw_total'],
+            'malformed transient (no response): raw_total must be null' );
         $this->assertTrue( $inv['inventory_stale'],
             'malformed transient: inventory_stale must be true regardless of age' );
         // last_checked was present and valid → checked_at should be populated.
@@ -139,8 +147,10 @@ class UpdateInventoryTest extends TestCase {
 
         $inv = RP_Care_Update_Control::read_inventory();
 
-        $this->assertSame( 0, $inv['total'],
-            'valid transient with empty response must return total=0, not null' );
+        $this->assertSame( 0, $inv['raw_total'],
+            'valid transient with empty response must return raw_total=0, not null' );
+        $this->assertSame( 0, $inv['actionable_total'],
+            'valid transient with empty response must return actionable_total=0' );
         $this->assertFalse( $inv['inventory_stale'] );
         $this->assertNotNull( $inv['checked_at'] );
     }
@@ -155,7 +165,9 @@ class UpdateInventoryTest extends TestCase {
 
         $inv = RP_Care_Update_Control::read_inventory();
 
-        $this->assertSame( 3, $inv['total'] );
+        $this->assertSame( 3, $inv['raw_total'] );
+        $this->assertSame( 3, $inv['actionable_total'] );
+        $this->assertSame( 0, $inv['orphaned_total'] );
         $this->assertNotNull( $inv['checked_at'] );
         $this->assertFalse( $inv['inventory_stale'] );
     }
@@ -170,8 +182,10 @@ class UpdateInventoryTest extends TestCase {
 
         $inv = RP_Care_Update_Control::read_inventory();
 
-        $this->assertSame( 3, $inv['total'],
-            'total must count ALL plugins regardless of licence or policy classification' );
+        $this->assertSame( 3, $inv['raw_total'],
+            'raw_total must count ALL plugins regardless of licence or policy classification' );
+        $this->assertSame( 3, $inv['actionable_total'],
+            'actionable_total must equal raw_total when all entries are installed' );
     }
 
     // ── UI-06: total unaffected by $bypass_for_task being false on entry ──────
@@ -185,8 +199,10 @@ class UpdateInventoryTest extends TestCase {
 
         $inv = RP_Care_Update_Control::read_inventory();
 
-        $this->assertSame( 2, $inv['total'],
-            'read_inventory must bypass any active filter — total must reflect raw transient' );
+        $this->assertSame( 2, $inv['raw_total'],
+            'read_inventory must bypass any active filter — raw_total must reflect transient' );
+        $this->assertSame( 2, $inv['actionable_total'],
+            'actionable_total must match raw_total when all entries are installed' );
     }
 
     // ── UI-07: alias — both REST payload keys equal the same value ────────────
@@ -202,8 +218,10 @@ class UpdateInventoryTest extends TestCase {
             $payload['updates_pending'],
             'updates_pending must be an exact alias of updates_pending_total'
         );
-        $this->assertSame( 2, $payload['updates_pending_total'] );
-        $this->assertSame( 2, $payload['updates_pending'] );
+        $this->assertSame( 2, $payload['updates_pending_total'],
+            'updates_pending_total must equal actionable_total (2)' );
+        $this->assertSame( 2, $payload['updates_pending'],
+            'updates_pending alias must equal actionable_total (2)' );
     }
 
     public function test_ui07b_alias_null_when_transient_absent(): void {
@@ -338,7 +356,7 @@ class UpdateInventoryTest extends TestCase {
 
     public function test_ui17_fallback_when_class_absent_produces_null_total(): void {
         // Simulate the fallback branch in hub_ping() when RP_Care_Update_Control is absent.
-        $fallback = [ 'total' => null, 'checked_at' => null, 'inventory_stale' => true ];
+        $fallback = [ 'actionable_total' => null, 'checked_at' => null, 'inventory_stale' => true ];
         $payload  = $this->buildPingUpdatesPayload( $fallback );
 
         $this->assertNull( $payload['updates_pending_total'] );

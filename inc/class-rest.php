@@ -1690,12 +1690,11 @@ class RP_Care_REST {
             $backup_status  = 'completed';
         }
 
-        // Plugin update inventory — raw count unfiltered by plan/policy.
-        // RP_Care_Update_Control::read_inventory() uses try/finally to restore
-        // bypass_for_task even if get_site_transient throws.
+        // Plugin update inventory — cross-referenced with get_plugins() so orphaned
+        // transient entries are excluded, matching WordPress admin's own count.
         $inv = class_exists( 'RP_Care_Update_Control' )
             ? RP_Care_Update_Control::read_inventory()
-            : [ 'total' => null, 'checked_at' => null, 'inventory_stale' => true ];
+            : [ 'raw_total' => null, 'actionable_total' => null, 'orphaned_total' => null, 'checked_at' => null, 'inventory_stale' => true ];
 
         // SSL certificate expiry — non-blocking, 10s timeout, cached 12h.
         $ssl_expires_at = '';
@@ -1793,10 +1792,11 @@ class RP_Care_REST {
             'backup_last_at'       => $backup_last_at,
             'backup_status'        => $backup_status,
             'backup_stale'             => $backup_stale,
-            'updates_pending_total'    => $inv['total'],
+            'updates_pending_total'    => $inv['actionable_total'],   // installed-only; excludes orphaned
             'updates_checked_at'       => $inv['checked_at'],
             'updates_inventory_stale'  => $inv['inventory_stale'],
-            'updates_pending'          => $inv['total'],   // alias: backwards compat with PC ≤ 1.2.5
+            'updates_pending'          => $inv['actionable_total'],  // alias: backwards compat with PC ≤ 1.2.5
+            'updates_orphaned'         => $inv['orphaned_total'] ?? 0,
             'ssl_expires_at'           => $ssl_expires_at,
             'ssl_days_left'        => $ssl_days_left,
             'ttfb_ms'              => $ttfb_ms,
@@ -2713,37 +2713,41 @@ class RP_Care_REST {
     /**
      * POST /wp-json/replanta-care/v1/updates/inventory
      *
-     * Returns the full update inventory (raw transient, bypassing Care's policy filter)
-     * for Plugin Center diagnostics and 4-way count reconciliation.
+     * Returns the canonical update inventory for Plugin Center 4-way count reconciliation.
+     * Cross-references the raw update_plugins transient with get_plugins() — the same
+     * logic WordPress uses for the admin update count — to separate actionable entries
+     * (plugin file still on disk) from orphaned entries (stale transient, slug mismatch,
+     * plugin uninstalled).
      *
      * Authentication: X-Hub-Token required (strict, sha256(site_token)).
      * Response fields:
-     *   schema_version  int    always 1
-     *   generated_at    string ISO-8601 UTC timestamp of this response
+     *   schema_version  int    always 2
+     *   generated_at    string ISO-8601 UTC
      *   checked_at      string|null ISO-8601 of last WP update check; null when transient absent
      *   stale           bool   true when transient absent, malformed, or older than 26 h
-     *   plugins_total   int|null count(plugins); null when transient absent or malformed
-     *   plugins         array  per-plugin entries (always an array; empty when no updates or no data)
-     *   themes_total    int|null count(themes); null when theme transient absent or malformed
+     *   raw_total       int|null all entries in response[]; null when transient absent
+     *   installed_total int|null entries where plugin file is on disk (= actionable_total currently)
+     *   actionable_total int|null entries that can be updated; = installed_total
+     *   orphaned_total  int|null raw_total − actionable_total
+     *   plugins         array  actionable entries (installed, update available)
+     *   orphaned_plugins array  orphaned entries (transient entry but file absent)
+     *   themes_total    int|null count(themes); null when theme transient absent
      *   themes          array  per-theme entries
-     *   inventory_hash  string sha256 of deterministic json(plugins+themes), stable per content
+     *   inventory_hash  string sha256 of plugins+orphaned_plugins+themes (stable, no timestamps)
      *
-     * Per-plugin fields (plugins[]):
-     *   plugin_file        string  path relative to wp-content/plugins (transient key)
-     *   slug               string  plugin slug (from transient; dirname fallback)
-     *   name               string  plugin Name header (empty when file absent/orphaned)
-     *   installed_version  string  Version header (empty when file absent/orphaned)
-     *   available_version  string  new_version from WP update transient
-     *   package_available  bool    whether a download package URL is present in the transient
+     * Per-plugin fields (both plugins[] and orphaned_plugins[]):
+     *   plugin_file       string  transient key (path relative to wp-content/plugins)
+     *   slug              string  from transient entry or dirname fallback
+     *   name              string  Name header (empty for orphaned — file not present)
+     *   installed         bool    true if file found by get_plugins()
+     *   orphaned          bool    true if NOT found by get_plugins()
+     *   installed_version string  Version header (empty for orphaned)
+     *   available_version string  new_version from transient
+     *   package_available bool    whether a download package is in the transient
      *
-     * Orphaned entries: plugins in the transient whose file no longer exists on disk have
-     * name='' and installed_version=''. WP admin excludes these from its display count.
-     * Care's read_inventory() counts them (raw).  This endpoint exposes them transparently
-     * so Plugin Center can apply the same exclusion and match the WP admin count.
-     *
-     * SECURITY: Never includes package URLs, license keys, raw tokens, or any credential.
-     *           Read-only; does not trigger update checks or modify any state.
-     *           translations[] and no_update[] entries are NOT included in plugins or plugins_total.
+     * translations[], no_update[] — never counted or included.
+     * SECURITY: never exposes package URLs, license keys, raw tokens, or credentials.
+     * READ-ONLY: does not trigger update checks or modify any site state.
      */
     public function hub_updates_inventory( WP_REST_Request $request ): WP_REST_Response {
         if ( ! $this->validate_hub_token( $request, true ) ) {
@@ -2752,7 +2756,7 @@ class RP_Care_REST {
 
         $generated_at = gmdate( 'c' );
 
-        // Read raw transients, bypassing Care's policy filter (bypass_for_task=true).
+        // Read raw transients, bypassing Care's policy filter.
         $prev = RP_Care_Update_Control::$bypass_for_task;
         try {
             RP_Care_Update_Control::$bypass_for_task = true;
@@ -2763,14 +2767,28 @@ class RP_Care_REST {
             RP_Care_Update_Control::$bypass_for_task = $prev;
         }
 
-        $pdata_fn = RP_Care_Update_Control::$plugin_data_reader;
+        // Build the installed-plugins map (plugin_file → headers) via seam or get_plugins().
+        $plugins_fn = RP_Care_Update_Control::$get_plugins_reader;
+        if ( $plugins_fn !== null ) {
+            $installed_map = $plugins_fn();
+        } else {
+            if ( ! function_exists( 'get_plugins' ) ) {
+                require_once ABSPATH . 'wp-admin/includes/plugin.php';
+            }
+            $installed_map = get_plugins();
+        }
+        $installed_keys = array_flip( array_keys( $installed_map ) );
 
         // ── Plugins ──────────────────────────────────────────────────────────
 
         $plugins_checked = null;
         $plugins_stale   = true;
-        $plugins_total   = null;
-        $plugins         = [];
+        $raw_total       = null;
+        $installed_total = null;
+        $actionable      = null;
+        $orphaned_count  = null;
+        $plugins         = [];     // installed entries
+        $orphaned        = [];     // orphaned entries
 
         if ( is_object( $update_plugins ) ) {
             $ts = isset( $update_plugins->last_checked ) ? (int) $update_plugins->last_checked : 0;
@@ -2780,40 +2798,49 @@ class RP_Care_REST {
             }
 
             if ( is_array( $update_plugins->response ?? null ) ) {
-                $plugins_total = 0;
+                $raw_total      = 0;
+                $installed_total = 0;
+                $actionable     = 0;
+                $orphaned_count = 0;
+
                 foreach ( $update_plugins->response as $plugin_file => $entry ) {
                     if ( ! is_string( $plugin_file ) || '' === $plugin_file ) continue;
                     if ( ! is_object( $entry ) && ! is_array( $entry ) ) continue;
                     $entry = (object) $entry;
-
-                    // Resolve installed plugin headers (name + version).
-                    // Empty strings signal an orphaned transient entry (file absent on disk).
-                    if ( $pdata_fn !== null ) {
-                        $pdata = $pdata_fn( $plugin_file );
-                    } else {
-                        if ( ! function_exists( 'get_plugin_data' ) ) {
-                            require_once ABSPATH . 'wp-admin/includes/plugin.php';
-                        }
-                        $pdata = get_plugin_data( WP_PLUGIN_DIR . '/' . $plugin_file, false, false );
-                    }
-                    $installed_name = (string) ( $pdata['Name']    ?? '' );
-                    $installed_ver  = (string) ( $pdata['Version'] ?? '' );
+                    $raw_total++;
 
                     $slug = (string) ( $entry->slug ?? dirname( $plugin_file ) );
                     if ( '.' === $slug || '' === $slug ) $slug = $plugin_file;
 
-                    $plugins[ $plugin_file ] = [
+                    $is_installed = isset( $installed_keys[ $plugin_file ] );
+                    $item = [
                         'plugin_file'       => $plugin_file,
                         'slug'              => $slug,
-                        'name'              => $installed_name,
-                        'installed_version' => $installed_ver,
+                        'name'              => '',
+                        'installed'         => $is_installed,
+                        'orphaned'          => ! $is_installed,
+                        'installed_version' => '',
                         'available_version' => (string) ( $entry->new_version ?? '' ),
                         'package_available' => ! empty( $entry->package ),
                     ];
-                    $plugins_total++;
+
+                    if ( $is_installed ) {
+                        $headers          = $installed_map[ $plugin_file ] ?? [];
+                        $item['name']              = (string) ( $headers['Name']    ?? '' );
+                        $item['installed_version'] = (string) ( $headers['Version'] ?? '' );
+                        $plugins[ $plugin_file ]   = $item;
+                        $installed_total++;
+                        $actionable++;
+                    } else {
+                        $orphaned[ $plugin_file ] = $item;
+                        $orphaned_count++;
+                    }
                 }
+
                 ksort( $plugins );
-                $plugins = array_values( $plugins );
+                ksort( $orphaned );
+                $plugins  = array_values( $plugins );
+                $orphaned = array_values( $orphaned );
             }
         }
 
@@ -2842,26 +2869,30 @@ class RP_Care_REST {
         }
 
         // ── Inventory hash ────────────────────────────────────────────────────
-        // Stable sha256 over content only (no timestamps), so PC can detect changes cheaply.
+        // Covers plugins + orphaned_plugins + themes; excludes timestamps.
         $inventory_hash = hash(
             'sha256',
             json_encode(
-                [ 'plugins' => $plugins, 'themes' => $themes ],
+                [ 'plugins' => $plugins, 'orphaned_plugins' => $orphaned, 'themes' => $themes ],
                 JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
             ) ?: ''
         );
 
         return new WP_REST_Response(
             [
-                'schema_version' => 1,
-                'generated_at'   => $generated_at,
-                'checked_at'     => $plugins_checked,
-                'stale'          => $plugins_stale,
-                'plugins_total'  => $plugins_total,
-                'plugins'        => $plugins,
-                'themes_total'   => $themes_total,
-                'themes'         => $themes,
-                'inventory_hash' => $inventory_hash,
+                'schema_version'   => 2,
+                'generated_at'     => $generated_at,
+                'checked_at'       => $plugins_checked,
+                'stale'            => $plugins_stale,
+                'raw_total'        => $raw_total,
+                'installed_total'  => $installed_total,
+                'actionable_total' => $actionable,
+                'orphaned_total'   => $orphaned_count,
+                'plugins'          => $plugins,
+                'orphaned_plugins' => $orphaned,
+                'themes_total'     => $themes_total,
+                'themes'           => $themes,
+                'inventory_hash'   => $inventory_hash,
             ],
             200
         );

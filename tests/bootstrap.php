@@ -234,6 +234,15 @@ if ( ! function_exists( 'get_plugin_data' ) ) {
         return $defaults;
     }
 }
+if ( ! function_exists( 'get_plugins' ) ) {
+    // Configurable via $GLOBALS['_wp_installed_plugins_mock']:
+    //   [ 'plugin-dir/plugin.php' => ['Name' => 'Plugin Name', 'Version' => '1.0', ...] ]
+    // Defaults to empty (no installed plugins — simulates a clean install or full orphan scenario).
+    // RP_Care_Update_Control::$get_plugins_reader overrides this at the seam level per-test.
+    function get_plugins(): array {
+        return $GLOBALS['_wp_installed_plugins_mock'] ?? [];
+    }
+}
 
 // ── WP constants ───────────────────────────────────────────────────────────
 if ( ! defined( 'MINUTE_IN_SECONDS' ) )  define( 'MINUTE_IN_SECONDS',  60 );

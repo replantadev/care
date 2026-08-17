@@ -20,7 +20,13 @@ class RP_Care_Update_Control {
 
     // Test-only seam: inject a callable (string $plugin_file_relative) => array{Name:string, Version:string}
     // to replace get_plugin_data() in hub_updates_inventory(). Must be null in production.
+    // Superseded by $get_plugins_reader for orphan-aware inventory; kept for backwards compat.
     public static $plugin_data_reader = null;
+
+    // Test-only seam: inject a callable () => array<plugin_file, plugin_headers> to replace get_plugins().
+    // Must be null in production. Used by read_inventory() and hub_updates_inventory() to cross-reference
+    // installed plugins against the update transient, separating actionable from orphaned entries.
+    public static $get_plugins_reader = null;
 
     public function __construct() {
         add_action('init', [$this, 'init']);
@@ -54,12 +60,24 @@ class RP_Care_Update_Control {
     }
     
     /**
-     * Read the raw update inventory from the WP transient, bypassing any active policy filter.
+     * Read the canonical update inventory by cross-referencing the update transient with
+     * installed plugins (get_plugins()), separating actionable from orphaned entries.
      *
-     * Returns total plugin update count and metadata independent of plan, licence, or policy.
-     * Uses try/finally so the global state is always restored even if get_site_transient throws.
+     * An entry is "orphaned" when it appears in the transient response[] but the plugin
+     * file no longer exists on disk (slug-mismatch, uninstalled, renamed).  WordPress admin
+     * applies the same cross-reference — orphaned entries are excluded from the WP admin
+     * update count.  This method replicates that logic so /ping and /updates/inventory
+     * always agree with what the administrator sees.
      *
-     * @return array{total: int, checked_at: string|null, inventory_stale: bool}
+     * Uses try/finally so bypass_for_task is always restored even if get_site_transient throws.
+     *
+     * @return array{
+     *     raw_total: int|null,
+     *     actionable_total: int|null,
+     *     orphaned_total: int|null,
+     *     checked_at: string|null,
+     *     inventory_stale: bool
+     * }
      */
     public static function read_inventory(): array {
         $prev = self::$bypass_for_task;
@@ -74,9 +92,11 @@ class RP_Care_Update_Control {
         // Absent or non-object: null signals "no data", not "zero pending".
         if ( ! is_object( $update_obj ) ) {
             return [
-                'total'           => null,
-                'checked_at'      => null,
-                'inventory_stale' => true,
+                'raw_total'        => null,
+                'actionable_total' => null,
+                'orphaned_total'   => null,
+                'checked_at'       => null,
+                'inventory_stale'  => true,
             ];
         }
 
@@ -92,17 +112,44 @@ class RP_Care_Update_Control {
         // Malformed transient: object present but no response array.
         if ( ! is_array( $update_obj->response ?? null ) ) {
             return [
-                'total'           => null,
-                'checked_at'      => $checked,
-                'inventory_stale' => true,   // malformed = stale regardless of age
+                'raw_total'        => null,
+                'actionable_total' => null,
+                'orphaned_total'   => null,
+                'checked_at'       => $checked,
+                'inventory_stale'  => true,
             ];
         }
 
-        // Valid transient: count may be 0 (no updates pending) or N.
+        $raw_total = count( $update_obj->response );
+
+        // Cross-reference with installed plugins — same logic WordPress uses for the admin count.
+        $plugins_fn = self::$get_plugins_reader;
+        if ( $plugins_fn !== null ) {
+            $installed_map = $plugins_fn();
+        } else {
+            if ( ! function_exists( 'get_plugins' ) ) {
+                require_once ABSPATH . 'wp-admin/includes/plugin.php';
+            }
+            $installed_map = get_plugins();
+        }
+        $installed_keys = array_flip( array_keys( $installed_map ) );
+
+        $actionable = 0;
+        $orphaned   = 0;
+        foreach ( array_keys( $update_obj->response ) as $plugin_file ) {
+            if ( isset( $installed_keys[ $plugin_file ] ) ) {
+                $actionable++;
+            } else {
+                $orphaned++;
+            }
+        }
+
         return [
-            'total'           => count( $update_obj->response ),
-            'checked_at'      => $checked,
-            'inventory_stale' => $stale,
+            'raw_total'        => $raw_total,
+            'actionable_total' => $actionable,
+            'orphaned_total'   => $orphaned,
+            'checked_at'       => $checked,
+            'inventory_stale'  => $stale,
         ];
     }
 

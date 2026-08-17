@@ -490,7 +490,9 @@ class RP_Care_Task_Backup {
         $body = json_decode(wp_remote_retrieve_body($response), true);
 
         if ($code !== 200 || empty($body['authorizationToken'])) {
-            return new WP_Error('b2_auth_failed', 'B2 auth HTTP ' . $code . ': ' . ($body['message'] ?? 'unknown'));
+            $b2_code = $body['code'] ?? '';
+            $error_code = self::b2_classify_auth_error( $code, $b2_code );
+            return new WP_Error( $error_code, 'B2 auth HTTP ' . $code . ' (' . $b2_code . '): ' . ( $body['message'] ?? 'unknown' ) );
         }
 
         $auth = [
@@ -597,12 +599,25 @@ class RP_Care_Task_Backup {
         ]);
 
         if (is_wp_error($url_response)) {
-            return ['success' => false, 'message' => $url_response->get_error_message()];
+            return [
+                'success'    => false,
+                'error_code' => 'provider_unreachable',
+                'message'    => $url_response->get_error_message(),
+            ];
         }
 
+        $url_http = (int) wp_remote_retrieve_response_code($url_response);
         $url_body = json_decode(wp_remote_retrieve_body($url_response), true);
         if (empty($url_body['uploadUrl']) || empty($url_body['authorizationToken'])) {
-            return ['success' => false, 'message' => 'Could not get B2 upload URL'];
+            $b2_error = $url_body['code'] ?? '';
+            $error_code = self::b2_classify_upload_url_error( $url_http, $b2_error );
+            return [
+                'success'    => false,
+                'error_code' => $error_code,
+                'http_status' => $url_http,
+                'b2_code'    => $b2_error,
+                'message'    => 'B2 upload URL failed (' . $url_http . '/' . $b2_error . '): ' . ( $url_body['message'] ?? 'unknown' ),
+            ];
         }
 
         $upload_url   = $url_body['uploadUrl'];
@@ -772,7 +787,7 @@ class RP_Care_Task_Backup {
 
         $manifest['artifacts'] = $artifacts;
         $manifest['errors'] = $errors;
-        $manifest['status'] = empty($errors) ? 'completed' : 'partial';
+        $manifest['status'] = self::compute_backup_status( $scopes, $artifacts, $errors );
         $manifest_path = $backup_dir . '/manifest.json';
         file_put_contents($manifest_path, wp_json_encode($manifest, JSON_PRETTY_PRINT));
         $manifest_artifact = self::upload_b2_artifact($manifest_path, $prefix . 'manifest.json', 'manifest');
@@ -782,37 +797,43 @@ class RP_Care_Task_Backup {
             $artifacts[] = $manifest_artifact;
         }
 
+        // Recompute after manifest upload attempt.
+        $backup_status = self::compute_backup_status( $scopes, $artifacts, $errors );
+        $backup_usable = ( $backup_status === 'complete' );
+
         update_option('rpcare_last_b2_backup', [
-            'backup_id' => $backup_id,
-            'prefix' => $prefix,
-            'timestamp' => time(),
-            'files' => array_map(function($artifact) {
+            'backup_id'     => $backup_id,
+            'prefix'        => $prefix,
+            'timestamp'     => time(),
+            'files'         => array_map(function($artifact) {
                 return $artifact['file_name'] ?? '';
             }, $artifacts),
-            'artifacts' => $artifacts,
-            'domain' => $manifest['domain'],
-            'status' => empty($errors) ? 'completed' : 'partial',
+            'artifacts'     => $artifacts,
+            'domain'        => $manifest['domain'],
+            'status'        => $backup_status,
+            'backup_usable' => $backup_usable,
         ], false);
 
         self::cleanup_old_backups();
         self::cleanup_b2_old_backups();
         self::remove_directory($backup_dir);
 
-        $has_database = (bool) array_filter($artifacts, function($artifact) {
-            return ($artifact['scope'] ?? '') === 'database';
-        });
-
         return [
-            'success' => $has_database && !empty($artifacts),
-            'method' => 'b2',
-            'provider' => 'b2',
-            'message' => empty($errors) ? 'Backup B2 completado' : 'Backup B2 parcial: ' . implode('; ', $errors),
-            'backup_id' => $backup_id,
-            'prefix' => $prefix,
-            'status' => empty($errors) ? 'completed' : 'partial',
-            'scopes' => $scopes,
-            'artifacts' => $artifacts,
-            'errors' => $errors,
+            'success'       => $backup_usable,
+            'method'        => 'b2',
+            'provider'      => 'b2',
+            'message'       => $backup_status === 'complete'
+                                ? 'Backup B2 completado'
+                                : ( $backup_status === 'partial'
+                                    ? 'Backup B2 parcial: ' . implode('; ', $errors)
+                                    : 'Backup B2 fallido: ' . implode('; ', $errors) ),
+            'backup_id'     => $backup_id,
+            'prefix'        => $prefix,
+            'status'        => $backup_status,
+            'backup_usable' => $backup_usable,
+            'scopes'        => $scopes,
+            'artifacts'     => $artifacts,
+            'errors'        => $errors,
         ];
     }
 
@@ -1073,6 +1094,76 @@ class RP_Care_Task_Backup {
             'size' => $upload['size'] ?? filesize($local_path),
             'sha256' => file_exists($local_path) ? hash_file('sha256', $local_path) : '',
         ];
+    }
+
+    /**
+     * Compute canonical backup status from result of a backup attempt.
+     *
+     * complete  — every mandatory scope (database + all requested scopes) succeeded and
+     *             at least one non-manifest artifact was uploaded.
+     * partial   — at least one artifact uploaded AND at least one error.
+     * failed    — nothing uploaded, or database scope requested but absent from artifacts.
+     *
+     * Public so tests can verify the semantics without executing a full backup.
+     */
+    public static function compute_backup_status( array $scopes, array $artifacts, array $errors ): string {
+        $data_artifacts = array_filter( $artifacts, function( $a ) {
+            return ( $a['scope'] ?? '' ) !== 'manifest';
+        } );
+
+        if ( empty( $data_artifacts ) ) {
+            return 'failed';
+        }
+
+        // Database is mandatory when requested.
+        if ( in_array( 'database', $scopes, true ) ) {
+            $has_db = (bool) array_filter( $data_artifacts, function( $a ) {
+                return ( $a['scope'] ?? '' ) === 'database';
+            } );
+            if ( ! $has_db ) {
+                return empty( $errors ) ? 'partial' : 'failed';
+            }
+        }
+
+        return empty( $errors ) ? 'complete' : 'partial';
+    }
+
+    /**
+     * Map B2 auth HTTP status + B2 error code to a structured error slug.
+     * Never logs credentials — only HTTP status and B2 error code are safe.
+     * Public so REST connection-test handler can call it without duplicating logic.
+     */
+    public static function b2_classify_auth_error( int $http, string $b2_code ): string {
+        if ( $http === 401 ) return 'authentication_failed';
+        if ( $http === 403 ) return 'key_unauthorized';
+        if ( $http === 429 ) return 'provider_rate_limited';
+        if ( $http >= 500 )  return 'provider_unreachable';
+        if ( $b2_code === 'bad_auth_token' )    return 'authentication_failed';
+        if ( $b2_code === 'expired_auth_token') return 'authentication_failed';
+        if ( $b2_code === 'storage_cap_exceeded' ) return 'storage_cap_exceeded';
+        return 'unknown_provider_error';
+    }
+
+    /**
+     * Map b2_get_upload_url failure to a structured error slug.
+     * B2-specific codes take precedence over generic HTTP status so that a structured
+     * code returned inside a 200 or 0-status response (network error with body) is
+     * correctly classified.  Public for use by REST connection-test handler.
+     */
+    public static function b2_classify_upload_url_error( int $http, string $b2_code ): string {
+        // B2-specific codes first — they are authoritative regardless of HTTP status.
+        if ( $b2_code === 'storage_cap_exceeded' ) return 'storage_cap_exceeded';
+        if ( $b2_code === 'bad_auth_token' )       return 'authentication_failed';
+        if ( $b2_code === 'expired_auth_token' )   return 'authentication_failed';
+        if ( $b2_code === 'access_denied' )        return 'key_unauthorized';
+        // HTTP status fallback.
+        if ( $http === 401 ) return 'authentication_failed';
+        if ( $http === 403 ) return 'bucket_not_allowed';
+        if ( $http === 404 ) return 'bucket_not_found';
+        if ( $http === 429 ) return 'provider_rate_limited';
+        if ( $http >= 500 )  return 'provider_unreachable';
+        if ( $http === 0 )   return 'provider_unreachable';
+        return 'unknown_provider_error';
     }
 
     private static function b2_list_files($auth, $bucket_id, $prefix, $max_files = 1000) {

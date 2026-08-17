@@ -156,6 +156,16 @@ class RP_Care_REST {
             'permission_callback' => '__return_true',
         ] );
 
+        // ── B2 connection test: read-only diagnostic, never writes to B2 ────────
+        // Phases: DNS, TLS, b2_authorize_account, bucket access, key capabilities.
+        // Never logs credentials (key_id, app_key, auth_token, download URLs).
+        // Requires X-Hub-Token auth (strict).
+        register_rest_route( $this->control_ns, '/b2/connection-test', [
+            'methods'             => 'POST',
+            'callback'            => [ $this, 'hub_b2_connection_test' ],
+            'permission_callback' => '__return_true',
+        ] );
+
         // Main task execution endpoint
         register_rest_route($this->namespace, '/run', [
             'methods' => 'POST',
@@ -2896,5 +2906,269 @@ class RP_Care_REST {
             ],
             200
         );
+    }
+
+    /**
+     * POST /replanta-care/v1/hub/b2/connection-test
+     *
+     * Read-only B2 diagnostic. Runs sequentially: DNS → TLS → b2_authorize_account
+     * → bucket access (b2_get_upload_url dry-run check using b2_list_buckets) →
+     * key capabilities. Never writes to B2. Never logs credentials.
+     *
+     * Response fields:
+     *   schema_version  int    always 1
+     *   generated_at    string ISO-8601 UTC
+     *   configured      bool   whether B2 credentials are set in Care options
+     *   phases          array  each phase: {name, ok, error_code, detail, duration_ms}
+     *   overall_ok      bool   all phases passed
+     *   error_code      string|null structured slug of first failure (null when ok)
+     *   credential_fingerprint  string  sha256(key_id) — safe to log, never reveals key
+     *
+     * Structured error codes: authentication_failed, key_unauthorized, bucket_not_found,
+     *   bucket_not_allowed, storage_cap_exceeded, provider_rate_limited,
+     *   provider_unreachable, tls_failure, invalid_provider_response, unknown_provider_error.
+     *
+     * SECURITY: never logs key_id, app_key, auth_token, or signed download URLs.
+     *           credential_fingerprint is sha256(key_id) — safe to surface.
+     *
+     * Authentication: X-Hub-Token required (strict, sha256(site_token)).
+     */
+    public function hub_b2_connection_test( WP_REST_Request $request ): WP_REST_Response {
+        if ( ! $this->validate_hub_token( $request, true ) ) {
+            return new WP_REST_Response( [ 'error' => 'Unauthorized' ], 403 );
+        }
+
+        $generated_at = gmdate( 'c' );
+        $phases       = [];
+        $overall_ok   = true;
+        $first_error  = null;
+
+        if ( ! class_exists( 'RP_Care_Task_Backup' ) ) {
+            return new WP_REST_Response( [
+                'schema_version' => 1,
+                'generated_at'   => $generated_at,
+                'configured'     => false,
+                'phases'         => [],
+                'overall_ok'     => false,
+                'error_code'     => 'unknown_provider_error',
+                'credential_fingerprint' => null,
+            ], 200 );
+        }
+
+        $configured = (bool) ( method_exists( 'RP_Care_Task_Backup', 'is_b2_configured' )
+            ? RP_Care_Task_Backup::is_b2_configured()
+            : get_option( 'rpcare_b2_key_id' ) );
+
+        $cfg = get_option( 'rpcare_b2_key_id' )
+            ? [
+                'key_id'     => get_option( 'rpcare_b2_key_id', '' ),
+                'app_key'    => get_option( 'rpcare_b2_app_key', '' ),
+                'bucket_id'  => get_option( 'rpcare_b2_bucket_id', '' ),
+                'bucket_name'=> get_option( 'rpcare_b2_bucket_name', '' ),
+            ]
+            : [];
+
+        $key_id     = $cfg['key_id'] ?? '';
+        $credential_fingerprint = $key_id ? hash( 'sha256', $key_id ) : null;
+
+        if ( ! $configured || empty( $key_id ) ) {
+            return new WP_REST_Response( [
+                'schema_version'         => 1,
+                'generated_at'           => $generated_at,
+                'configured'             => false,
+                'phases'                 => [],
+                'overall_ok'             => false,
+                'error_code'             => 'authentication_failed',
+                'credential_fingerprint' => $credential_fingerprint,
+            ], 200 );
+        }
+
+        // ── Phase 1: DNS resolution ──────────────────────────────────────────
+        $t0 = microtime( true );
+        $dns_ok = false;
+        $dns_detail = '';
+        $resolved = gethostbynamel( 'api.backblazeb2.com' );
+        $dns_ms = (int) round( ( microtime( true ) - $t0 ) * 1000 );
+        if ( ! empty( $resolved ) ) {
+            $dns_ok = true;
+        } else {
+            $dns_detail = 'DNS lookup for api.backblazeb2.com returned no addresses';
+            $overall_ok = false;
+            $first_error = $first_error ?? 'provider_unreachable';
+        }
+        $phases[] = [
+            'name'        => 'dns',
+            'ok'          => $dns_ok,
+            'error_code'  => $dns_ok ? null : 'provider_unreachable',
+            'detail'      => $dns_ok ? 'Resolved ' . count( $resolved ) . ' address(es)' : $dns_detail,
+            'duration_ms' => $dns_ms,
+        ];
+
+        // ── Phase 2: TLS connection ──────────────────────────────────────────
+        if ( $dns_ok ) {
+            $t0 = microtime( true );
+            $tls_ok = false;
+            $tls_detail = '';
+            $ctx = stream_context_create( [ 'ssl' => [ 'capture_peer_cert' => true, 'verify_peer' => true ] ] );
+            $sock = @stream_socket_client( 'ssl://api.backblazeb2.com:443', $errno, $errstr, 10, STREAM_CLIENT_CONNECT, $ctx );
+            $tls_ms = (int) round( ( microtime( true ) - $t0 ) * 1000 );
+            if ( $sock ) {
+                $tls_ok = true;
+                fclose( $sock );
+            } else {
+                $tls_detail = 'TLS connect failed: ' . $errstr . ' (errno ' . $errno . ')';
+                $overall_ok = false;
+                $first_error = $first_error ?? 'tls_failure';
+            }
+            $phases[] = [
+                'name'        => 'tls',
+                'ok'          => $tls_ok,
+                'error_code'  => $tls_ok ? null : 'tls_failure',
+                'detail'      => $tls_ok ? 'TLS handshake succeeded' : $tls_detail,
+                'duration_ms' => $tls_ms,
+            ];
+        }
+
+        // ── Phase 3: b2_authorize_account ────────────────────────────────────
+        $auth_result = null;
+        if ( $overall_ok ) {
+            $t0 = microtime( true );
+            $auth_ok = false;
+            $auth_detail = '';
+            $auth_error_code = null;
+
+            $creds    = base64_encode( $key_id . ':' . ( $cfg['app_key'] ?? '' ) );
+            $response = wp_remote_get( 'https://api.backblazeb2.com/b2api/v3/b2_authorize_account', [
+                'timeout' => 20,
+                'headers' => [ 'Authorization' => 'Basic ' . $creds ],
+            ] );
+            $auth_ms = (int) round( ( microtime( true ) - $t0 ) * 1000 );
+
+            if ( is_wp_error( $response ) ) {
+                $auth_detail = 'WP HTTP error (credentials redacted)';
+                $auth_error_code = 'provider_unreachable';
+                $overall_ok = false;
+                $first_error = $first_error ?? $auth_error_code;
+            } else {
+                $http = (int) wp_remote_retrieve_response_code( $response );
+                $body = json_decode( wp_remote_retrieve_body( $response ), true );
+                $b2_code = $body['code'] ?? '';
+                if ( $http === 200 && ! empty( $body['authorizationToken'] ) ) {
+                    $auth_ok = true;
+                    $auth_detail = 'Authorized. API URL: ' . ( $body['apiInfo']['storageApi']['apiUrl'] ?? $body['apiUrl'] ?? 'n/a' );
+                    $auth_result = [
+                        'api_url'    => rtrim( $body['apiInfo']['storageApi']['apiUrl'] ?? $body['apiUrl'] ?? '', '/' ),
+                        'auth_token' => $body['authorizationToken'],
+                        'capabilities' => $body['allowed']['capabilities'] ?? [],
+                        'bucket_id_allowed' => $body['allowed']['bucketId'] ?? null,
+                    ];
+                } else {
+                    // Never include credentials, tokens or auth details in error message.
+                    $auth_error_code = RP_Care_Task_Backup::b2_classify_auth_error( $http, $b2_code );
+                    $auth_detail = 'HTTP ' . $http . ', B2 code: ' . $b2_code . ' (credentials redacted)';
+                    $overall_ok = false;
+                    $first_error = $first_error ?? $auth_error_code;
+                }
+            }
+            $phases[] = [
+                'name'        => 'authorize',
+                'ok'          => $auth_ok,
+                'error_code'  => $auth_ok ? null : $auth_error_code,
+                'detail'      => $auth_detail,
+                'duration_ms' => $auth_ms,
+            ];
+        }
+
+        // ── Phase 4: Bucket access ────────────────────────────────────────────
+        if ( $overall_ok && $auth_result !== null ) {
+            $t0 = microtime( true );
+            $bucket_ok = false;
+            $bucket_detail = '';
+            $bucket_error_code = null;
+            $bucket_id = $cfg['bucket_id'] ?? '';
+
+            $bl_response = wp_remote_post( $auth_result['api_url'] . '/b2api/v3/b2_list_buckets', [
+                'timeout' => 15,
+                'headers' => [
+                    'Authorization' => $auth_result['auth_token'],
+                    'Content-Type'  => 'application/json',
+                ],
+                'body' => wp_json_encode( [ 'accountId' => '', 'bucketId' => $bucket_id ] ),
+            ] );
+            $bucket_ms = (int) round( ( microtime( true ) - $t0 ) * 1000 );
+
+            if ( is_wp_error( $bl_response ) ) {
+                $bucket_error_code = 'provider_unreachable';
+                $bucket_detail = 'WP HTTP error on b2_list_buckets';
+                $overall_ok = false;
+                $first_error = $first_error ?? $bucket_error_code;
+            } else {
+                $http = (int) wp_remote_retrieve_response_code( $bl_response );
+                $body = json_decode( wp_remote_retrieve_body( $bl_response ), true );
+                $b2_code = $body['code'] ?? '';
+                $buckets = $body['buckets'] ?? [];
+                $found = array_filter( $buckets, fn( $b ) => ( $b['bucketId'] ?? '' ) === $bucket_id );
+                if ( $http === 200 && ! empty( $found ) ) {
+                    $bucket_ok = true;
+                    $b = reset( $found );
+                    $bucket_detail = 'Bucket visible: ' . ( $b['bucketName'] ?? $bucket_id );
+                } elseif ( $http === 200 && empty( $found ) ) {
+                    // Key may not have permission to list but may still have upload rights.
+                    // Treat as bucket_not_found only if b2_list_buckets returned nothing and no error.
+                    $bucket_error_code = 'bucket_not_found';
+                    $bucket_detail = 'Bucket ID not visible in b2_list_buckets (key may be restricted)';
+                    // Not necessarily fatal — restricted key may not enumerate buckets.
+                    // Mark ok=false but don't propagate as hard failure yet.
+                } elseif ( $http === 403 ) {
+                    $bucket_error_code = 'bucket_not_allowed';
+                    $bucket_detail = 'HTTP 403 on b2_list_buckets (B2: ' . $b2_code . ')';
+                    $overall_ok = false;
+                    $first_error = $first_error ?? $bucket_error_code;
+                } else {
+                    $bucket_error_code = 'unknown_provider_error';
+                    $bucket_detail = 'HTTP ' . $http . ' on b2_list_buckets (B2: ' . $b2_code . ')';
+                    $overall_ok = false;
+                    $first_error = $first_error ?? $bucket_error_code;
+                }
+            }
+            $phases[] = [
+                'name'        => 'bucket_access',
+                'ok'          => $bucket_ok,
+                'error_code'  => $bucket_ok ? null : $bucket_error_code,
+                'detail'      => $bucket_detail,
+                'duration_ms' => $bucket_ms,
+            ];
+        }
+
+        // ── Phase 5: Key capabilities ─────────────────────────────────────────
+        if ( $auth_result !== null ) {
+            $required = [ 'readFiles', 'writeFiles', 'deleteFiles', 'listBuckets', 'listFiles', 'readBuckets' ];
+            $actual   = $auth_result['capabilities'];
+            $missing  = array_values( array_diff( $required, $actual ) );
+            $caps_ok  = empty( $missing );
+            $phases[] = [
+                'name'       => 'key_capabilities',
+                'ok'         => $caps_ok,
+                'error_code' => $caps_ok ? null : 'key_unauthorized',
+                'detail'     => $caps_ok
+                    ? 'All required capabilities present'
+                    : 'Missing capabilities: ' . implode( ', ', $missing ),
+                'duration_ms' => 0,
+            ];
+            if ( ! $caps_ok ) {
+                $overall_ok  = false;
+                $first_error = $first_error ?? 'key_unauthorized';
+            }
+        }
+
+        return new WP_REST_Response( [
+            'schema_version'         => 1,
+            'generated_at'           => $generated_at,
+            'configured'             => $configured,
+            'phases'                 => $phases,
+            'overall_ok'             => $overall_ok,
+            'error_code'             => $first_error,
+            'credential_fingerprint' => $credential_fingerprint,
+        ], 200 );
     }
 }

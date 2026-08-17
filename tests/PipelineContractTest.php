@@ -808,9 +808,9 @@ class CarePipelineContractTest extends TestCase {
 
     // ── Sprint 6 tests ─────────────────────────────────────────────────────────
 
-    // CC-S11: handle_prepare_staging returns event='staging_ready' at top level.
-    public function test_handle_prepare_staging_returns_staging_ready_event(): void {
-        // Configure environment as staging with a canonical URL so staging_ready is returned.
+    // CC-S11: paired/manual staging must wait for an explicit refresh confirmation.
+    public function test_handle_prepare_staging_waits_for_manual_refresh(): void {
+        // A canonical URL alone is not evidence that the clone was refreshed.
         update_option( RP_Care_Pipeline_Client::OPT_ENVIRONMENT,    'staging' );
         update_option( 'rpcare_pipeline_canonical_url', 'https://staging.example.test' );
 
@@ -826,12 +826,13 @@ class CarePipelineContractTest extends TestCase {
         update_option( RP_Care_Pipeline_Client::OPT_ENVIRONMENT,    'production' );
         delete_option( 'rpcare_pipeline_canonical_url' );
 
-        $this->assertSame( 'staging_ready', $result['event'] ?? null,
-            'handle_prepare_staging must set event=staging_ready at top level' );
+        $this->assertSame( 'waiting_manual_staging_refresh', $result['event'] ?? null,
+            'handle_prepare_staging must not report staging_ready before a manual refresh is confirmed' );
         $this->assertTrue( $result['success'] ?? false,
             'handle_prepare_staging must set success=true' );
         $this->assertSame( 'cc-s11-batch', $result['batch_id'] ?? null,
             'handle_prepare_staging must echo back batch_id' );
+        $this->assertSame( 'manual_staging_refresh_required', $result['reason'] ?? null );
     }
 
     // CC-S12: handle_run_test_suite returns event='tests_complete' with severity.

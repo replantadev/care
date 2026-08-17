@@ -592,6 +592,19 @@ class RP_Care_Pipeline_Client {
                     'reason'   => $provider_result->get_error_message(),
                 ];
             }
+            if (
+                ! empty( $provider_result['manual_required'] )
+                || 'waiting_manual_staging_refresh' === ( $provider_result['status'] ?? '' )
+            ) {
+                return [
+                    'success'      => true,
+                    'batch_id'     => $batch_id,
+                    'event'        => 'waiting_manual_staging_refresh',
+                    'reason'       => 'manual_staging_refresh_required',
+                    'provider'     => $provider_result['provider'] ?? 'manual',
+                    'instructions' => $provider_result['instructions'] ?? 'Refresh staging from production and confirm readiness.',
+                ];
+            }
         }
 
         return [

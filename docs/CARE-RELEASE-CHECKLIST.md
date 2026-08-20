@@ -1,6 +1,6 @@
 # Checklist operativa de Care y Smart Updates
 
-Fecha de control: 2026-08-17  
+Fecha de control: 2026-08-20  
 Objetivo: entregar Care con monitorizacion fiable y actualizaciones inteligentes
 staging-first, primero mediante sitios emparejados y despues mediante WP Toolkit,
 sin presentar una capacidad como lista antes de validarla en vivo.
@@ -18,9 +18,9 @@ sin presentar una capacidad como lista antes de validarla en vivo.
 ## Estado ejecutivo
 
 - Care en repositorio: `1.16.2`.
-- Plugin Center en repositorio: `1.2.6`.
-- Suite Care: 432 tests, 1016 assertions, 0 fallos, 6 omitidos.
-- Suite Plugin Center: 320 tests, 841 assertions, 0 fallos, 7 omitidos.
+- Plugin Center en repositorio: `1.2.7`.
+- Suite Care: 437 tests, 1029 assertions, 0 fallos, 6 omitidos.
+- Suite Plugin Center: 330 tests, 871 assertions, 0 fallos, 7 omitidos.
 - Modo prioritario para el primer piloto: `paired`, con dev y dev2 ya existentes.
 - WP Toolkit: linea posterior; no bloquea el piloto paired y no esta aceptado en un
   entorno WP Toolkit real.
@@ -29,9 +29,9 @@ sin presentar una capacidad como lista antes de validarla en vivo.
 ## 1. Release e integridad
 
 - [x] `REL-01` Suite completa de Care verde tras los commits actuales.
-  Evidencia: ejecucion local del 2026-08-17, 432/432.
+  Evidencia: ejecucion local del 2026-08-20, 437/437.
 - [x] `REL-02` Suite completa de Plugin Center verde tras los commits actuales.
-  Evidencia: ejecucion local del 2026-08-17, 314/314.
+  Evidencia: ejecucion local del 2026-08-20, 330/330.
 - [ ] `REL-03` Eliminar o aislar el ruido de dependencias de desarrollo en
   `care/vendor`; el ZIP de release no debe incorporar cambios accidentales.
 - [ ] `REL-04` Corregir documentacion obsoleta que aun describe el conteo de
@@ -55,6 +55,9 @@ sin presentar una capacidad como lista antes de validarla en vivo.
 - [x] `PAIR-05` Produccion y staging se muestran de forma jerarquica. El staging
   hereda cliente y plan, lleva distintivo `STAGING` y no consume una licencia
   comercial adicional.
+- [x] `PAIR-05B` Admin -> Pipeline -> Grupos tambien usa exclusivamente
+  `production_instance_id` y `staging_instance_id`; eliminada la creacion legacy
+  basada en `pc_care_sites` y en una URL manual.
 - [ ] `PAIR-06` Configurar y comprobar `staging_role=production` en dev y
   `staging_role=staging` en dev2.
 - [ ] `PAIR-07` Mostrar en PC URL, rol, metodo efectivo, version Care, ultima
@@ -100,6 +103,9 @@ sin presentar una capacidad como lista antes de validarla en vivo.
 - [ ] `ISO-05` Webhooks y APIs salientes bloqueados salvo allowlist explicita.
 - [ ] `ISO-06` Cron, cache, sesiones y prefijo/base de datos aislados de dev.
 - [ ] `ISO-07` Comprobar que una mutacion sembrada en dev2 no aparece en dev.
+- [x] `ISO-08` Care expone un informe de aislamiento de solo lectura, autenticado,
+  que rechaza el rol production y conserva el detalle de cada check. El resultado
+  unitario no sustituye la prueba real de ISO-01..07.
 
 ## 6. Arranque y ejecucion del pipeline paired
 
@@ -113,6 +119,9 @@ sin presentar una capacidad como lista antes de validarla en vivo.
 - [x] `PIPE-03` El flujo paired mantiene `manual_required` en
   `waiting_manual_staging_refresh`; nunca devolver `staging_ready` sin refresco e
   aislamiento confirmados.
+- [x] `PIPE-03B` PC solo confirma el refresco manual tras consultar el informe de
+  aislamiento de la instancia staging emparejada; un fallo no avanza el lote y un
+  PASS encola una unica aplicacion en dev2.
 - [ ] `PIPE-04` Seleccion de plugin, batch=1, idempotencia y estados visibles en PC.
 - [ ] `PIPE-05` Instalar solo en dev2 y ejecutar smoke/health, rutas criticas,
   WooCommerce y comparacion de snapshot.
@@ -147,7 +156,8 @@ Add-On Pro `4.0.0 -> 4.0.6`. Evitar inicialmente Advanced Database Cleaner PRO
 
 ## 8. Seguridad
 
-- [ ] `SEC-01` Eliminar cualquier `sslverify=false` de comprobaciones staging.
+- [x] `SEC-01` Eliminado `sslverify=false` de las comprobaciones staging; busqueda
+  completa sin coincidencias fuera de dependencias el 2026-08-20.
 - [ ] `SEC-02` Migrar endpoints mutables que aun dependen solo de
   `X-Hub-Token` a firma HMAC con timestamp, nonce, anti-replay y rotacion.
 - [ ] `SEC-03` Guardar secretos operativos en KeePass, nunca en repositorios,

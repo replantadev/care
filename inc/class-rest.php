@@ -14,6 +14,9 @@ class RP_Care_REST {
 
     private string $control_ns = 'replanta-care/v1';
 
+    /** @var callable|null Test seam for the read-only isolation report. */
+    public static $isolation_report_reader = null;
+
     public function __construct() {
         add_action('rest_api_init', [$this, 'register_routes']);
     }
@@ -153,6 +156,13 @@ class RP_Care_REST {
         register_rest_route( $this->control_ns, '/updates/inventory', [
             'methods'             => 'POST',
             'callback'            => [ $this, 'hub_updates_inventory' ],
+            'permission_callback' => '__return_true',
+        ] );
+
+        // ── Pipeline isolation report: read-only gate for paired staging ──────
+        register_rest_route( $this->control_ns, '/pipeline/isolation-report', [
+            'methods'             => 'POST',
+            'callback'            => [ $this, 'hub_pipeline_isolation_report' ],
             'permission_callback' => '__return_true',
         ] );
 
@@ -2906,6 +2916,41 @@ class RP_Care_REST {
             ],
             200
         );
+    }
+
+    /**
+     * POST /wp-json/replanta-care/v1/pipeline/isolation-report
+     *
+     * Read-only. PC calls this after the operator confirms that the paired clone
+     * was refreshed. A production instance always rejects the check.
+     */
+    public function hub_pipeline_isolation_report( WP_REST_Request $request ): WP_REST_Response {
+        if ( ! $this->validate_hub_token( $request, true ) ) {
+            return new WP_REST_Response( [ 'error' => 'Unauthorized' ], 403 );
+        }
+
+        $environment = (string) get_option( RP_Care_Pipeline_Client::OPT_ENVIRONMENT, '' );
+        if ( 'staging' !== $environment ) {
+            return new WP_REST_Response(
+                [ 'error' => 'not_staging', 'environment' => $environment ?: 'unset' ],
+                409
+            );
+        }
+
+        if ( null === self::$isolation_report_reader && ! class_exists( 'RP_Care_Isolation_Checker' ) ) {
+            return new WP_REST_Response( [ 'error' => 'isolation_checker_unavailable' ], 503 );
+        }
+
+        $report = null !== self::$isolation_report_reader
+            ? call_user_func( self::$isolation_report_reader )
+            : RP_Care_Isolation_Checker::run();
+        return new WP_REST_Response( [
+            'schema_version' => 1,
+            'generated_at'   => gmdate( 'c' ),
+            'environment'    => 'staging',
+            'passed'         => (bool) ( $report['passed'] ?? false ),
+            'checks'         => array_values( (array) ( $report['checks'] ?? [] ) ),
+        ], 200 );
     }
 
     /**

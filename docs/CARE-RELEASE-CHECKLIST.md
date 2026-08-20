@@ -32,11 +32,14 @@ sin presentar una capacidad como lista antes de validarla en vivo.
   Evidencia: ejecucion local del 2026-08-20, 441/441.
 - [x] `REL-02` Suite completa de Plugin Center verde tras los commits actuales.
   Evidencia: ejecucion local del 2026-08-20, 336/336.
-- [ ] `REL-03` Eliminar o aislar el ruido de dependencias de desarrollo en
-  `care/vendor`; el ZIP de release no debe incorporar cambios accidentales.
+- [x] `REL-03` El build usa `git archive` sobre el commit probado y
+  `.gitattributes export-ignore`; el `vendor` local modificado por PHPUnit queda
+  aislado y no puede entrar en el ZIP.
 - [x] `REL-04` Changelog, contrato, cabecera, stable tag e indice coinciden con
   inventario canonico y versiones Care 1.16.3 / PC 1.2.8.
-- [ ] `REL-05` Construir ZIPs reproducibles, inspeccionarlos y registrar hashes.
+- [x] `REL-05` ZIPs Care 1.16.3 y PC 1.2.8 construidos desde Git, inspeccionados
+  sin tests/docs/build ni dependencias dev; hashes SHA-256 registrados en la
+  entrega operativa.
 - [ ] `REL-06` Desplegar las versiones aprobadas en dev/dev2 y PC en Cedro.
 - [ ] `REL-07` Repetir smoke, estado de versiones y contratos despues del
   despliegue.

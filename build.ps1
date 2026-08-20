@@ -79,7 +79,7 @@ Write-Step 'PHP Lint'
 $phpCmd = Get-Command php -ErrorAction SilentlyContinue
 if ($phpCmd) {
     $phpFiles = Get-ChildItem -Path . -Include '*.php' -Recurse |
-        Where-Object { $_.FullName -notmatch '\\(vendor|node_modules|action-scheduler)\\' }
+        Where-Object { $_.FullName -notmatch '\\(vendor|\.vendor-dev|node_modules|action-scheduler|tests)\\' }
     $lintErrors = 0
     foreach ($f in $phpFiles) {
         $out = & php -l $f.FullName 2>&1
@@ -100,7 +100,7 @@ if ($phpCmd) {
 Write-Step 'Comprobacion BOM'
 $bomFiles = @()
 Get-ChildItem -Path . -Include '*.php' -Recurse |
-    Where-Object { $_.FullName -notmatch '\\(vendor|node_modules|action-scheduler)\\' } |
+    Where-Object { $_.FullName -notmatch '\\(vendor|\.vendor-dev|node_modules|action-scheduler|tests)\\' } |
     ForEach-Object {
         $bytes = [System.IO.File]::ReadAllBytes($_.FullName)
         if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {

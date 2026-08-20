@@ -86,4 +86,20 @@ class PipelineIsolationEndpointTest extends TestCase {
         $this->assertFalse( $data['passed'] );
         $this->assertSame( 'db_isolated', $data['checks'][0]['name'] );
     }
+
+    public function test_hub_config_can_prepare_the_paired_care_executor(): void {
+        $request = $this->request( hash( 'sha256', self::TOKEN ) );
+        $request->set_param( 'update_executor', 'care_pipeline' );
+        $request->set_param( 'native_auto_updates', 'disabled' );
+        $request->set_param( 'pipeline_enabled', true );
+        $request->set_param( 'staging_role', 'staging' );
+
+        $response = $this->rest->hub_config( $request );
+        $this->assertSame( 200, $response->get_status() );
+        $opts = get_option( 'rpcare_options', [] );
+        $this->assertSame( 'care_pipeline', $opts['update_executor'] );
+        $this->assertSame( 'disabled', $opts['native_auto_updates'] );
+        $this->assertSame( 'staging', $opts['staging_role'] );
+        $this->assertTrue( (bool) get_option( RP_Care_Pipeline_Client::OPT_ENABLED, false ) );
+    }
 }

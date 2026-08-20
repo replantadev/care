@@ -1890,6 +1890,28 @@ class RP_Care_REST {
             $updated['notification_config'] = array_keys(array_filter($ncfg));
         }
 
+        // Smart Updates executor settings.
+        $update_executor  = $request->get_param( 'update_executor' );
+        $native_updates   = $request->get_param( 'native_auto_updates' );
+        $pipeline_enabled = $request->get_param( 'pipeline_enabled' );
+        if ( null !== $update_executor && in_array( $update_executor, [ 'care_pipeline', 'external', 'disabled' ], true ) ) {
+            $opts                    = get_option( 'rpcare_options', [] );
+            $opts['update_executor'] = $update_executor;
+            update_option( 'rpcare_options', $opts );
+            $updated['update_executor'] = $update_executor;
+        }
+        if ( null !== $native_updates && in_array( $native_updates, [ 'disabled', 'enabled' ], true ) ) {
+            $opts                        = get_option( 'rpcare_options', [] );
+            $opts['native_auto_updates'] = $native_updates;
+            update_option( 'rpcare_options', $opts );
+            $updated['native_auto_updates'] = $native_updates;
+        }
+        if ( null !== $pipeline_enabled && class_exists( 'RP_Care_Pipeline_Client' ) ) {
+            $enabled = filter_var( $pipeline_enabled, FILTER_VALIDATE_BOOLEAN );
+            update_option( RP_Care_Pipeline_Client::OPT_ENABLED, $enabled );
+            $updated['pipeline_enabled'] = $enabled;
+        }
+
         // Addons — enables/disables addons pushed from PC Config tab (e.g. ecommerce)
         $addons = $request->get_param('addons');
         if ( ! is_null( $addons ) && is_array( $addons ) && class_exists( 'RP_Care_Addon_Manager' ) ) {

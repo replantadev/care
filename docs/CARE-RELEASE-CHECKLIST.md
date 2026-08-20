@@ -19,8 +19,8 @@ sin presentar una capacidad como lista antes de validarla en vivo.
 
 - Care en repositorio: `1.16.3`.
 - Plugin Center en repositorio: `1.2.8`.
-- Suite Care: 441 tests, 1092 assertions, 0 fallos, 6 omitidos.
-- Suite Plugin Center: 336 tests, 934 assertions, 0 fallos, 7 omitidos.
+- Suite Care: 442 tests, 1097 assertions, 0 fallos, 6 omitidos.
+- Suite Plugin Center: 337 tests, 981 assertions, 0 fallos, 7 omitidos.
 - Modo prioritario para el primer piloto: `paired`, con dev y dev2 ya existentes.
 - WP Toolkit: linea posterior; no bloquea el piloto paired y no esta aceptado en un
   entorno WP Toolkit real.
@@ -29,9 +29,9 @@ sin presentar una capacidad como lista antes de validarla en vivo.
 ## 1. Release e integridad
 
 - [x] `REL-01` Suite completa de Care verde tras los commits actuales.
-  Evidencia: ejecucion local del 2026-08-20, 441/441.
+  Evidencia: ejecucion local del 2026-08-20, 442/442.
 - [x] `REL-02` Suite completa de Plugin Center verde tras los commits actuales.
-  Evidencia: ejecucion local del 2026-08-20, 336/336.
+  Evidencia: ejecucion local del 2026-08-20, 337/337.
 - [x] `REL-03` El build usa `git archive` sobre el commit probado y
   `.gitattributes export-ignore`; el `vendor` local modificado por PHPUnit queda
   aislado y no puede entrar en el ZIP.
@@ -63,6 +63,8 @@ sin presentar una capacidad como lista antes de validarla en vivo.
   basada en `pc_care_sites` y en una URL manual.
 - [ ] `PAIR-06` Configurar y comprobar `staging_role=production` en dev y
   `staging_role=staging` en dev2.
+  La accion de PC que configura ambos Care ya esta implementada; falta ejecutarla
+  y verificarla despues del despliegue.
 - [ ] `PAIR-07` Mostrar en PC URL, rol, metodo efectivo, version Care, ultima
   comunicacion y estado de aislamiento de ambas instancias.
 

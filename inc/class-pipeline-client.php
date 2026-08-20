@@ -24,6 +24,12 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class RP_Care_Pipeline_Client {
 
+    const MAX_ARTIFACT_BYTES = 33554432; // Must match PC_Artifact_Store.
+
+    /** @var callable|null Test seams; never configured in production. */
+    public static $artifact_downloader = null;
+    public static $artifact_uploader   = null;
+
     // WP options.
     const OPT_ENABLED        = 'rpcare_pipeline_enabled';
     const OPT_PAIRING_STATUS = 'rpcare_pipeline_pairing_status';
@@ -329,6 +335,10 @@ class RP_Care_Pipeline_Client {
                 $result = self::handle_report_inventory( $command );
                 break;
 
+            case 'export_update_artifact':
+                $result = self::handle_export_update_artifact( $command, $hub_url, $token, $instance_id );
+                break;
+
             case 'prepare_staging':
                 $result = self::handle_prepare_staging( $command );
                 break;
@@ -521,6 +531,112 @@ class RP_Care_Pipeline_Client {
         return [ 'success' => true, 'inventory' => $inv ];
     }
 
+    /** Download a licensed package locally and upload only its bytes to PC. */
+    private static function handle_export_update_artifact(
+        array $cmd,
+        string $hub_url,
+        string $token,
+        string $instance_id
+    ): array {
+        if ( self::is_staging() ) {
+            return [ 'success' => false, 'error' => 'artifact_export_requires_production' ];
+        }
+        if ( ! class_exists( 'ZipArchive' ) && null === self::$artifact_downloader ) {
+            return [ 'success' => false, 'error' => 'ziparchive_unavailable' ];
+        }
+
+        $plugin_file    = (string) ( $cmd['payload']['plugin_file'] ?? '' );
+        $target_version = (string) ( $cmd['payload']['target_version'] ?? '' );
+        $command_id     = (string) ( $cmd['command_id'] ?? '' );
+        if ( ! preg_match( '#^[A-Za-z0-9._-]+/[A-Za-z0-9._/-]+\.php$#', $plugin_file )
+            || false !== strpos( $plugin_file, '..' )
+            || '' === $target_version || '' === $command_id ) {
+            return [ 'success' => false, 'error' => 'artifact_request_invalid' ];
+        }
+
+        $transient = get_site_transient( 'update_plugins' );
+        $candidate = is_object( $transient ) && isset( $transient->response[ $plugin_file ] )
+            ? $transient->response[ $plugin_file ]
+            : null;
+        $new_version = is_object( $candidate ) ? (string) ( $candidate->new_version ?? '' ) : '';
+        $package_url = is_object( $candidate ) ? (string) ( $candidate->package ?? '' ) : '';
+        if ( $new_version !== $target_version || '' === $package_url ) {
+            return [ 'success' => false, 'error' => 'artifact_not_in_current_inventory' ];
+        }
+        $parts = wp_parse_url( $package_url );
+        if ( ! is_array( $parts ) || 'https' !== strtolower( (string) ( $parts['scheme'] ?? '' ) )
+            || empty( $parts['host'] ) || isset( $parts['user'] ) ) {
+            return [ 'success' => false, 'error' => 'artifact_source_not_https' ];
+        }
+
+        if ( null !== self::$artifact_downloader ) {
+            $tmp = call_user_func( self::$artifact_downloader, $package_url );
+        } else {
+            if ( ! function_exists( 'download_url' ) ) {
+                require_once ABSPATH . 'wp-admin/includes/file.php';
+            }
+            $tmp = download_url( $package_url, 60 );
+        }
+        if ( is_wp_error( $tmp ) || ! is_string( $tmp ) || ! is_file( $tmp ) ) {
+            return [ 'success' => false, 'error' => 'artifact_download_failed' ];
+        }
+
+        $size = (int) filesize( $tmp );
+        if ( $size <= 0 || $size > self::MAX_ARTIFACT_BYTES ) {
+            @unlink( $tmp );
+            return [ 'success' => false, 'error' => 'artifact_size_invalid' ];
+        }
+        if ( null === self::$artifact_downloader ) {
+            $zip = new ZipArchive();
+            if ( true !== $zip->open( $tmp ) ) {
+                @unlink( $tmp );
+                return [ 'success' => false, 'error' => 'artifact_zip_invalid' ];
+            }
+            $zip->close();
+        }
+
+        $sha256 = hash_file( 'sha256', $tmp );
+        $bytes  = file_get_contents( $tmp );
+        @unlink( $tmp );
+        if ( false === $sha256 || false === $bytes ) {
+            return [ 'success' => false, 'error' => 'artifact_read_failed' ];
+        }
+
+        $url  = trailingslashit( $hub_url ) . 'wp-json/replanta-pc/v1/pipeline/artifact-ingest/' . rawurlencode( $command_id );
+        $args = [
+            'timeout'   => 90,
+            'sslverify' => true,
+            'headers'   => [
+                'Content-Type'      => 'application/zip',
+                'X-Pipeline-Token'  => $token,
+                'X-Instance-ID'     => $instance_id,
+                'X-Artifact-SHA256' => $sha256,
+            ],
+            'body' => $bytes,
+        ];
+        $response = null !== self::$artifact_uploader
+            ? call_user_func( self::$artifact_uploader, $url, $args )
+            : wp_remote_post( $url, $args );
+        unset( $bytes );
+        if ( is_wp_error( $response ) ) {
+            return [ 'success' => false, 'error' => 'artifact_upload_failed' ];
+        }
+        $code = (int) wp_remote_retrieve_response_code( $response );
+        $data = json_decode( wp_remote_retrieve_body( $response ), true );
+        if ( 200 !== $code || empty( $data['artifact']['id'] )
+            || ! hash_equals( $sha256, (string) ( $data['artifact']['sha256'] ?? '' ) ) ) {
+            return [ 'success' => false, 'error' => 'artifact_upload_rejected' ];
+        }
+        return [
+            'success'     => true,
+            'artifact_id' => (string) $data['artifact']['id'],
+            'sha256'      => $sha256,
+            'size'        => (int) ( $data['artifact']['size'] ?? $size ),
+            'plugin_file' => $plugin_file,
+            'target_version' => $target_version,
+        ];
+    }
+
     private static function handle_prepare_production( array $cmd ): array {
         $batch_id   = $cmd['payload']['batch_id'] ?? '';
         $command_id = $cmd['command_id'] ?? '';
@@ -676,7 +792,7 @@ class RP_Care_Pipeline_Client {
             $severity    = 'none';
             $test_report = [ 'checks' => [], 'note' => 'built_in_health_check' ];
             if ( ! empty( $staging_url ) ) {
-                $resp = wp_remote_get( $staging_url, [ 'timeout' => 15, 'sslverify' => false ] );
+                $resp = wp_remote_get( $staging_url, [ 'timeout' => 15, 'sslverify' => true ] );
                 $code = is_wp_error( $resp ) ? 0 : (int) wp_remote_retrieve_response_code( $resp );
                 if ( $code === 0 || $code >= 500 ) {
                     $severity = 'critical';

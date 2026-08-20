@@ -73,7 +73,7 @@ class RP_Care_Task_Anomaly {
         $start = microtime(true);
         $response = wp_remote_get($url, [
             'timeout'    => 30,
-            'sslverify'  => false,
+            'sslverify'  => true,
             'user-agent' => 'Replanta-Care/Anomaly',
         ]);
         $elapsed = (microtime(true) - $start) * 1000;

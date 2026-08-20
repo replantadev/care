@@ -98,11 +98,11 @@ class RP_Care_Task_WPO {
         $base_url = home_url('/');
         $warmup_args = [
             'timeout'   => 30,
-            'sslverify' => false,
+            'sslverify' => true,
         ];
         $measure_args = [
             'timeout'   => 30,
-            'sslverify' => false,
+            'sslverify' => true,
             'headers'   => ['Cache-Control' => 'no-cache, no-store', 'Pragma' => 'no-cache'],
         ];
 

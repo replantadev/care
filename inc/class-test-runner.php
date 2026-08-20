@@ -333,7 +333,7 @@ class RP_Care_Test_Suite_WordPress implements RP_Care_Test_Runner_Interface {
         $result = wp_remote_get( admin_url( 'admin-ajax.php?action=health-check-site-status-result' ), [
             'timeout'    => 10,
             'cookies'    => [],
-            'sslverify'  => false,
+            'sslverify'  => true,
         ] );
         if ( is_wp_error( $result ) ) {
             return [ 'name' => 'loopback', 'status' => 'warning', 'message' => 'Loopback check failed: ' . $result->get_error_message() ];

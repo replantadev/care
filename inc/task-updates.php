@@ -684,7 +684,7 @@ class RP_Care_Task_Updates {
         $result = wp_remote_get($url, [
             'timeout'    => $timeout,
             'user-agent' => 'ReplantaCare/HealthCheck',
-            'sslverify'  => false,
+            'sslverify'  => true,
         ]);
         $elapsed = microtime(true) - $start;
 

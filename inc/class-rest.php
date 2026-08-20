@@ -1789,7 +1789,7 @@ class RP_Care_REST {
                 $t0      = microtime( true );
                 $ttfb_r  = wp_remote_head( home_url( '/' ), [
                     'timeout'     => 8,
-                    'sslverify'   => false,
+                    'sslverify'   => true,
                     'redirection' => 0,
                 ] );
                 if ( ! is_wp_error( $ttfb_r ) ) {
@@ -2073,7 +2073,7 @@ class RP_Care_REST {
         $t0          = microtime( true );
         $hr          = wp_remote_get( home_url( '/' ), [
             'timeout'     => 10,
-            'sslverify'   => false,
+            'sslverify'   => true,
             'redirection' => 0,
         ] );
         if ( ! is_wp_error( $hr ) ) {

@@ -1,14 +1,27 @@
 # Changelog — Replanta Care
 
+## [1.16.3]
+
+- Nuevo comando HMAC `export_update_artifact`: solo production puede descargar
+  el paquete exacto del inventario vivo y entregar a PC únicamente ZIP + SHA-256.
+- La URL privada del proveedor no sale de Care ni se incluye en comandos,
+  resultados o logs. Se exige HTTPS, coincidencia exacta de versión, ZipArchive
+  y un máximo de 32 MiB; cualquier discrepancia falla cerrado.
+- Nuevo informe autenticado y de solo lectura `/pipeline/isolation-report` para
+  que PC no avance un lote paired sin aislamiento real aprobado en staging.
+- TLS vuelve a verificarse en el smoke integrado del staging.
+
 ## [1.16.2]
 
 ### POST /replanta-care/v1/updates/inventory (nuevo endpoint)
 
-- Nuevo endpoint autenticado (X-Hub-Token estricto, igual que /ping) que devuelve el inventario completo del transient RAW `update_plugins`, sin aplicar filtros de política.
-- Campos de respuesta: `schema_version`, `generated_at`, `checked_at`, `stale`, `plugins_total`, `plugins[]`, `themes_total`, `themes[]`, `inventory_hash`.
+- Nuevo endpoint autenticado (X-Hub-Token estricto, igual que /ping) que cruza
+  el transient RAW `update_plugins` con los plugins realmente instalados.
+- Contrato `schema_version=2`: separa `plugins[]` accionables y
+  `orphaned_plugins[]`; `/ping` usa únicamente `actionable_total`.
 - Por plugin: `plugin_file`, `slug`, `name`, `installed_version`, `available_version`, `package_available` (booleano). Nunca incluye URLs de descarga, licencias ni secretos.
-- `plugins_total` = count(plugins), exactamente. Las entradas de `no_update[]` y `translations[]` no se cuentan.
-- Entradas huérfanas (plugin_file en el transient pero el archivo no existe en disco) tienen `name=""` e `installed_version=""`. WP admin las excluye de su conteo; el endpoint las expone para que Plugin Center pueda aplicar la misma exclusión y concordar con WP admin.
+- `plugins_total` = count(plugins), exactamente. Las entradas huérfanas se
+  diagnostican aparte y nunca inflan el contador que consume PC.
 - `inventory_hash`: sha256 sobre json determinístico de plugins+themes (sin timestamps). Permite a PC detectar cambios sin necesidad de diff completo.
 - Seam de test `RP_Care_Update_Control::$plugin_data_reader`: callable `(string $plugin_file) => array{Name,Version}` inyectable en tests. Null en producción.
 - 29 tests en `UpdatesInventoryTest.php` (IN-01..IN-29): auth gate, estados del transient, enumeración, precisión de campos, seguridad, no_update/translations excluidos, ordenación, hash, temas.

@@ -3,14 +3,14 @@
   Build y despliegue de Replanta Care.
 .DESCRIPTION
   Sin flags  : lint PHP + BOM + ZIP local
-  -Deploy    : todo lo anterior + bump/commit/push (dispara GitHub Actions:
+  -Deploy    : todo lo anterior + push del commit probado (dispara GitHub Actions:
                Release en replantadev/care + Hub notify replanta.net) +
                actualiza catalogo sap-woo-suite-info + flush cache
   -Version   : fuerza un numero de version concreto (bump version)
 .PARAMETER Deploy
   Activa el modo deploy completo.
 .PARAMETER Version
-  Numero de version destino (p.ej. 1.15.0). Por defecto lee la version actual.
+  Version esperada (p.ej. 1.16.3). Debe coincidir con la cabecera ya commiteada.
 .PARAMETER Token
   GitHub PAT. Prioridad: RPCARE_GH_TOKEN → SAPWOO_GH_TOKEN → GITHUB_TOKEN
 .EXAMPLE
@@ -37,16 +37,6 @@ $PluginRepo  = 'care'
 $CatalogRepo = 'sap-woo-suite-info'
 $FlushUrl    = $env:REP_FLUSH_URL
 $FlushSecret = $env:REP_FLUSH_SECRET
-
-$ZipExcludes = @(
-    '.git', '.github', '.gitignore',
-    'node_modules',
-    'build.ps1', 'docs',
-    'phpcs.xml', 'phpstan.neon',
-    'composer.json', 'composer.lock',
-    'config.php', 'config-sample.php',
-    'update-info.json'
-)
 
 # -- Helpers -------------------------------------------------------------------
 
@@ -75,21 +65,10 @@ $CurrentVersion = $Matches[1]
 if (-not $Version) { $Version = $CurrentVersion }
 Write-Ok "Version actual: $CurrentVersion  →  destino: $Version"
 
-# -- 3. Bump version (si cambia) -----------------------------------------------
+# -- 3. Version ya fijada en el commit ----------------------------------------
 
 if ($Version -ne $CurrentVersion) {
-    Write-Step "Bumping $CurrentVersion → $Version"
-    $pluginContent = $pluginContent -replace `
-        "(?m)(\s*\*\s*Version:\s*)$([regex]::Escape($CurrentVersion))", "`${1}$Version"
-    $pluginContent = $pluginContent -replace `
-        "define\s*\(\s*'RPCARE_VERSION'\s*,\s*'$([regex]::Escape($CurrentVersion))'\s*\)", `
-        "define('RPCARE_VERSION', '$Version')"
-    [System.IO.File]::WriteAllText(
-        (Resolve-Path $PluginFile).Path,
-        $pluginContent,
-        [System.Text.UTF8Encoding]::new($false)
-    )
-    Write-Ok "$PluginFile actualizado a $Version"
+    Write-Fail "La version solicitada $Version no coincide con la cabecera commiteada $CurrentVersion"
 }
 
 $ZipName = "$PluginSlug-$Version.zip"
@@ -134,32 +113,23 @@ if ($bomFiles.Count -gt 0) {
 }
 Write-Ok 'Sin BOM'
 
-# -- 6. Construir ZIP ----------------------------------------------------------
+# -- 6. Construir ZIP reproducible desde Git ----------------------------------
 
 Write-Step "Construyendo $ZipName"
-if (Test-Path $ZipName) { Remove-Item $ZipName -Force }
-
-$tempDir   = Join-Path ([System.IO.Path]::GetTempPath()) "$PluginSlug-build-$(Get-Random)"
-$pluginDir = Join-Path $tempDir $PluginSlug
-New-Item -ItemType Directory -Force $pluginDir | Out-Null
-
-$sourceItems = Get-ChildItem -Path . -Force |
-    Where-Object { $ZipExcludes -notcontains $_.Name -and $_.Name -notlike '*.zip' }
-
-foreach ($item in $sourceItems) {
-    if ($item.PSIsContainer) {
-        Copy-Item $item.FullName (Join-Path $pluginDir $item.Name) -Recurse -Force
-    } else {
-        Copy-Item $item.FullName (Join-Path $pluginDir $item.Name) -Force
-    }
-}
-
 $zipPath = Join-Path (Get-Location) $ZipName
-Compress-Archive -Path $pluginDir -DestinationPath $zipPath -CompressionLevel Optimal
-Remove-Item $tempDir -Recurse -Force
+if (Test-Path $zipPath) { Remove-Item -LiteralPath $zipPath -Force }
+
+# Archive only committed files. This deliberately ignores dirty/untracked vendor
+# created by local PHPUnit installs and applies export-ignore from .gitattributes.
+$trackedDirty = git status --porcelain --untracked-files=no -- . ':(exclude)vendor'
+if ($trackedDirty) { Write-Fail 'Hay cambios tracked sin commit fuera de vendor; el ZIP no se construiria desde el codigo probado.' }
+git archive --format=zip --prefix="$PluginSlug/" --output="$zipPath" HEAD
+if ($LASTEXITCODE -ne 0 -or -not (Test-Path $zipPath)) { Write-Fail 'git archive no pudo construir el ZIP' }
 
 $zipSize = [math]::Round((Get-Item $ZipName).Length / 1KB, 1)
 Write-Ok "$ZipName ($zipSize KB)"
+$zipHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $zipPath).Hash.ToLowerInvariant()
+Write-Ok "SHA-256: $zipHash"
 
 # -- 7. Deploy -----------------------------------------------------------------
 
@@ -206,17 +176,9 @@ if ($LASTEXITCODE -eq 0) {
     Write-Skip "No se pudo clonar $CatalogRepo — omitido"
 }
 
-# -- 7b. Git commit + push plugin (dispara GitHub Actions: Release + Hub) ------
+# -- 7b. Push exacto del commit probado (dispara GitHub Actions) ---------------
 
-Write-Step 'Commit + push del plugin repo'
-$gitStatus = git status --short 2>&1
-if ($gitStatus) {
-    git add -A
-    git commit -m "chore: release v$Version"
-    Write-Ok "Commit: release v$Version"
-} else {
-    Write-Skip 'Sin cambios locales pendientes'
-}
+Write-Step 'Push del commit probado'
 $pushOut = cmd /c "git push origin HEAD 2>&1"
 if ($LASTEXITCODE -ne 0) { Write-Fail "git push fallo: $pushOut" }
 Write-Ok 'Push completado — GitHub Actions crea Release y notifica Hub (replanta.net)'

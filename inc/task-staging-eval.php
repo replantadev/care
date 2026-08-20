@@ -31,7 +31,7 @@ class RP_Care_Task_StagingEval {
     public static function capture_http_snapshot( string $url ): array {
         $response = wp_remote_get( $url, [
             'timeout'   => 30,
-            'sslverify' => false,
+            'sslverify' => true,
             'headers'   => [
                 'User-Agent' => 'ReplantaCare-StagingEval/1.0',
                 'Accept'     => 'text/html,application/xhtml+xml',

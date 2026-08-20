@@ -87,7 +87,7 @@ class RP_Care_Task_Checkout_Monitor {
         $response = wp_remote_get($url, [
             'timeout'     => self::REQUEST_TIMEOUT,
             'user-agent'  => 'ReplantaCare/1.0 CheckoutMonitor',
-            'sslverify'   => false,
+            'sslverify'   => true,
             'redirection' => 3,
         ]);
 
@@ -106,7 +106,7 @@ class RP_Care_Task_Checkout_Monitor {
         $response = wp_remote_get($url, [
             'timeout'    => 8,
             'user-agent' => 'ReplantaCare/1.0 CheckoutMonitor',
-            'sslverify'  => false,
+            'sslverify'  => true,
         ]);
 
         if (is_wp_error($response)) {

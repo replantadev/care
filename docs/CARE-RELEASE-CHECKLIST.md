@@ -17,10 +17,10 @@ sin presentar una capacidad como lista antes de validarla en vivo.
 
 ## Estado ejecutivo
 
-- Care en repositorio: `1.16.2`.
-- Plugin Center en repositorio: `1.2.7`.
-- Suite Care: 437 tests, 1029 assertions, 0 fallos, 6 omitidos.
-- Suite Plugin Center: 330 tests, 871 assertions, 0 fallos, 7 omitidos.
+- Care en repositorio: `1.16.3`.
+- Plugin Center en repositorio: `1.2.8`.
+- Suite Care: 441 tests, 1092 assertions, 0 fallos, 6 omitidos.
+- Suite Plugin Center: 336 tests, 934 assertions, 0 fallos, 7 omitidos.
 - Modo prioritario para el primer piloto: `paired`, con dev y dev2 ya existentes.
 - WP Toolkit: linea posterior; no bloquea el piloto paired y no esta aceptado en un
   entorno WP Toolkit real.
@@ -29,13 +29,13 @@ sin presentar una capacidad como lista antes de validarla en vivo.
 ## 1. Release e integridad
 
 - [x] `REL-01` Suite completa de Care verde tras los commits actuales.
-  Evidencia: ejecucion local del 2026-08-20, 437/437.
+  Evidencia: ejecucion local del 2026-08-20, 441/441.
 - [x] `REL-02` Suite completa de Plugin Center verde tras los commits actuales.
-  Evidencia: ejecucion local del 2026-08-20, 330/330.
+  Evidencia: ejecucion local del 2026-08-20, 336/336.
 - [ ] `REL-03` Eliminar o aislar el ruido de dependencias de desarrollo en
   `care/vendor`; el ZIP de release no debe incorporar cambios accidentales.
-- [ ] `REL-04` Corregir documentacion obsoleta que aun describe el conteo de
-  `/ping` como inventario raw y hacer coincidir changelog, contrato y version.
+- [x] `REL-04` Changelog, contrato, cabecera, stable tag e indice coinciden con
+  inventario canonico y versiones Care 1.16.3 / PC 1.2.8.
 - [ ] `REL-05` Construir ZIPs reproducibles, inspeccionarlos y registrar hashes.
 - [ ] `REL-06` Desplegar las versiones aprobadas en dev/dev2 y PC en Cedro.
 - [ ] `REL-07` Repetir smoke, estado de versiones y contratos despues del
@@ -109,20 +109,20 @@ sin presentar una capacidad como lista antes de validarla en vivo.
 
 ## 6. Arranque y ejecucion del pipeline paired
 
-- [ ] `PIPE-01` Añadir en PC la accion operativa para crear un lote desde el
-  inventario seleccionado; hoy existe el motor, pero no un caller vivo completo de
+- [x] `PIPE-01` Smart Updates permite seleccionar exactamente un plugin, preparar
+  su artefacto y crear el lote mediante un caller vivo de
   `create_batch_from_inventory()`.
-- [ ] `PIPE-02` Resolver la adquisicion segura de artefactos PRO. Care debe poder
-  obtener el paquete usando la licencia del sitio y transferir/congelar artefacto y
-  hash sin exponer URL firmada ni credenciales. Sin esto el piloto real de Banban
-  no puede empezar.
+- [x] `PIPE-02` Comando HMAC production-only obtiene el paquete PRO del inventario
+  vivo; PC recibe ZIP + SHA-256, lo verifica y congela. La URL privada nunca sale
+  de Care. Pendiente validacion E2E real antes de usarlo en clientes.
 - [x] `PIPE-03` El flujo paired mantiene `manual_required` en
   `waiting_manual_staging_refresh`; nunca devolver `staging_ready` sin refresco e
   aislamiento confirmados.
 - [x] `PIPE-03B` PC solo confirma el refresco manual tras consultar el informe de
   aislamiento de la instancia staging emparejada; un fallo no avanza el lote y un
   PASS encola una unica aplicacion en dev2.
-- [ ] `PIPE-04` Seleccion de plugin, batch=1, idempotencia y estados visibles en PC.
+- [x] `PIPE-04` Seleccion batch=1, reutilizacion idempotente de orden/artefacto y
+  estados del lote visibles en PC; cubierto por suites, aun sin piloto real.
 - [ ] `PIPE-05` Instalar solo en dev2 y ejecutar smoke/health, rutas criticas,
   WooCommerce y comparacion de snapshot.
 - [ ] `PIPE-06` Detenerse en espera de aprobacion humana con evidencia legible.
@@ -181,7 +181,7 @@ Add-On Pro `4.0.0 -> 4.0.6`. Evitar inicialmente Advanced Database Cleaner PRO
 
 ## 10. Secuencia inmediata
 
-1. Desplegar Care 1.16.2 en dev y dev2 y PC 1.2.6 en Cedro con ZIPs verificados.
+1. Desplegar Care 1.16.3 en dev y dev2 y PC 1.2.8 en Cedro con ZIPs verificados.
 2. Mantener el emparejamiento existente de Pipeline, proyectarlo correctamente en
    Operaciones y confirmar los roles efectivos production/staging.
 3. Confirmar conteo canonico 4/4/4 y una entrada huerfana separada.

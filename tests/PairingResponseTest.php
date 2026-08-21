@@ -47,6 +47,7 @@ if ( ! function_exists( 'rest_ensure_response' ) ) {
 // Stubs for classes loaded by class-rest.php that are not needed for hub_ping().
 // We only require the one class file that contains hub_ping, so minimal.
 require_once __DIR__ . '/../inc/class-update-control.php';
+require_once __DIR__ . '/../inc/class-pipeline-client.php';
 require_once __DIR__ . '/../inc/class-rest.php';
 
 use PHPUnit\Framework\TestCase;
@@ -257,5 +258,24 @@ class PairingResponseTest extends TestCase {
         $resp = $this->callPing( $this->validHeader() );
         $this->assertSame( 200, $resp->get_status(),
             'sha256(token) in header must be accepted' );
+    }
+
+    public function test_pipeline_pairing_rejects_missing_hub_header(): void {
+        update_option( 'rpcare_options', [ 'site_token' => self::RAW_TOKEN ] );
+        $request = $this->makeRequest();
+        $request->set_param( 'action', 'status' );
+
+        $response = $this->rest->pipeline_pairing( $request );
+        $this->assertSame( 403, $response->get_status() );
+    }
+
+    public function test_pipeline_pairing_accepts_valid_hub_header(): void {
+        update_option( 'rpcare_options', [ 'site_token' => self::RAW_TOKEN ] );
+        $request = $this->makeRequest( $this->validHeader() );
+        $request->set_param( 'action', 'status' );
+
+        $response = $this->rest->pipeline_pairing( $request );
+        $this->assertSame( 200, $response->get_status() );
+        $this->assertTrue( $response->get_data()['ok'] ?? false );
     }
 }

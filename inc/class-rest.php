@@ -508,7 +508,10 @@ class RP_Care_REST {
         register_rest_route($this->control_ns, '/pipeline/pairing', [
             'methods'             => 'POST',
             'callback'            => [$this, 'pipeline_pairing'],
-            'permission_callback' => [$this, 'check_permissions'],
+            // Pairing is initiated by Plugin Center, whose transport contract
+            // is X-Hub-Token. The handler validates it strictly before touching
+            // the one-time, URL-bound pairing token.
+            'permission_callback' => '__return_true',
         ]);
 
         // POST /pipeline/approval-request — Operator submits approval from the Care admin approval screen.
@@ -541,6 +544,9 @@ class RP_Care_REST {
     }
 
     public function pipeline_pairing( WP_REST_Request $request ) {
+        if ( ! $this->validate_hub_token( $request, true ) ) {
+            return new WP_REST_Response( [ 'error' => 'Unauthorized' ], 403 );
+        }
         if ( ! class_exists( 'RP_Care_Pipeline_Client' ) ) {
             return new WP_REST_Response( [ 'ok' => false, 'message' => 'Pipeline client not loaded.' ], 200 );
         }

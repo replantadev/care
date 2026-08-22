@@ -9,9 +9,16 @@ if (!defined('ABSPATH')) {
 }
 
 class RP_Care_Task_Backup {
-    
+
+    /** Test seam: callable () => string, overrides RP_Care_Scheduler::get_environment_type(). */
+    public static $environment_reader = null;
+
+    /** Test seam: string, overrides get_backup_base_dir() return value. */
+    public static $backup_base_dir_override = null;
+
     public static function run($args = []) {
-        $environment = RP_Care_Scheduler::get_environment_type();
+        $env_fn      = self::$environment_reader;
+        $environment = $env_fn ? $env_fn() : RP_Care_Scheduler::get_environment_type();
         $results = [];
 
         if (self::is_b2_configured()) {
@@ -28,6 +35,7 @@ class RP_Care_Task_Backup {
         
         switch ($environment) {
             case 'whm':
+            case 'cpanel': // RP_Care_Environment::detect() returns 'cpanel', not 'whm'
                 $results = self::handle_whm_backup($args);
                 break;
             case 'external':
@@ -1365,6 +1373,9 @@ class RP_Care_Task_Backup {
     }
     
     private static function get_backup_base_dir() {
+        if ( self::$backup_base_dir_override !== null ) {
+            return self::$backup_base_dir_override;
+        }
         // Use a randomised directory name so the path cannot be guessed.
         $secret = get_option('rpcare_backup_dir_secret');
         if (!$secret) {
@@ -1761,22 +1772,15 @@ class RP_Care_Task_Backup {
             return filemtime($b) - filemtime($a);
         });
 
-        $retention_days = (int) get_option('rpcare_backup_retention_days', 0);
-        if ($retention_days <= 0 && class_exists('RP_Care_Plan')) {
-            $config = RP_Care_Plan::get_plan_config();
-            $retention_days = (int) ($config['backup_retention_days'] ?? 30);
-        }
-        $retention_days = max(1, $retention_days ?: 30);
-        $cutoff = time() - ($retention_days * DAY_IN_SECONDS);
-
-        // Always keep a few recent restore points even if mtimes are unreliable.
+        // Keep at most 3 most-recent local backup directories; delete the rest unconditionally.
+        // Age-based retention applies to remote (B2) backups via cleanup_b2_old_backups().
+        // Local dirs are either temp dirs (B2 path already removes them) or basic-backup storage
+        // where keeping more than a few copies would fill disk quickly.
         foreach ($backup_dirs as $index => $dir) {
             if ($index < 3) {
                 continue;
             }
-            if (filemtime($dir) < $cutoff) {
-                self::remove_directory($dir);
-            }
+            self::remove_directory($dir);
         }
     }
     

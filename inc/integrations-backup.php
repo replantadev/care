@@ -19,40 +19,76 @@ class RP_Care_Task_Backup {
     public static function run($args = []) {
         $env_fn      = self::$environment_reader;
         $environment = $env_fn ? $env_fn() : RP_Care_Scheduler::get_environment_type();
-        $results = [];
 
-        if (self::is_b2_configured()) {
-            $results = self::create_b2_backup($args);
-            if (!empty($results['success'])) {
-                update_option('rpcare_last_backup', current_time('mysql'));
-                RP_Care_Utils::log('backup', 'success', $results['message'], $results);
-                return $results;
-            }
+        $mode = class_exists( 'RP_Care_Environment' )
+            ? RP_Care_Environment::get_effective_backup_mode( $environment )
+            : 'managed_by_host'; // safe fallback if class not loaded yet
 
-            RP_Care_Utils::log('backup', 'error', $results['message'] ?? 'B2 backup failed', $results);
-            return $results;
-        }
-        
-        switch ($environment) {
-            case 'whm':
-            case 'cpanel': // RP_Care_Environment::detect() returns 'cpanel', not 'whm'
-                $results = self::handle_whm_backup($args);
+        switch ( $mode ) {
+
+            case 'local_dev':
+                $results = self::handle_local_backup( $args );
                 break;
-            case 'external':
-                $results = self::handle_external_backup($args);
+
+            case 'b2':
+                if ( ! self::is_b2_configured() ) {
+                    $results = [
+                        'success' => false,
+                        'method'  => 'b2',
+                        'message' => 'Modo B2 activo pero credenciales no configuradas en este site.',
+                    ];
+                    break;
+                }
+                $results = self::create_b2_backup( $args );
                 break;
+
+            case 'cloudflare_r2':
+            case 's3':
+                // R2 and S3 are B2-compatible; use existing B2 client if credentials are set.
+                // Native R2/S3 clients are a future task.
+                $results = self::is_b2_configured()
+                    ? self::create_b2_backup( $args )
+                    : [
+                        'success' => false,
+                        'method'  => $mode,
+                        'message' => "Modo {$mode} activo pero credenciales no configuradas.",
+                    ];
+                break;
+
+            case 'updraftplus':
+                $results = self::is_updraftplus_active()
+                    ? self::trigger_updraftplus_backup( $args )
+                    : [ 'success' => false, 'method' => 'updraftplus', 'message' => 'UpdraftPlus no está activo en este site.' ];
+                break;
+
+            case 'disabled':
+                $results = [
+                    'success'        => true,
+                    'method'         => 'disabled',
+                    'message'        => 'Backup desactivado para este site (solo monitorización).',
+                    'managed_by_hub' => true,
+                    'skipped'        => true,
+                ];
+                break;
+
+            case 'managed_by_host':
             default:
-                $results = self::handle_local_backup($args);
+                $results = self::handle_whm_backup( $args );
                 break;
         }
-        
-        // Update last backup time if successful
-        if ($results['success']) {
-            update_option('rpcare_last_backup', current_time('mysql'));
+
+        // Safety assertion: local files must NEVER be created outside local_dev mode.
+        if ( 'local_dev' !== $mode && ! empty( $results['backup_dir'] ) ) {
+            RP_Care_Utils::log( 'backup', 'critical',
+                "SEGURIDAD: backup_dir en modo '{$mode}'. Contacta con soporte.",
+                [ 'mode' => $mode, 'env' => $environment, 'backup_dir' => $results['backup_dir'] ]
+            );
         }
-        
-        RP_Care_Utils::log('backup', $results['success'] ? 'success' : 'error', $results['message'], $results);
-        
+
+        if ( ! empty( $results['success'] ) ) {
+            update_option( 'rpcare_last_backup', current_time( 'mysql' ) );
+        }
+        RP_Care_Utils::log( 'backup', ! empty( $results['success'] ) ? 'success' : 'error', $results['message'] ?? '', $results );
         return $results;
     }
     

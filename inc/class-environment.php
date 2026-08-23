@@ -211,6 +211,51 @@ class RP_Care_Environment {
 		];
 	}
 
+    // ── Backup modes ────────────────────────────────────────────────────────
+
+    /** All valid backup modes keyed by slug → human label. */
+    const BACKUP_MODES = [
+        'auto'            => 'Detectar automáticamente',
+        'local_dev'       => 'Local dev (uploads) — solo desarrollo',
+        'b2'              => 'Backblaze B2',
+        'cloudflare_r2'   => 'Cloudflare R2',
+        's3'              => 'Amazon S3 / compatible',
+        'updraftplus'     => 'UpdraftPlus (delegado)',
+        'managed_by_host' => 'Gestionado por el hosting (Backuply / JetBackup)',
+        'disabled'        => 'Desactivado — solo monitorización',
+    ];
+
+    /**
+     * Backup mode explicitly configured for this site via rpcare_options['backup_mode'].
+     * Returns 'auto' if not set or invalid.
+     */
+    public static function get_backup_mode(): string {
+        $opts = get_option( 'rpcare_options', [] );
+        $mode = $opts['backup_mode'] ?? 'auto';
+        return array_key_exists( $mode, self::BACKUP_MODES ) ? $mode : 'auto';
+    }
+
+    /**
+     * Resolved backup mode for the current (or given) environment.
+     * Converts 'auto' to a concrete mode based on environment type.
+     * Explicit modes always win over environment auto-detection.
+     *
+     * @param string|null $environment  Pass to avoid calling detect() (useful in tests).
+     */
+    public static function get_effective_backup_mode( ?string $environment = null ): string {
+        $mode = self::get_backup_mode();
+        if ( 'auto' !== $mode ) {
+            return $mode;
+        }
+        $env = $environment ?? self::detect();
+        return match ( $env ) {
+            'local'      => 'local_dev',
+            'cyberpanel' => 'b2',
+            // cpanel, wptoolkit, external → hosting manages backups; Care must not create local files.
+            default      => 'managed_by_host',
+        };
+    }
+
 	/** Human-readable label for UI display. */
 	public static function label( ?string $type = null ): string {
 		$type = $type ?? self::detect();

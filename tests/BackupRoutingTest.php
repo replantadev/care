@@ -146,38 +146,32 @@ class BackupRoutingTest extends TestCase {
             "'whm' environment must still reach handle_whm_backup()" );
     }
 
-    public function test_br03_external_does_not_set_managed_by_hub(): void {
-        // Verify via Reflection that handle_whm_backup() is NOT what 'external'
-        // calls — 'external' routes to handle_external_backup() which does NOT
-        // return managed_by_hub. We confirm by checking handle_whm_backup() sets
-        // it and the switch-based routing for 'external' (mapped to 'default' case)
-        // does not call that method.
-        $whm = $this->whm_result();
-        $this->assertTrue( $whm['managed_by_hub'] ?? false,
-            'handle_whm_backup() itself must set managed_by_hub=true (precondition)' );
-        // The actual assertion: 'external' must NOT be in the same case as 'whm'/'cpanel'.
-        // This is verified by reading the source rather than executing the full chain
-        // (which requires a live DB for perform_basic_backup).
+    public function test_br03_run_uses_mode_based_routing(): void {
+        // Since 1.16.7, run() resolves the backup mode via get_effective_backup_mode()
+        // instead of a direct environment switch. Verify the new architecture is in
+        // place: run() must call get_effective_backup_mode (not a raw env switch).
         $src = file_get_contents( __DIR__ . '/../inc/integrations-backup.php' );
+        $this->assertStringContainsString( 'get_effective_backup_mode', $src,
+            'run() must delegate to RP_Care_Environment::get_effective_backup_mode()' );
+        // The mode-based switch must include managed_by_host routing to handle_whm_backup.
         $this->assertMatchesRegularExpression(
-            "/case 'whm':\s*\n\s*case 'cpanel':/",
+            "/case 'managed_by_host'.*handle_whm_backup/s",
             $src,
-            "Switch must have case 'whm': / case 'cpanel': as adjacent fall-throughs"
+            "managed_by_host case must lead to handle_whm_backup()"
         );
-        $this->assertStringNotContainsString( "case 'external':\n            case 'whm'", $src,
-            "'external' must NOT be grouped with the whm/cpanel cases" );
     }
 
-    public function test_br04_cpanel_not_in_default_case(): void {
-        // Verify that 'cpanel' is not handled by the default fall-through,
-        // which would route it to handle_local_backup() → perform_basic_backup().
-        $src = file_get_contents( __DIR__ . '/../inc/integrations-backup.php' );
-        // 'cpanel' must appear as an explicit case label before handle_whm_backup.
-        $this->assertMatchesRegularExpression(
-            "/case 'cpanel'.*handle_whm_backup/s",
-            $src,
-            "'cpanel' must appear as an explicit case that leads to handle_whm_backup()"
-        );
+    public function test_br04_local_dev_is_only_mode_that_may_produce_backup_dir(): void {
+        // Safety contract: backup_dir MUST NOT appear in results for managed_by_host mode.
+        // RP_Care_Environment not loaded → fallback mode is 'managed_by_host' → handle_whm_backup().
+        // handle_whm_backup() either returns managed_by_hub=true (no backup_dir) or an error.
+        RP_Care_Task_Backup::$environment_reader = static fn() => 'cpanel';
+        $GLOBALS['_wp_options']['rpcare_b2_key_id']    = '';
+        $GLOBALS['_wp_options']['rpcare_b2_app_key']   = '';
+        $GLOBALS['_wp_options']['rpcare_b2_bucket_id'] = '';
+        $result = RP_Care_Task_Backup::run( [] );
+        $this->assertArrayNotHasKey( 'backup_dir', $result,
+            'managed_by_host mode must never produce a local backup_dir' );
     }
 
     // ── cleanup_old_backups — count-based pruning ─────────────────────────────

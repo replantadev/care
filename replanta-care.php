@@ -3,7 +3,7 @@
  * Plugin Name: Replanta Care
  * Plugin URI: https://replanta.dev
  * Description: Plugin de mantenimiento WordPress automatizado para clientes de Replanta con integracion Hub
- * Version: 1.16.6
+ * Version: 1.16.7
  * Author: Replanta
  * Author URI: https://replanta.dev
  * License: GPL v2 or later

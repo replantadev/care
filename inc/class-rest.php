@@ -1946,6 +1946,16 @@ class RP_Care_REST {
             $updated['staging_role'] = $staging_role;
         }
 
+        // Backup mode — controls how/where Care stores backups for this site.
+        $backup_mode        = $request->get_param( 'backup_mode' );
+        $valid_backup_modes = [ 'auto', 'local_dev', 'b2', 'cloudflare_r2', 's3', 'updraftplus', 'managed_by_host', 'disabled' ];
+        if ( $backup_mode !== null && in_array( $backup_mode, $valid_backup_modes, true ) ) {
+            $opts                 = get_option( 'rpcare_options', [] );
+            $opts['backup_mode']  = $backup_mode;
+            update_option( 'rpcare_options', $opts );
+            $updated['backup_mode'] = $backup_mode;
+        }
+
         return new WP_REST_Response([
             'status'  => 'ok',
             'updated' => $updated,

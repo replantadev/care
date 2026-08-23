@@ -2009,7 +2009,7 @@ class RP_Care_Task_Backup {
                 $status['last_backup_name']  = $info['name'];
                 $status['backup_age_hours']  = $info['age_hours'];
             }
-        } elseif (RP_Care_Scheduler::get_environment_type() === 'whm') {
+        } elseif (in_array(RP_Care_Scheduler::get_environment_type(), ['whm', 'cpanel'], true)) {
             $status['method'] = 'whm_cpanel';
         } elseif (self::is_updraftplus_active()) {
             $status['method'] = 'updraftplus';

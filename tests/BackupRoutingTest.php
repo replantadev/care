@@ -63,7 +63,7 @@ if ( ! function_exists( 'wp_upload_dir' ) ) {
     }
 }
 
-if ( ! defined( 'RPCARE_VERSION' ) ) define( 'RPCARE_VERSION', '1.16.5' ); // care version
+if ( ! defined( 'RPCARE_VERSION' ) ) define( 'RPCARE_VERSION', '1.16.6' ); // care version
 if ( ! defined( 'DB_NAME' ) )       define( 'DB_NAME', 'test_db' );
 
 // Minimal RP_Care_Utils stub so run() can log without crashing.

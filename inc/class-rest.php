@@ -149,6 +149,11 @@ class RP_Care_REST {
             'callback'            => [ $this, 'hub_smart_updates_status' ],
             'permission_callback' => '__return_true',
         ] );
+		register_rest_route( $this->control_ns, '/pipeline/heartbeat', [
+			'methods'             => 'POST',
+			'callback'            => [ $this, 'hub_pipeline_heartbeat' ],
+			'permission_callback' => '__return_true',
+		] );
 
         // ── Update inventory: full raw transient dump for 4-way count reconciliation ─
         // Returns every plugin/theme entry from the raw update_plugins transient,
@@ -2819,6 +2824,18 @@ class RP_Care_REST {
         }
         return new WP_REST_Response( RP_Care_Environment::get_status_report(), 200 );
     }
+
+	/** Read-only channel proof: contacts PC but never leases or executes commands. */
+	public function hub_pipeline_heartbeat( WP_REST_Request $request ): WP_REST_Response {
+		if ( ! $this->validate_hub_token( $request, true ) ) {
+			return new WP_REST_Response( [ 'error' => 'Unauthorized' ], 403 );
+		}
+		if ( ! class_exists( 'RP_Care_Pipeline_Client' ) || ! RP_Care_Pipeline_Client::is_pipeline_enabled() ) {
+			return new WP_REST_Response( [ 'ok' => false, 'error' => 'pipeline_disabled' ], 409 );
+		}
+		$result = RP_Care_Pipeline_Client::send_heartbeat();
+		return new WP_REST_Response( $result, ! empty( $result['success'] ) ? 200 : 502 );
+	}
 
     /**
      * POST /wp-json/replanta-care/v1/updates/inventory

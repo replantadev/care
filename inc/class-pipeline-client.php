@@ -85,6 +85,32 @@ class RP_Care_Pipeline_Client {
 		}
 	}
 
+	/** Prove the outbound authenticated channel without leasing commands. */
+	public static function send_heartbeat(): array {
+		$instance_id = (string) get_option( self::OPT_INSTANCE_ID, '' );
+		$token       = self::get_raw_token();
+		$hub_url     = self::get_hub_url();
+		$environment = (string) get_option( self::OPT_ENVIRONMENT, 'production' );
+		if ( '' === $instance_id || '' === $token || '' === $hub_url ) {
+			return [ 'success' => false, 'error' => 'not_configured' ];
+		}
+		$url = trailingslashit( $hub_url ) . 'wp-json/replanta-pc/v1/pipeline/commands';
+		$response = wp_remote_get( add_query_arg( [
+			'instance_id' => $instance_id, 'environment' => $environment, 'heartbeat_only' => 1,
+		], $url ), [
+			'timeout' => 15,
+			'headers' => [
+				'X-Pipeline-Token' => $token, 'X-Instance-ID' => $instance_id,
+				'X-Care-Version' => defined( 'RPCARE_VERSION' ) ? RPCARE_VERSION : '',
+			],
+		] );
+		if ( is_wp_error( $response ) ) return [ 'success' => false, 'error' => $response->get_error_message() ];
+		$code = (int) wp_remote_retrieve_response_code( $response );
+		if ( 200 !== $code ) return [ 'success' => false, 'http_code' => $code ];
+		update_option( self::OPT_LAST_POLL, current_time( 'mysql' ) );
+		return [ 'success' => true ];
+	}
+
     /**
      * Is this site in cloned-environment quarantine?
      */
@@ -229,8 +255,6 @@ class RP_Care_Pipeline_Client {
             ]
         );
 
-        update_option( self::OPT_LAST_POLL, current_time( 'mysql' ) );
-
         if ( is_wp_error( $response ) ) {
             return [ 'success' => false, 'error' => $response->get_error_message() ];
         }
@@ -239,6 +263,8 @@ class RP_Care_Pipeline_Client {
         if ( $code !== 200 ) {
             return [ 'success' => false, 'http_code' => $code ];
         }
+
+		update_option( self::OPT_LAST_POLL, current_time( 'mysql' ) );
 
         $body     = json_decode( wp_remote_retrieve_body( $response ), true );
         $commands = $body['commands'] ?? [];

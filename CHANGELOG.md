@@ -1,5 +1,12 @@
 # Changelog — Replanta Care
 
+## [1.16.12]
+
+- Nuevo probe autenticado `/pipeline/heartbeat`: demuestra Care→PC sin tomar
+  ni ejecutar comandos pendientes.
+- `pipeline_last_poll` solo se actualiza tras una respuesta HTTP 200 real de PC;
+  un intento fallido ya no puede simular un heartbeat válido.
+
 ## [1.16.11]
 
 - Al reparar por primera vez el schedule Pipeline se encola además un poll

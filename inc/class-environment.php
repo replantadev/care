@@ -208,6 +208,11 @@ class RP_Care_Environment {
 			'staging_role'           => $opts['staging_role'] ?? 'unset',
 			'wp_toolkit_detected'    => self::is_wptoolkit(),
 			'direct_updates_blocked' => self::native_auto_updates_disabled(),
+			'smart_updates_mode'      => $opts['smart_updates_mode'] ?? 'observe_only',
+			'approval_policy'         => $opts['approval_policy'] ?? 'always',
+			'staging_method'          => $opts['staging_method'] ?? 'auto',
+			'maximum_batch_size'      => max( 1, min( 10, (int) ( $opts['maximum_batch_size'] ?? 1 ) ) ),
+			'maintenance_window_auto' => ! empty( $opts['maintenance_window_auto'] ),
 		];
 	}
 

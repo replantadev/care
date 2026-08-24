@@ -455,6 +455,8 @@ class RP_Care_Settings_Page {
         // Tasks
         $auto_updates = $options['auto_updates'] ?? 'minor_only';
         $staging_url  = $options['staging_url'] ?? '';
+        $smart_updates_mode = $options['smart_updates_mode'] ?? 'observe_only';
+        $ecommerce_active = class_exists('RP_Care_Addon_Manager') && RP_Care_Addon_Manager::get()->is_active('ecommerce');
         $backup_on    = !isset($options['backup_enabled']) || $options['backup_enabled'];
         $cache_on     = !isset($options['cache_clearing']) || $options['cache_clearing'];
         $security_on  = !isset($options['security_monitoring']) || $options['security_monitoring'];
@@ -603,6 +605,10 @@ class RP_Care_Settings_Page {
                             </select>
                         </div>
 
+                        <div class="rpc-hint" style="margin:12px 0;padding:8px 12px;border-radius:8px;background:rgba(59,130,246,.07);border:1px solid rgba(59,130,246,.2);">
+                            Política Smart Updates desde Plugin Center: <strong><?php echo esc_html( $smart_updates_mode === 'staging_required' ? 'Staging obligatorio' : ( $smart_updates_mode === 'disabled' ? 'Desactivado' : 'Solo observar' ) ); ?></strong>
+                        </div>
+
                         <div class="rpc-field" style="margin-top:12px;">
                             <label class="rpc-label">URL de Staging</label>
                             <input type="url"
@@ -664,6 +670,9 @@ class RP_Care_Settings_Page {
                             <div class="rcp-feat-chips">
                             <?php foreach ($feat_map as $feat => $label):
                                 $active = class_exists('RP_Care_Plan') && RP_Care_Plan::can_access_feature($feat, $current_plan ?? '');
+                                if ( $feat === 'staging' && ( $smart_updates_mode === 'staging_required' || $ecommerce_active ) ) {
+                                    $active = true;
+                                }
                             ?>
                                 <span class="rcp-feat-chip <?php echo $active ? 'rcp-feat-ok' : 'rcp-feat-off'; ?>">
                                     <?php if ($active): ?>
@@ -675,6 +684,13 @@ class RP_Care_Settings_Page {
                                 </span>
                             <?php endforeach; ?>
                             </div>
+                            <?php if ( $ecommerce_active ) : ?>
+                                <div class="rcp-feat-chips" style="margin-top:8px;">
+                                    <?php foreach ( [ 'Impulso Ecommerce', 'Backups cada 12 h', 'Retención 90 días', 'Monitor de checkout', 'Ventana fuera de pico' ] as $label ) : ?>
+                                        <span class="rcp-feat-chip rcp-feat-ok"><?php echo esc_html( $label ); ?></span>
+                                    <?php endforeach; ?>
+                                </div>
+                            <?php endif; ?>
                         </div>
 
                     </div>

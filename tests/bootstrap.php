@@ -27,6 +27,9 @@ if ( ! function_exists( 'get_site_transient' ) ) {
 if ( ! function_exists( 'trailingslashit' ) ) {
     function trailingslashit( string $s ): string { return rtrim( $s, '/\\' ) . '/'; }
 }
+if ( ! function_exists( 'get_temp_dir' ) ) {
+    function get_temp_dir(): string { return trailingslashit( sys_get_temp_dir() ); }
+}
 if ( ! function_exists( 'sanitize_key' ) ) {
     function sanitize_key( string $s ): string { return preg_replace( '/[^a-z0-9_\-]/', '', strtolower( $s ) ); }
 }

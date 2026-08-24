@@ -811,8 +811,8 @@ class RP_Care_Task_Updates {
      * Protected from direct web access via .htaccess.
      */
     private static function get_snapshot_dir(): string {
-        $upload_dir = wp_upload_dir();
-        $dir        = $upload_dir['basedir'] . '/rpcare-snapshots';
+        $site = function_exists( 'home_url' ) ? (string) home_url() : ABSPATH;
+        $dir  = trailingslashit( get_temp_dir() ) . 'rpcare-snapshots-' . substr( hash( 'sha256', $site ), 0, 12 );
         wp_mkdir_p($dir);
 
         if (!file_exists($dir . '/.htaccess')) {
@@ -1982,8 +1982,12 @@ class RP_Care_Task_Updates {
     private static function create_pipeline_backup( string $batch_id ): string|\WP_Error {
         $backup_id = 'pipeline_' . sanitize_file_name( $batch_id ) . '_' . gmdate( 'YmdHis' );
 
+        $backup_mode = class_exists( 'RP_Care_Environment' )
+            ? RP_Care_Environment::get_effective_backup_mode()
+            : 'disabled';
+
         // 1. Try B2 backup (synchronous, independently verified).
-        if ( class_exists( 'RP_Care_Task_Backup' ) && RP_Care_Task_Backup::is_b2_configured_public() ) {
+        if ( 'b2' === $backup_mode && class_exists( 'RP_Care_Task_Backup' ) && RP_Care_Task_Backup::is_b2_configured_public() ) {
             $b2_result = RP_Care_Task_Backup::create_b2_backup( [
                 'reason' => 'pipeline_pre_update',
                 'scopes' => [ 'database', 'plugins', 'themes' ],
@@ -2000,9 +2004,23 @@ class RP_Care_Task_Updates {
                 ] );
                 return $backup_id;
             }
+            return new \WP_Error( 'b2_backup_failed', 'B2 no pudo crear una copia completa y verificable.' );
         }
 
-        // 2. Fallback: synchronous filesystem snapshot (plugins + themes + DB export).
+        if ( 'b2' === $backup_mode ) {
+            return new \WP_Error( 'b2_not_configured', 'El modo B2 requiere credenciales válidas antes de actualizar.' );
+        }
+
+        // A full local snapshot is allowed only in an explicitly selected lab.
+        // Other modes fail closed instead of consuming the hosting quota.
+        if ( 'local_dev' !== $backup_mode ) {
+            return new \WP_Error(
+                'safe_backup_provider_required',
+                'La actualización requiere un backup verificable compatible; no se ha creado ningún snapshot local.'
+            );
+        }
+
+        // 2. Explicit local-lab fallback: synchronous filesystem snapshot.
         $snapshot_dir = self::get_snapshot_dir() . '/pipeline-batch-' . sanitize_file_name( $batch_id ) . '-' . time();
         if ( ! wp_mkdir_p( $snapshot_dir ) ) {
             return new \WP_Error( 'snapshot_dir_failed', 'Could not create pipeline backup snapshot directory.' );

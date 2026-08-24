@@ -44,15 +44,14 @@ class RP_Care_Task_Backup {
 
             case 'cloudflare_r2':
             case 's3':
-                // R2 and S3 are B2-compatible; use existing B2 client if credentials are set.
-                // Native R2/S3 clients are a future task.
-                $results = self::is_b2_configured()
-                    ? self::create_b2_backup( $args )
-                    : [
-                        'success' => false,
-                        'method'  => $mode,
-                        'message' => "Modo {$mode} activo pero credenciales no configuradas.",
-                    ];
+                // These providers need their own endpoint/signing contract. Never
+                // relabel a B2 upload as R2/S3: that creates false restore evidence.
+                $results = [
+                    'success'    => false,
+                    'method'     => $mode,
+                    'error_code' => 'provider_not_implemented',
+                    'message'    => "El proveedor {$mode} aún no está implementado; no se ha creado ningún archivo local.",
+                ];
                 break;
 
             case 'updraftplus':
@@ -142,18 +141,13 @@ class RP_Care_Task_Backup {
                     'managed_by_hub' => true,
                 ];
             }
-            // Backuply present but no recent backup — request one
-            try {
-                do_action('backuply_cron_backup');
-            } catch (\Throwable $e) {
-                RP_Care_Utils::log('backup', 'error', 'backuply_cron_backup threw: ' . $e->getMessage());
-                return ['success' => false, 'method' => 'backuply', 'message' => 'Backuply error: ' . $e->getMessage()];
-            }
+            // Managed-host mode is observation-only. Care must never start a
+            // provider backup implicitly on shared hosting.
             return [
-                'success'        => true,
-                'method'         => 'backuply',
-                'message'        => 'Backuply: copia programada (no había copia reciente)',
-                'backup_time'    => current_time('mysql'),
+                'success'        => false,
+                'verified'       => false,
+                'method'         => 'backuply_observed',
+                'message'        => 'Backuply detectado, pero no hay una copia reciente verificable. Care no ha iniciado ninguna copia.',
                 'managed_by_hub' => true,
             ];
         }
@@ -429,7 +423,7 @@ class RP_Care_Task_Backup {
         // Basic backup implementation for sites without backup plugins
         // This creates a simple database backup and optionally files
         
-        $backup_dir = self::create_backup_directory();
+        $backup_dir = self::create_backup_directory( true );
         if (!$backup_dir) {
             return [
                 'success' => false,
@@ -764,11 +758,12 @@ class RP_Care_Task_Backup {
             return ['success' => false, 'method' => 'b2', 'message' => 'B2 no configurado'];
         }
 
-        $backup_dir = self::create_backup_directory();
+        $backup_dir = self::create_backup_directory( false );
         if (!$backup_dir) {
             return ['success' => false, 'method' => 'b2', 'message' => 'No se pudo crear directorio temporal de backup'];
         }
 
+        try {
         $backup_id = 'backup_' . gmdate('Y-m-d_H-i-s');
         $prefix = self::get_b2_backup_prefix($backup_id);
         $scopes = self::normalize_b2_scopes($args['scopes'] ?? ($args['type'] ?? 'full'));
@@ -858,9 +853,7 @@ class RP_Care_Task_Backup {
             'backup_usable' => $backup_usable,
         ], false);
 
-        self::cleanup_old_backups();
         self::cleanup_b2_old_backups();
-        self::remove_directory($backup_dir);
 
         return [
             'success'       => $backup_usable,
@@ -879,6 +872,11 @@ class RP_Care_Task_Backup {
             'artifacts'     => $artifacts,
             'errors'        => $errors,
         ];
+        } finally {
+            // Remote backups use a temporary work area only. It must not
+            // survive success, HTTP failure or an exception.
+            self::remove_directory( $backup_dir );
+        }
     }
 
     public static function list_b2_backups($limit = 50) {
@@ -1422,8 +1420,10 @@ class RP_Care_Task_Backup {
         return $upload_dir['basedir'] . '/rpcare-backups-' . $secret;
     }
 
-    private static function create_backup_directory() {
-        $backup_base_dir = self::get_backup_base_dir();
+    private static function create_backup_directory( bool $persistent_local_dev = false ) {
+        $backup_base_dir = $persistent_local_dev
+            ? self::get_backup_base_dir()
+            : self::get_temporary_backup_base_dir();
         $backup_dir = $backup_base_dir . '/' . date('Y-m-d_H-i-s');
         
         if (!wp_mkdir_p($backup_dir)) {
@@ -1443,6 +1443,15 @@ class RP_Care_Task_Backup {
         }
         
         return $backup_dir;
+    }
+
+    /**
+     * Non-persistent work area for remote backup/restore operations.
+     * It intentionally lives outside wp-content/uploads.
+     */
+    private static function get_temporary_backup_base_dir(): string {
+        $site = function_exists( 'home_url' ) ? (string) home_url() : ABSPATH;
+        return trailingslashit( get_temp_dir() ) . 'rpcare-' . substr( hash( 'sha256', $site ), 0, 12 );
     }
     
     private static function backup_database($backup_dir) {
@@ -1732,6 +1741,10 @@ class RP_Care_Task_Backup {
         if ($retention_days <= 0 && class_exists('RP_Care_Plan')) {
             $config         = RP_Care_Plan::get_plan_config();
             $retention_days = (int) ($config['backup_retention_days'] ?? 7);
+        }
+        if ( class_exists( 'RP_Care_Addon_Manager' ) && RP_Care_Addon_Manager::get()->is_active( 'ecommerce' ) ) {
+            $ecommerce      = RP_Care_Addon_Manager::get()->get_config( 'ecommerce' );
+            $retention_days = max( $retention_days, (int) ( $ecommerce['backup_retention_days'] ?? 90 ) );
         }
         $retention_days = max(1, $retention_days ?: 7);
         $cutoff         = time() - ($retention_days * DAY_IN_SECONDS);

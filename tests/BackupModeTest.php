@@ -175,6 +175,21 @@ class BackupModeTest extends TestCase {
             'managed_by_host must call handle_whm_backup() which sets managed_by_hub=true' );
     }
 
+    public function test_remote_provider_placeholders_never_use_b2_credentials(): void {
+        foreach ( [ 'cloudflare_r2', 's3' ] as $mode ) {
+            $GLOBALS['_wp_options']['rpcare_options']      = [ 'backup_mode' => $mode ];
+            $GLOBALS['_wp_options']['rpcare_b2_key_id']    = 'b2-key';
+            $GLOBALS['_wp_options']['rpcare_b2_app_key']   = 'b2-secret';
+            $GLOBALS['_wp_options']['rpcare_b2_bucket_id'] = 'b2-bucket';
+            RP_Care_Task_Backup::$environment_reader      = static fn() => 'external';
+            $result = RP_Care_Task_Backup::run( [] );
+
+            $this->assertFalse( $result['success'] ?? true );
+            $this->assertSame( 'provider_not_implemented', $result['error_code'] ?? '' );
+            $this->assertArrayNotHasKey( 'backup_dir', $result );
+        }
+    }
+
     // ── Safety ────────────────────────────────────────────────────────────────
 
     /** @dataProvider non_local_dev_modes_provider */

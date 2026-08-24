@@ -598,6 +598,8 @@ class CarePipelineContractTest extends TestCase {
     // ─────────────────────────────────────────────────────────────────────────
 
     public function test_create_pipeline_backup_fails_with_db_export_failed_when_wpdb_unavailable(): void {
+        $old_options = get_option( 'rpcare_options', [] );
+        update_option( 'rpcare_options', array_merge( (array) $old_options, [ 'backup_mode' => 'local_dev' ] ) );
         // Ensure no $wpdb global — export_db_snapshot must return false, triggering db_export_failed.
         $had_wpdb = isset( $GLOBALS['wpdb'] ) ? $GLOBALS['wpdb'] : null;
         unset( $GLOBALS['wpdb'] );
@@ -608,6 +610,7 @@ class CarePipelineContractTest extends TestCase {
         try {
             $result = $method->invoke( null, 'cc-s05-batch' );
         } finally {
+            update_option( 'rpcare_options', $old_options );
             // Restore wpdb so subsequent tests (e.g. those using the outbox) are not affected.
             if ( $had_wpdb !== null ) {
                 $GLOBALS['wpdb'] = $had_wpdb;
@@ -624,6 +627,22 @@ class CarePipelineContractTest extends TestCase {
             'db_export_failed', $result->get_error_code(),
             'Error code must be db_export_failed — plugins snapshot succeeded (WP_PLUGIN_DIR exists), but DB export did not'
         );
+    }
+
+    public function test_pipeline_backup_never_falls_back_to_local_storage_on_managed_host(): void {
+        $old_options = get_option( 'rpcare_options', [] );
+        update_option( 'rpcare_options', array_merge( (array) $old_options, [ 'backup_mode' => 'managed_by_host' ] ) );
+        $method = new ReflectionMethod( RP_Care_Task_Updates::class, 'create_pipeline_backup' );
+        $method->setAccessible( true );
+
+        try {
+            $result = $method->invoke( null, 'managed-host-safety' );
+        } finally {
+            update_option( 'rpcare_options', $old_options );
+        }
+
+        $this->assertInstanceOf( WP_Error::class, $result );
+        $this->assertSame( 'safe_backup_provider_required', $result->get_error_code() );
     }
 
     // ─────────────────────────────────────────────────────────────────────────

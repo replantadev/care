@@ -342,6 +342,26 @@ class RP_Care_REST {
                     'required' => false,
                     'type'     => 'object',
                 ],
+                'smart_updates_mode' => [
+                    'required' => false,
+                    'type'     => 'string',
+                    'enum'     => [ 'observe_only', 'staging_required', 'disabled' ],
+                ],
+                'approval_policy' => [
+                    'required' => false,
+                    'type'     => 'string',
+                    'enum'     => [ 'always', 'auto_approve_minor', 'disabled' ],
+                ],
+                'maximum_batch_size' => [
+                    'required' => false,
+                    'type'     => 'integer',
+                    'minimum'  => 1,
+                    'maximum'  => 10,
+                ],
+                'maintenance_window_auto' => [
+                    'required' => false,
+                    'type'     => 'boolean',
+                ],
             ]
         ]);
         
@@ -867,6 +887,7 @@ class RP_Care_REST {
     public function update_config($request) {
         $plan = $request->get_param('plan');
         $settings = $request->get_param('settings');
+        $opts = get_option( 'rpcare_options', [] );
         $updated = [];
         $needs_reschedule = false;
         
@@ -1954,6 +1975,34 @@ class RP_Care_REST {
             $opts['backup_mode']  = $backup_mode;
             update_option( 'rpcare_options', $opts );
             $updated['backup_mode'] = $backup_mode;
+        }
+
+        // Read-only operator policy projection from Plugin Center. Care stores
+        // it so the local administrator sees the same effective contract.
+        $policy_fields = [
+            'smart_updates_mode'      => [ 'observe_only', 'staging_required', 'disabled' ],
+            'approval_policy'         => [ 'always', 'auto_approve_minor', 'disabled' ],
+            'staging_method'          => [ 'auto', 'wptoolkit', 'wpstaging', 'paired', 'none' ],
+        ];
+        foreach ( $policy_fields as $field => $allowed ) {
+            $value = $request->get_param( $field );
+            if ( $value !== null && in_array( $value, $allowed, true ) ) {
+                $opts[ $field ] = $value;
+                $updated[ $field ] = $value;
+            }
+        }
+        $maximum_batch_size = $request->get_param( 'maximum_batch_size' );
+        if ( $maximum_batch_size !== null ) {
+            $opts['maximum_batch_size'] = max( 1, min( 10, (int) $maximum_batch_size ) );
+            $updated['maximum_batch_size'] = $opts['maximum_batch_size'];
+        }
+        $maintenance_window_auto = $request->get_param( 'maintenance_window_auto' );
+        if ( $maintenance_window_auto !== null ) {
+            $opts['maintenance_window_auto'] = (bool) $maintenance_window_auto;
+            $updated['maintenance_window_auto'] = $opts['maintenance_window_auto'];
+        }
+        if ( array_intersect( array_keys( $updated ), array_merge( array_keys( $policy_fields ), [ 'maximum_batch_size', 'maintenance_window_auto' ] ) ) ) {
+            update_option( 'rpcare_options', $opts );
         }
 
         return new WP_REST_Response([

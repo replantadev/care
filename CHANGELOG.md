@@ -1,5 +1,15 @@
 # Changelog — Replanta Care
 
+## [1.16.9]
+
+- El estado Smart Updates v2 expone el heartbeat real del canal pull, si el
+  poller está programado, fallos recientes de Action Scheduler y la semántica
+  utilizable/no utilizable del último backup.
+- Cada poll autenticado informa la versión de Care a Plugin Center, permitiendo
+  detectar instancias antiguas sin confundir `/ping` con el canal de comandos.
+- `/ping` incorpora `backup_usable`; un backup fallido reciente ya no puede
+  superar el gate por el mero hecho de no estar caducado.
+
 ## [1.16.3]
 
 - Nuevo comando HMAC `export_update_artifact`: solo production puede descargar

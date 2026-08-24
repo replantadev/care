@@ -192,19 +192,39 @@ class RP_Care_Environment {
 		$native_raw = $opts['native_auto_updates'] ?? 'disabled';
 		$native     = in_array( $native_raw, [ 'disabled', 'enabled' ], true ) ? $native_raw : 'disabled';
 
-		$pipeline = false;
+		$pipeline  = false;
+		$last_poll = '';
 		if ( class_exists( 'RP_Care_Pipeline_Client' ) ) {
 			$pipeline = (bool) RP_Care_Pipeline_Client::is_pipeline_enabled();
+			$last_poll = (string) get_option( RP_Care_Pipeline_Client::OPT_LAST_POLL, '' );
 		}
 
+		$last_poll_ts   = $last_poll ? strtotime( $last_poll . ' UTC' ) : false;
+		$poll_age       = false !== $last_poll_ts ? max( 0, time() - $last_poll_ts ) : null;
+		$poll_scheduled = function_exists( 'as_next_scheduled_action' )
+			? (bool) as_next_scheduled_action( 'rpcare_task_pipeline_poll', [], 'replanta-care' )
+			: ( function_exists( 'wp_next_scheduled' ) && (bool) wp_next_scheduled( 'rpcare_task_pipeline_poll' ) );
+		$backup          = get_option( 'rpcare_last_b2_backup', [] );
+		$backup_status   = is_array( $backup ) ? (string) ( $backup['status'] ?? '' ) : '';
+		$backup_last_at  = is_array( $backup ) && ! empty( $backup['timestamp'] )
+			? gmdate( 'c', (int) $backup['timestamp'] )
+			: (string) get_option( 'rpcare_last_backup', '' );
+		$backup_usable   = in_array( $backup_status, [ 'complete', 'completed' ], true )
+			|| ( '' === $backup_status && '' !== $backup_last_at );
+
 		return [
-			'schema_version'         => 1,
+			'schema_version'         => 2,
 			'generated_at'           => gmdate( 'c' ),
 			'plugin_version'         => defined( 'RPCARE_VERSION' ) ? RPCARE_VERSION : '',
 			'update_executor'        => $executor,
 			'update_executor_source' => $source,
 			'native_auto_updates'    => $native,
 			'pipeline_enabled'       => $pipeline,
+			'pipeline_last_poll'     => $last_poll ?: null,
+			'pipeline_poll_age_seconds' => $poll_age,
+			'pipeline_poll_scheduled' => $poll_scheduled,
+			'action_scheduler_available' => function_exists( 'as_next_scheduled_action' ),
+			'as_failed_24h'          => class_exists( 'RP_Care_Plan' ) ? RP_Care_Plan::count_as_failures_24h() : 0,
 			'staging_role'           => $opts['staging_role'] ?? 'unset',
 			'wp_toolkit_detected'    => self::is_wptoolkit(),
 			'direct_updates_blocked' => self::native_auto_updates_disabled(),
@@ -213,6 +233,10 @@ class RP_Care_Environment {
 			'staging_method'          => $opts['staging_method'] ?? 'auto',
 			'maximum_batch_size'      => max( 1, min( 10, (int) ( $opts['maximum_batch_size'] ?? 1 ) ) ),
 			'maintenance_window_auto' => ! empty( $opts['maintenance_window_auto'] ),
+			'backup_mode'            => self::get_effective_backup_mode(),
+			'backup_last_at'         => $backup_last_at ?: null,
+			'backup_status'          => $backup_status ?: null,
+			'backup_usable'          => $backup_usable,
 		];
 	}
 

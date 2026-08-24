@@ -200,6 +200,7 @@ class RP_Care_Pipeline_Client {
                 'headers' => [
                     'X-Pipeline-Token' => $token,
                     'X-Instance-ID'    => $instance_id,
+					'X-Care-Version'   => defined( 'RPCARE_VERSION' ) ? RPCARE_VERSION : '',
                 ],
             ]
         );

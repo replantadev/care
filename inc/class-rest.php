@@ -1736,6 +1736,7 @@ class RP_Care_REST {
             $backup_last_at = $ts;
             $backup_status  = 'completed';
         }
+		$backup_usable = in_array( $backup_status, [ 'complete', 'completed' ], true );
 
         // Plugin update inventory — cross-referenced with get_plugins() so orphaned
         // transient entries are excluded, matching WordPress admin's own count.
@@ -1838,6 +1839,7 @@ class RP_Care_REST {
             'site_url'             => get_site_url(),
             'backup_last_at'       => $backup_last_at,
             'backup_status'        => $backup_status,
+			'backup_usable'        => $backup_usable,
             'backup_stale'             => $backup_stale,
             'updates_pending_total'    => $inv['actionable_total'],   // installed-only; excludes orphaned
             'updates_checked_at'       => $inv['checked_at'],

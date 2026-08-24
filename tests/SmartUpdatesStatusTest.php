@@ -2,7 +2,7 @@
 /**
  * Care — Smart Updates Status Endpoint Tests
  *
- * HES-01  get_status_report() returns schema_version = 1.
+ * HES-01  get_status_report() returns schema_version = 2.
  * HES-02  All required fields are present in the status report.
  * HES-03  update_executor_source = 'explicit' when update_executor is set in options.
  * HES-04  update_executor_source = 'wptoolkit_fallback' when no explicit setting and WP Toolkit detected.
@@ -30,9 +30,9 @@ class SmartUpdatesStatusTest extends TestCase {
 
     // ── HES-01 ────────────────────────────────────────────────────────────────
 
-    public function test_schema_version_is_1(): void {
+    public function test_schema_version_is_2(): void {
         $report = RP_Care_Environment::get_status_report();
-        $this->assertSame( 1, $report['schema_version'] );
+        $this->assertSame( 2, $report['schema_version'] );
     }
 
     // ── HES-02 ────────────────────────────────────────────────────────────────
@@ -43,6 +43,8 @@ class SmartUpdatesStatusTest extends TestCase {
             'schema_version', 'generated_at', 'plugin_version',
             'update_executor', 'update_executor_source', 'native_auto_updates',
             'pipeline_enabled', 'staging_role', 'wp_toolkit_detected', 'direct_updates_blocked',
+			'pipeline_last_poll', 'pipeline_poll_age_seconds', 'pipeline_poll_scheduled',
+			'action_scheduler_available', 'as_failed_24h', 'backup_mode', 'backup_usable',
         ];
         foreach ( $required as $key ) {
             $this->assertArrayHasKey( $key, $report, "Status report must include key: {$key}" );

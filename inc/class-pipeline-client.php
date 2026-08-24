@@ -117,10 +117,12 @@ class RP_Care_Pipeline_Client {
 		try {
 			$store = ActionScheduler_Store::instance();
 			$count = 0;
+			$last_success = strtotime( (string) get_option( self::OPT_LAST_POLL, '' ) . ' UTC' );
+			$cutoff = max( time() - DAY_IN_SECONDS, false !== $last_success ? $last_success : 0 );
 			foreach ( [ 'rpcare_task_pipeline_poll', 'rpcare_deliver_pipeline_outbox' ] as $hook ) {
 				$ids = $store->query_actions( [
 					'hook' => $hook, 'status' => ActionScheduler_Store::STATUS_FAILED,
-					'date' => gmdate( 'Y-m-d H:i:s', time() - DAY_IN_SECONDS ),
+					'date' => gmdate( 'Y-m-d H:i:s', $cutoff ),
 					'date_compare' => '>=', 'per_page' => 100,
 				] );
 				$count += is_array( $ids ) ? count( $ids ) : 0;
@@ -1318,6 +1320,13 @@ class RP_Care_Pipeline_Client {
      * dispatch them.
      */
     public static function register_as_callbacks(): void {
+		add_action( 'rpcare_task_pipeline_poll', static function (): void {
+			if ( self::is_pipeline_enabled() ) self::poll_and_execute();
+		} );
+		add_action( 'rpcare_deliver_pipeline_outbox', static function (): void {
+			if ( class_exists( 'RP_Care_Pipeline_Outbox' ) ) RP_Care_Pipeline_Outbox::deliver_pending();
+		} );
+
         add_action(
             'rpcare_pipeline_apply_staging_batch',
             static function ( string $batch_id, string $command_id = '' ): void {

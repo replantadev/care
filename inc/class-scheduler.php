@@ -309,19 +309,8 @@ class RP_Care_Scheduler {
         add_filter('rpcare_task_peak_scheduler', ['RP_Care_Task_Peak_Scheduler', 'run']);
         add_filter('rpcare_task_revenue_anomaly', ['RP_Care_Task_Revenue_Anomaly', 'run']);
 
-        // Pipeline poll — executes the pull-model command loop.
-        add_action('rpcare_task_pipeline_poll', static function() {
-            if ( class_exists( 'RP_Care_Pipeline_Client' ) && RP_Care_Pipeline_Client::is_pipeline_enabled() ) {
-                RP_Care_Pipeline_Client::poll_and_execute();
-            }
-        });
-
-        // Pipeline outbox delivery — retries any pending Care→PC events.
-        add_action('rpcare_deliver_pipeline_outbox', static function() {
-            if ( class_exists( 'RP_Care_Pipeline_Outbox' ) ) {
-                RP_Care_Pipeline_Outbox::deliver_pending();
-            }
-        });
+		// Pipeline callbacks are registered unconditionally by
+		// RP_Care_Pipeline_Client::register_as_callbacks(), including license-free staging.
     }
     
     public function clear_all() {

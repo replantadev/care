@@ -1,5 +1,11 @@
 # Changelog — Replanta Care
 
+## [1.16.14]
+
+- Los callbacks del poller y outbox se registran siempre, también en staging
+  sin plan propio; el scheduler de planes deja de duplicarlos.
+- El gate solo considera fallos Pipeline posteriores al último heartbeat bueno.
+
 ## [1.16.13]
 
 - Smart Updates separa fallos de sus dos acciones Pipeline de los fallos

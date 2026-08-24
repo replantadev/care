@@ -1,5 +1,10 @@
 # Changelog — Replanta Care
 
+## [1.16.13]
+
+- Smart Updates separa fallos de sus dos acciones Pipeline de los fallos
+  generales de mantenimiento/backup en Action Scheduler.
+
 ## [1.16.12]
 
 - Nuevo probe autenticado `/pipeline/heartbeat`: demuestra Care→PC sin tomar

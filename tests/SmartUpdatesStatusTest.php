@@ -45,6 +45,7 @@ class SmartUpdatesStatusTest extends TestCase {
             'pipeline_enabled', 'staging_role', 'wp_toolkit_detected', 'direct_updates_blocked',
 			'pipeline_last_poll', 'pipeline_poll_age_seconds', 'pipeline_poll_scheduled',
 			'action_scheduler_available', 'as_failed_24h', 'backup_mode', 'backup_usable',
+			'pipeline_failed_actions',
         ];
         foreach ( $required as $key ) {
             $this->assertArrayHasKey( $key, $report, "Status report must include key: {$key}" );

@@ -111,6 +111,26 @@ class RP_Care_Pipeline_Client {
 		return [ 'success' => true ];
 	}
 
+	/** Failed actions belonging to the pipeline channel, not unrelated Care jobs. */
+	public static function count_failed_actions(): ?int {
+		if ( ! class_exists( 'ActionScheduler_Store' ) ) return null;
+		try {
+			$store = ActionScheduler_Store::instance();
+			$count = 0;
+			foreach ( [ 'rpcare_task_pipeline_poll', 'rpcare_deliver_pipeline_outbox' ] as $hook ) {
+				$ids = $store->query_actions( [
+					'hook' => $hook, 'status' => ActionScheduler_Store::STATUS_FAILED,
+					'date' => gmdate( 'Y-m-d H:i:s', time() - DAY_IN_SECONDS ),
+					'date_compare' => '>=', 'per_page' => 100,
+				] );
+				$count += is_array( $ids ) ? count( $ids ) : 0;
+			}
+			return $count;
+		} catch ( Throwable $e ) {
+			return null;
+		}
+	}
+
     /**
      * Is this site in cloned-environment quarantine?
      */

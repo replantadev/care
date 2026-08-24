@@ -225,6 +225,7 @@ class RP_Care_Environment {
 			'pipeline_poll_scheduled' => $poll_scheduled,
 			'action_scheduler_available' => function_exists( 'as_next_scheduled_action' ),
 			'as_failed_24h'          => class_exists( 'RP_Care_Plan' ) ? RP_Care_Plan::count_as_failures_24h() : 0,
+			'pipeline_failed_actions' => class_exists( 'RP_Care_Pipeline_Client' ) ? RP_Care_Pipeline_Client::count_failed_actions() : null,
 			'staging_role'           => $opts['staging_role'] ?? 'unset',
 			'wp_toolkit_detected'    => self::is_wptoolkit(),
 			'direct_updates_blocked' => self::native_auto_updates_disabled(),

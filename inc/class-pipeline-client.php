@@ -61,6 +61,25 @@ class RP_Care_Pipeline_Client {
         return (bool) get_option( self::OPT_ENABLED, false );
     }
 
+	/** Ensure the pull channel is scheduled independently of plan activation. */
+	public static function ensure_poll_schedule( bool $enabled = true ): void {
+		$hooks = [ 'rpcare_task_pipeline_poll', 'rpcare_deliver_pipeline_outbox' ];
+		foreach ( $hooks as $hook ) {
+			if ( ! $enabled ) {
+				if ( function_exists( 'as_unschedule_all_actions' ) ) as_unschedule_all_actions( $hook, [], 'replanta-care' );
+				if ( function_exists( 'wp_clear_scheduled_hook' ) ) wp_clear_scheduled_hook( $hook );
+				continue;
+			}
+			if ( function_exists( 'as_next_scheduled_action' ) && function_exists( 'as_schedule_recurring_action' ) ) {
+				if ( ! as_next_scheduled_action( $hook, [], 'replanta-care' ) ) {
+					as_schedule_recurring_action( time() + 30, 5 * MINUTE_IN_SECONDS, $hook, [], 'replanta-care', true );
+				}
+			} elseif ( function_exists( 'wp_next_scheduled' ) && function_exists( 'wp_schedule_event' ) && ! wp_next_scheduled( $hook ) ) {
+				wp_schedule_event( time() + 30, 'five_minutes', $hook );
+			}
+		}
+	}
+
     /**
      * Is this site in cloned-environment quarantine?
      */
@@ -1481,6 +1500,8 @@ class RP_Care_Pipeline_Client {
             update_option( self::OPT_GROUP_ID, $data['group_id'] ?? '' );
             update_option( self::OPT_ENVIRONMENT, $data['environment'] ?? 'production' );
             update_option( 'rpcare_pipeline_canonical_url', $canonical_url );
+			update_option( self::OPT_ENABLED, true );
+			self::ensure_poll_schedule( true );
 
             return [
                 'status'      => self::STATUS_READY,

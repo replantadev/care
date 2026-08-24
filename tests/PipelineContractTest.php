@@ -1535,4 +1535,14 @@ class CarePipelineContractTest extends TestCase {
         $this->assertSame( 'cc-s25-batch', $captured_body['batch_id'],
             'POSTed batch_id must match the command payload batch_id' );
     }
+
+	public function test_pipeline_schedule_is_independent_of_paid_plan(): void {
+		$GLOBALS['_as_pending'] = [];
+		RP_Care_Pipeline_Client::ensure_poll_schedule( true );
+		$this->assertArrayHasKey( 'rpcare_task_pipeline_poll', $GLOBALS['_as_pending'] );
+		$this->assertArrayHasKey( 'rpcare_deliver_pipeline_outbox', $GLOBALS['_as_pending'] );
+		RP_Care_Pipeline_Client::ensure_poll_schedule( false );
+		$this->assertArrayNotHasKey( 'rpcare_task_pipeline_poll', $GLOBALS['_as_pending'] );
+		$this->assertArrayNotHasKey( 'rpcare_deliver_pipeline_outbox', $GLOBALS['_as_pending'] );
+	}
 }

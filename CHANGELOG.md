@@ -1,5 +1,12 @@
 # Changelog — Replanta Care
 
+## [1.16.10]
+
+- El poller Pipeline se programa al emparejar o activar el canal aunque el
+  staging no consuma una licencia/plan independiente.
+- Desactivar Pipeline elimina sus dos tareas recurrentes; reactivar repara de
+  forma idempotente tanto el poller como la entrega del outbox.
+
 ## [1.16.9]
 
 - El estado Smart Updates v2 expone el heartbeat real del canal pull, si el

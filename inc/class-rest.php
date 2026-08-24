@@ -1938,6 +1938,7 @@ class RP_Care_REST {
         if ( null !== $pipeline_enabled && class_exists( 'RP_Care_Pipeline_Client' ) ) {
             $enabled = filter_var( $pipeline_enabled, FILTER_VALIDATE_BOOLEAN );
             update_option( RP_Care_Pipeline_Client::OPT_ENABLED, $enabled );
+			RP_Care_Pipeline_Client::ensure_poll_schedule( $enabled );
             $updated['pipeline_enabled'] = $enabled;
         }
 

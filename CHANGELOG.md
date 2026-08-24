@@ -1,5 +1,11 @@
 # Changelog — Replanta Care
 
+## [1.16.15]
+
+- El contador de fallos Pipeline filtra por la fecha real del último intento
+  (`modified`) usando un `DateTime` UTC; Action Scheduler ignoraba el filtro
+  anterior porque recibía una cadena en `date`.
+
 ## [1.16.14]
 
 - Los callbacks del poller y outbox se registran siempre, también en staging

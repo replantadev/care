@@ -119,11 +119,14 @@ class RP_Care_Pipeline_Client {
 			$count = 0;
 			$last_success = strtotime( (string) get_option( self::OPT_LAST_POLL, '' ) . ' UTC' );
 			$cutoff = max( time() - DAY_IN_SECONDS, false !== $last_success ? $last_success : 0 );
+			$cutoff_utc = new DateTime( '@' . $cutoff );
 			foreach ( [ 'rpcare_task_pipeline_poll', 'rpcare_deliver_pipeline_outbox' ] as $hook ) {
 				$ids = $store->query_actions( [
 					'hook' => $hook, 'status' => ActionScheduler_Store::STATUS_FAILED,
-					'date' => gmdate( 'Y-m-d H:i:s', $cutoff ),
-					'date_compare' => '>=', 'per_page' => 100,
+					// Action Scheduler ignores scalar dates. Failed-at is last_attempt_gmt,
+					// represented by the `modified` DateTime query field.
+					'modified' => $cutoff_utc,
+					'modified_compare' => '>', 'per_page' => 100,
 				] );
 				$count += is_array( $ids ) ? count( $ids ) : 0;
 			}

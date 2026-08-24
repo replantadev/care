@@ -1,5 +1,10 @@
 # Changelog — Replanta Care
 
+## [1.16.11]
+
+- Al reparar por primera vez el schedule Pipeline se encola además un poll
+  asíncrono único, para que PC reciba el heartbeat sin esperar al primer ciclo.
+
 ## [1.16.10]
 
 - El poller Pipeline se programa al emparejar o activar el canal aunque el

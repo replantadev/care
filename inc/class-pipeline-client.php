@@ -64,6 +64,7 @@ class RP_Care_Pipeline_Client {
 	/** Ensure the pull channel is scheduled independently of plan activation. */
 	public static function ensure_poll_schedule( bool $enabled = true ): void {
 		$hooks = [ 'rpcare_task_pipeline_poll', 'rpcare_deliver_pipeline_outbox' ];
+		$poll_created = false;
 		foreach ( $hooks as $hook ) {
 			if ( ! $enabled ) {
 				if ( function_exists( 'as_unschedule_all_actions' ) ) as_unschedule_all_actions( $hook, [], 'replanta-care' );
@@ -73,10 +74,14 @@ class RP_Care_Pipeline_Client {
 			if ( function_exists( 'as_next_scheduled_action' ) && function_exists( 'as_schedule_recurring_action' ) ) {
 				if ( ! as_next_scheduled_action( $hook, [], 'replanta-care' ) ) {
 					as_schedule_recurring_action( time() + 30, 5 * MINUTE_IN_SECONDS, $hook, [], 'replanta-care', true );
+					if ( 'rpcare_task_pipeline_poll' === $hook ) $poll_created = true;
 				}
 			} elseif ( function_exists( 'wp_next_scheduled' ) && function_exists( 'wp_schedule_event' ) && ! wp_next_scheduled( $hook ) ) {
 				wp_schedule_event( time() + 30, 'five_minutes', $hook );
 			}
+		}
+		if ( $enabled && $poll_created && function_exists( 'as_enqueue_async_action' ) ) {
+			as_enqueue_async_action( 'rpcare_task_pipeline_poll', [], 'replanta-care', true );
 		}
 	}
 

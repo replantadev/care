@@ -1541,6 +1541,7 @@ class CarePipelineContractTest extends TestCase {
 		RP_Care_Pipeline_Client::ensure_poll_schedule( true );
 		$this->assertArrayHasKey( 'rpcare_task_pipeline_poll', $GLOBALS['_as_pending'] );
 		$this->assertArrayHasKey( 'rpcare_deliver_pipeline_outbox', $GLOBALS['_as_pending'] );
+		$this->assertNotEmpty( array_filter( $GLOBALS['_as_enqueued'], static fn( $job ) => 'rpcare_task_pipeline_poll' === $job['hook'] ) );
 		RP_Care_Pipeline_Client::ensure_poll_schedule( false );
 		$this->assertArrayNotHasKey( 'rpcare_task_pipeline_poll', $GLOBALS['_as_pending'] );
 		$this->assertArrayNotHasKey( 'rpcare_deliver_pipeline_outbox', $GLOBALS['_as_pending'] );

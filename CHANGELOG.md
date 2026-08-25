@@ -1,5 +1,20 @@
 # Changelog — Replanta Care
 
+## [1.16.19]
+
+- Corrección de emergencia: el ZIP de 1.16.18 se generó desde el filesystem
+  local con archivos `vendor/composer/*.php` modificados en disco (sin
+  commitear) por dependencias dev de PHPUnit; `autoload_files.php` referenciaba
+  `myclabs/deep-copy` que no se incluyó en el ZIP → fatal error en todos los
+  requests WP de las instalaciones actualizadas. El ZIP ahora se genera siempre
+  con `git archive HEAD` para garantizar que solo entran archivos commiteados.
+
+## [1.16.18]
+
+- Bump de versión para superar la 1.16.17 desplegada erróneamente por agente
+  externo con campos de facturación en la pantalla de ajustes de Care (revertidos
+  en 1.16.15 con dos commits de revert). **Contiene el mismo código que 1.16.15.**
+
 ## [1.16.15]
 
 - El contador de fallos Pipeline filtra por la fecha real del último intento

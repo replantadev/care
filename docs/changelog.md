@@ -5,6 +5,11 @@ layout: default
 
 # Changelog
 
+## [1.16.16]
+
+- Selector de logo para facturas y documentos basado en la Biblioteca de medios.
+- API local `rpcare_get_document_logo_id()` para que otros plugins utilicen la identidad configurada sin acoplarse a la interfaz de Care.
+
 ## [1.9.0]
 
 - Mejoras generales de estabilidad y compatibilidad con WordPress 6.7

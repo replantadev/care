@@ -3,7 +3,7 @@
  * Plugin Name: Replanta Care
  * Plugin URI: https://replanta.dev
  * Description: Plugin de mantenimiento WordPress automatizado para clientes de Replanta con integracion Hub
- * Version: 1.16.15
+ * Version: 1.16.16
  * Author: Replanta
  * Author URI: https://replanta.dev
  * License: GPL v2 or later
@@ -18,11 +18,19 @@ if (!defined('ABSPATH')) {
 
 // Define plugin constants
 if ( ! defined( 'RPCARE_VERSION' ) ) {
-    define( 'RPCARE_VERSION', '1.16.15' );
+    define( 'RPCARE_VERSION', '1.16.16' );
 }
 define('RPCARE_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('RPCARE_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('RPCARE_PLUGIN_FILE', __FILE__);
+
+/**
+ * Return the Media Library attachment used to brand generated documents.
+ */
+function rpcare_get_document_logo_id(): int {
+    $options = (array) get_option( 'rpcare_options', [] );
+    return max( 0, (int) ( $options['invoice_logo_id'] ?? 0 ) );
+}
 
 if (!defined('RPCARE_GITHUB_REPO_URL')) {
     define('RPCARE_GITHUB_REPO_URL', 'https://github.com/replantadev/care/');

@@ -1,5 +1,10 @@
 # Changelog — Replanta Care
 
+## [1.16.16]
+
+- Nuevo selector de imagen en Configuracion para definir el logo usado en facturas y documentos.
+- El logo se guarda como adjunto validado de la Biblioteca de medios y se expone a plugins distribuibles mediante `rpcare_get_document_logo_id()`.
+
 ## [1.16.15]
 
 - El contador de fallos Pipeline filtra por la fecha real del último intento

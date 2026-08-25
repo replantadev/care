@@ -443,6 +443,8 @@ class RP_Care_Settings_Page {
         $has_token = !empty($options['site_token']);
         $invoice_logo_id  = absint( $options['invoice_logo_id'] ?? 0 );
         $invoice_logo_url = $invoice_logo_id > 0 ? (string) wp_get_attachment_image_url( $invoice_logo_id, 'medium' ) : '';
+        $invoice_footer_image_id  = absint( $options['invoice_footer_image_id'] ?? 0 );
+        $invoice_footer_image_url = $invoice_footer_image_id > 0 ? (string) wp_get_attachment_image_url( $invoice_footer_image_id, 'medium' ) : '';
 
         // Notification options
         $notif_email = esc_attr($options['notification_email'] ?? get_option('admin_email'));
@@ -598,6 +600,26 @@ class RP_Care_Settings_Page {
                                 </button>
                             </div>
                             <span class="rpc-hint" style="display:block;margin-top:10px;">SAP Woo Suite utiliza este archivo en la cabecera de todas las paginas del PDF. Formatos admitidos: PNG y JPEG.</span>
+                        </div>
+                        <div class="rpc-field" style="margin-top:22px;">
+                            <label class="rpc-label">Imagen factura pie</label>
+                            <input type="hidden" id="rpc-invoice-footer-image-id" name="rpcare_options[invoice_footer_image_id]" value="<?php echo esc_attr( $invoice_footer_image_id ); ?>">
+                            <div id="rpc-invoice-footer-image-preview" style="display:flex;align-items:center;justify-content:center;min-height:120px;padding:14px;margin:8px 0 12px;background:#fff;border:1px solid var(--rp-border-s);border-radius:8px;">
+                                <?php if ( $invoice_footer_image_url !== '' ) : ?>
+                                    <img src="<?php echo esc_url( $invoice_footer_image_url ); ?>" alt="Imagen del pie de factura" style="display:block;max-width:100%;max-height:110px;width:auto;height:auto;">
+                                <?php else : ?>
+                                    <span class="rpc-hint rpc-invoice-footer-image-empty">No hay una imagen de pie configurada.</span>
+                                <?php endif; ?>
+                            </div>
+                            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                                <button type="button" class="rpc-btn rpc-btn-secondary" id="rpc-select-invoice-footer-image">
+                                    <span class="dashicons dashicons-upload"></span> Seleccionar imagen
+                                </button>
+                                <button type="button" class="rpc-btn rpc-btn-ghost" id="rpc-remove-invoice-footer-image"<?php echo $invoice_footer_image_id > 0 ? '' : ' style="display:none;"'; ?>>
+                                    <span class="dashicons dashicons-trash"></span> Quitar
+                                </button>
+                            </div>
+                            <span class="rpc-hint" style="display:block;margin-top:10px;">Se muestra sin marco en el pie de la ultima pagina de la factura. Formatos admitidos: PNG y JPEG.</span>
                         </div>
                     </div>
 
@@ -1432,6 +1454,21 @@ class RP_Care_Settings_Page {
                 $current = (array) get_option( 'rpcare_options', [] );
                 $sanitized['invoice_logo_id'] = absint( $current['invoice_logo_id'] ?? 0 );
                 add_settings_error( 'rpcare_messages', 'rpcare_invoice_logo_invalid', 'El logo debe ser una imagen valida de la biblioteca de medios.', 'error' );
+            }
+        }
+
+        if ( array_key_exists( 'invoice_footer_image_id', (array) $input ) ) {
+            $footer_image_id = absint( $input['invoice_footer_image_id'] );
+            $footer_image_mime = $footer_image_id > 0 ? (string) get_post_mime_type( $footer_image_id ) : '';
+            $valid_footer_image = $footer_image_id > 0
+                && wp_attachment_is_image( $footer_image_id )
+                && in_array( $footer_image_mime, [ 'image/png', 'image/jpeg' ], true );
+            if ( 0 === $footer_image_id || $valid_footer_image ) {
+                $sanitized['invoice_footer_image_id'] = $footer_image_id;
+            } else {
+                $current = (array) get_option( 'rpcare_options', [] );
+                $sanitized['invoice_footer_image_id'] = absint( $current['invoice_footer_image_id'] ?? 0 );
+                add_settings_error( 'rpcare_messages', 'rpcare_invoice_footer_image_invalid', 'La imagen del pie debe ser una imagen valida de la biblioteca de medios.', 'error' );
             }
         }
 

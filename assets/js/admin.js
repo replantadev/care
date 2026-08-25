@@ -22,9 +22,32 @@
     });
 
     function initInvoiceLogo() {
+        initDocumentImageSelector({
+            select: '#rpc-select-invoice-logo',
+            remove: '#rpc-remove-invoice-logo',
+            input: '#rpc-invoice-logo-id',
+            preview: '#rpc-invoice-logo-preview',
+            title: 'Seleccionar logo para documentos',
+            button: 'Usar este logo',
+            alt: 'Logo de documentos',
+            empty: 'No hay un logo configurado.'
+        });
+        initDocumentImageSelector({
+            select: '#rpc-select-invoice-footer-image',
+            remove: '#rpc-remove-invoice-footer-image',
+            input: '#rpc-invoice-footer-image-id',
+            preview: '#rpc-invoice-footer-image-preview',
+            title: 'Seleccionar imagen para el pie de factura',
+            button: 'Usar esta imagen',
+            alt: 'Imagen del pie de factura',
+            empty: 'No hay una imagen de pie configurada.'
+        });
+    }
+
+    function initDocumentImageSelector(config) {
         let frame = null;
 
-        $(document).on('click', '#rpc-select-invoice-logo', function(e) {
+        $(document).on('click', config.select, function(e) {
             e.preventDefault();
             if (typeof wp === 'undefined' || !wp.media) {
                 showNotification('La biblioteca de medios no esta disponible', 'error');
@@ -32,8 +55,8 @@
             }
             if (!frame) {
                 frame = wp.media({
-                    title: 'Seleccionar logo para documentos',
-                    button: {text: 'Usar este logo'},
+                    title: config.title,
+                    button: {text: config.button},
                     library: {type: 'image'},
                     multiple: false
                 });
@@ -42,24 +65,24 @@
                     const previewUrl = attachment.sizes && attachment.sizes.medium
                         ? attachment.sizes.medium.url
                         : attachment.url;
-                    $('#rpc-invoice-logo-id').val(attachment.id);
-                    $('#rpc-invoice-logo-preview').html(
+                    $(config.input).val(attachment.id);
+                    $(config.preview).html(
                         $('<img>', {
                             src: previewUrl,
-                            alt: 'Logo de documentos',
+                            alt: config.alt,
                             css: {display: 'block', maxWidth: '100%', maxHeight: '110px', width: 'auto', height: 'auto'}
                         })
                     );
-                    $('#rpc-remove-invoice-logo').show();
+                    $(config.remove).show();
                 });
             }
             frame.open();
         });
 
-        $(document).on('click', '#rpc-remove-invoice-logo', function(e) {
+        $(document).on('click', config.remove, function(e) {
             e.preventDefault();
-            $('#rpc-invoice-logo-id').val('0');
-            $('#rpc-invoice-logo-preview').html('<span class="rpc-hint rpc-invoice-logo-empty">No hay un logo configurado.</span>');
+            $(config.input).val('0');
+            $(config.preview).html($('<span>', {class: 'rpc-hint', text: config.empty}));
             $(this).hide();
         });
     }

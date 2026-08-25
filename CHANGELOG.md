@@ -1,10 +1,5 @@
 # Changelog — Replanta Care
 
-## [1.16.17]
-
-- Nuevo selector "Imagen factura pie" para incorporar una segunda imagen sin marco al pie de las facturas.
-- La imagen se valida como PNG/JPEG y se expone mediante `rpcare_get_invoice_footer_image_id()`.
-
 ## [1.16.16]
 
 - Nuevo selector de imagen en Configuracion para definir el logo usado en facturas y documentos.

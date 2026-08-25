@@ -10,13 +10,10 @@ final class InvoiceBrandingTest extends TestCase {
 
         $this->assertStringContainsString( "wp_enqueue_media();", $source );
         $this->assertStringContainsString( 'rpcare_options[invoice_logo_id]', $source );
-        $this->assertStringContainsString( 'rpcare_options[invoice_footer_image_id]', $source );
         $this->assertStringContainsString( 'wp_attachment_is_image( $logo_id )', $source );
         $this->assertStringContainsString( "[ 'image/png', 'image/jpeg' ]", $source );
         $this->assertStringContainsString( "library: {type: 'image'}", $script );
-        $this->assertStringContainsString( "input: '#rpc-invoice-logo-id'", $script );
-        $this->assertStringContainsString( "input: '#rpc-invoice-footer-image-id'", $script );
+        $this->assertStringContainsString( "$('#rpc-invoice-logo-id').val(attachment.id)", $script );
         $this->assertStringContainsString( 'function rpcare_get_document_logo_id()', $plugin );
-        $this->assertStringContainsString( 'function rpcare_get_invoice_footer_image_id()', $plugin );
     }
 }

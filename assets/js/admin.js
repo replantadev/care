@@ -17,52 +17,8 @@
         initRealTimeUpdates();
         initCheckUpdates();
         initLogRefresh();
-        initInvoiceLogo();
         loadDashboardData();
     });
-
-    function initInvoiceLogo() {
-        let frame = null;
-
-        $(document).on('click', '#rpc-select-invoice-logo', function(e) {
-            e.preventDefault();
-            if (typeof wp === 'undefined' || !wp.media) {
-                showNotification('La biblioteca de medios no esta disponible', 'error');
-                return;
-            }
-            if (!frame) {
-                frame = wp.media({
-                    title: 'Seleccionar logo para documentos',
-                    button: {text: 'Usar este logo'},
-                    library: {type: 'image'},
-                    multiple: false
-                });
-                frame.on('select', function() {
-                    const attachment = frame.state().get('selection').first().toJSON();
-                    const previewUrl = attachment.sizes && attachment.sizes.medium
-                        ? attachment.sizes.medium.url
-                        : attachment.url;
-                    $('#rpc-invoice-logo-id').val(attachment.id);
-                    $('#rpc-invoice-logo-preview').html(
-                        $('<img>', {
-                            src: previewUrl,
-                            alt: 'Logo de documentos',
-                            css: {display: 'block', maxWidth: '100%', maxHeight: '110px', width: 'auto', height: 'auto'}
-                        })
-                    );
-                    $('#rpc-remove-invoice-logo').show();
-                });
-            }
-            frame.open();
-        });
-
-        $(document).on('click', '#rpc-remove-invoice-logo', function(e) {
-            e.preventDefault();
-            $('#rpc-invoice-logo-id').val('0');
-            $('#rpc-invoice-logo-preview').html('<span class="rpc-hint rpc-invoice-logo-empty">No hay un logo configurado.</span>');
-            $(this).hide();
-        });
-    }
 
     function initLogRefresh() {
         $(document).on('click', '.rpc-refresh-logs', function() {

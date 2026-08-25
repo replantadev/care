@@ -213,7 +213,6 @@ class RP_Care_Settings_Page {
             RPCARE_VERSION,
             true
         );
-        wp_enqueue_media();
         
         wp_enqueue_style(
             'rpcare-admin',
@@ -441,8 +440,6 @@ class RP_Care_Settings_Page {
         $token     = esc_attr($options['site_token'] ?? '');
         $gh_token  = esc_attr(get_option('rpcare_github_token', ''));
         $has_token = !empty($options['site_token']);
-        $invoice_logo_id  = absint( $options['invoice_logo_id'] ?? 0 );
-        $invoice_logo_url = $invoice_logo_id > 0 ? (string) wp_get_attachment_image_url( $invoice_logo_id, 'medium' ) : '';
 
         // Notification options
         $notif_email = esc_attr($options['notification_email'] ?? get_option('admin_email'));
@@ -571,34 +568,6 @@ class RP_Care_Settings_Page {
                         </button>
                         <div id="rpc-connection-result"></div>
                         <div id="connection-status" style="display:none;"></div>
-                    </div>
-
-                    <!-- IDENTIDAD DE DOCUMENTOS -->
-                    <div class="rcp-card">
-                        <h2 class="rcp-card-h">
-                            <span class="dashicons dashicons-format-image" aria-hidden="true"></span>
-                            Identidad de documentos
-                        </h2>
-                        <div class="rpc-field">
-                            <label class="rpc-label">Logo para facturas y documentos</label>
-                            <input type="hidden" id="rpc-invoice-logo-id" name="rpcare_options[invoice_logo_id]" value="<?php echo esc_attr( $invoice_logo_id ); ?>">
-                            <div id="rpc-invoice-logo-preview" style="display:flex;align-items:center;justify-content:center;min-height:120px;padding:14px;margin:8px 0 12px;background:#fff;border:1px solid var(--rp-border-s);border-radius:8px;">
-                                <?php if ( $invoice_logo_url !== '' ) : ?>
-                                    <img src="<?php echo esc_url( $invoice_logo_url ); ?>" alt="Logo de documentos" style="display:block;max-width:100%;max-height:110px;width:auto;height:auto;">
-                                <?php else : ?>
-                                    <span class="rpc-hint rpc-invoice-logo-empty">No hay un logo configurado.</span>
-                                <?php endif; ?>
-                            </div>
-                            <div style="display:flex;gap:8px;flex-wrap:wrap;">
-                                <button type="button" class="rpc-btn rpc-btn-secondary" id="rpc-select-invoice-logo">
-                                    <span class="dashicons dashicons-upload"></span> Seleccionar imagen
-                                </button>
-                                <button type="button" class="rpc-btn rpc-btn-ghost" id="rpc-remove-invoice-logo"<?php echo $invoice_logo_id > 0 ? '' : ' style="display:none;"'; ?>>
-                                    <span class="dashicons dashicons-trash"></span> Quitar
-                                </button>
-                            </div>
-                            <span class="rpc-hint" style="display:block;margin-top:10px;">SAP Woo Suite utiliza este archivo en la cabecera de todas las paginas del PDF. Formatos admitidos: PNG y JPEG.</span>
-                        </div>
                     </div>
 
                     <!-- TAREAS AUTOMATICAS -->
@@ -1418,21 +1387,6 @@ class RP_Care_Settings_Page {
 
         if (isset($input['license_key'])) {
             $sanitized['license_key'] = sanitize_text_field($input['license_key']);
-        }
-
-        if ( array_key_exists( 'invoice_logo_id', (array) $input ) ) {
-            $logo_id = absint( $input['invoice_logo_id'] );
-            $logo_mime = $logo_id > 0 ? (string) get_post_mime_type( $logo_id ) : '';
-            $valid_logo = $logo_id > 0
-                && wp_attachment_is_image( $logo_id )
-                && in_array( $logo_mime, [ 'image/png', 'image/jpeg' ], true );
-            if ( 0 === $logo_id || $valid_logo ) {
-                $sanitized['invoice_logo_id'] = $logo_id;
-            } else {
-                $current = (array) get_option( 'rpcare_options', [] );
-                $sanitized['invoice_logo_id'] = absint( $current['invoice_logo_id'] ?? 0 );
-                add_settings_error( 'rpcare_messages', 'rpcare_invoice_logo_invalid', 'El logo debe ser una imagen valida de la biblioteca de medios.', 'error' );
-            }
         }
 
         // Invalidate plan cache whenever Hub creds are touched so next request re-detects from Hub

@@ -55,9 +55,17 @@ git archive HEAD --prefix=replanta-care/ | \
 ssh -i ~/.ssh/cedro_deploy replanta@178.105.220.233 \
   "grep -r 'myclabs\|phpunit\|sebastian\|nikic' /tmp/care-archive-NEW/ 2>/dev/null && echo BAD || echo OK"
 
-# Crear ZIP en Linux (evita backslashes de Windows)
+# Crear ZIP en Linux — IMPORTANTE: hacer cd al directorio padre para que
+# replanta-care/ quede en la raíz del ZIP (WordPress lo exige).
+# MAL: cd /tmp && zip -r foo.zip care-archive/replanta-care/   ← raíz: care-archive/replanta-care/
+# BIEN: cd /tmp/care-archive && zip -r /tmp/foo.zip replanta-care/   ← raíz: replanta-care/
 ssh -i ~/.ssh/cedro_deploy replanta@178.105.220.233 \
-  "cd /tmp && zip -r replanta-care-X.Y.Z.zip care-archive-NEW/replanta-care/"
+  "cd /tmp/care-archive-NEW && zip -r /tmp/replanta-care-X.Y.Z.zip replanta-care/"
+
+# Verificar estructura antes de continuar:
+ssh -i ~/.ssh/cedro_deploy replanta@178.105.220.233 \
+  "unzip -l /tmp/replanta-care-X.Y.Z.zip | head -4"
+# Debe mostrar: replanta-care/ como primera entrada (no subcarpeta)
 ```
 
 ### 5. GitHub Release

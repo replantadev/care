@@ -118,7 +118,7 @@ class RP_Care_Pipeline_Client {
 			$store = ActionScheduler_Store::instance();
 			$count = 0;
 			$last_success = strtotime( (string) get_option( self::OPT_LAST_POLL, '' ) . ' UTC' );
-			$cutoff = max( time() - DAY_IN_SECONDS, false !== $last_success ? $last_success : 0 );
+			$cutoff = false !== $last_success ? $last_success : time() - DAY_IN_SECONDS;
 			$cutoff_utc = new DateTime( '@' . $cutoff );
 			foreach ( [ 'rpcare_task_pipeline_poll', 'rpcare_deliver_pipeline_outbox' ] as $hook ) {
 				$ids = $store->query_actions( [

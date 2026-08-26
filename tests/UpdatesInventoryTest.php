@@ -109,6 +109,7 @@ class UpdatesInventoryTest extends TestCase {
         RP_Care_Update_Control::$transient_reader  = null;
         RP_Care_Update_Control::$plugin_data_reader = null;
         RP_Care_Update_Control::$get_plugins_reader = null;
+        RP_Care_REST::$inventory_refresher = null;
 
         $this->rest = new RP_Care_REST();
     }
@@ -118,6 +119,7 @@ class UpdatesInventoryTest extends TestCase {
         RP_Care_Update_Control::$plugin_data_reader = null;
         RP_Care_Update_Control::$get_plugins_reader = null;
         RP_Care_Update_Control::$bypass_for_task    = false;
+        RP_Care_REST::$inventory_refresher = null;
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -642,5 +644,35 @@ class UpdatesInventoryTest extends TestCase {
             $pluginFiles,
             'Orphaned entry must NOT appear in plugins[]'
         );
+    }
+
+    public function test_in36_authenticated_refresh_rebuilds_metadata_before_reading(): void {
+        update_option( 'rpcare_options', [ 'site_token' => self::RAW_TOKEN ] );
+        $calls = 0;
+        RP_Care_REST::$inventory_refresher = static function () use ( &$calls ): void {
+            $calls++;
+        };
+        $request = $this->makeRequest( $this->validHeader() );
+        $request->set_param( 'refresh', true );
+
+        $response = $this->rest->hub_updates_inventory( $request );
+
+        $this->assertSame( 200, $response->get_status() );
+        $this->assertSame( 1, $calls );
+    }
+
+    public function test_in37_unauthenticated_refresh_never_calls_provider_checks(): void {
+        update_option( 'rpcare_options', [ 'site_token' => self::RAW_TOKEN ] );
+        $calls = 0;
+        RP_Care_REST::$inventory_refresher = static function () use ( &$calls ): void {
+            $calls++;
+        };
+        $request = $this->makeRequest();
+        $request->set_param( 'refresh', true );
+
+        $response = $this->rest->hub_updates_inventory( $request );
+
+        $this->assertSame( 403, $response->get_status() );
+        $this->assertSame( 0, $calls );
     }
 }

@@ -17,6 +17,9 @@ class RP_Care_REST {
     /** @var callable|null Test seam for the read-only isolation report. */
     public static $isolation_report_reader = null;
 
+    /** @var callable|null Test seam for an authenticated inventory refresh. */
+    public static $inventory_refresher = null;
+
     public function __construct() {
         add_action('rest_api_init', [$this, 'register_routes']);
     }
@@ -2880,11 +2883,25 @@ class RP_Care_REST {
      *
      * translations[], no_update[] — never counted or included.
      * SECURITY: never exposes package URLs, license keys, raw tokens, or credentials.
-     * READ-ONLY: does not trigger update checks or modify any site state.
+     * By default this is read-only. With authenticated `refresh=true`, it asks
+     * WordPress to refresh only provider update metadata before returning the
+     * inventory; it never installs or updates a plugin/theme.
      */
     public function hub_updates_inventory( WP_REST_Request $request ): WP_REST_Response {
         if ( ! $this->validate_hub_token( $request, true ) ) {
             return new WP_REST_Response( [ 'error' => 'Unauthorized' ], 403 );
+        }
+
+        if ( filter_var( $request->get_param( 'refresh' ), FILTER_VALIDATE_BOOLEAN ) ) {
+            if ( null !== self::$inventory_refresher ) {
+                call_user_func( self::$inventory_refresher );
+            } else {
+                if ( ! function_exists( 'wp_update_plugins' ) || ! function_exists( 'wp_update_themes' ) ) {
+                    require_once ABSPATH . 'wp-admin/includes/update.php';
+                }
+                wp_update_plugins();
+                wp_update_themes();
+            }
         }
 
         $generated_at = gmdate( 'c' );

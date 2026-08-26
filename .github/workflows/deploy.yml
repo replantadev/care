@@ -3,6 +3,9 @@ name: Deploy Replanta Care
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
   workflow_dispatch:
     inputs:
       force:

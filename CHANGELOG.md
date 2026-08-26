@@ -1,5 +1,12 @@
 # Changelog — Replanta Care
 
+## [1.16.21]
+
+- `/updates/inventory` acepta `refresh=true` únicamente con autenticación Hub y
+  renueva los metadatos de plugins/temas sin instalar nada. Evita que una
+  autoactualización de Care deje Operaciones en “Sin datos” hasta el siguiente
+  cron de WordPress.
+
 ## [1.16.20]
 
 - El poller Pipeline se autorrecupera en cada `init` aunque staging no tenga

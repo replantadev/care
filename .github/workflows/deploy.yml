@@ -98,7 +98,8 @@ jobs:
           mkdir -p /tmp/source /tmp/build/replanta-care /tmp/smoke
 
           # Build from the committed tree, never from mutable checkout/vendor files.
-          git archive HEAD | tar -x -f - -C /tmp/source
+          git archive --format=tar --output=/tmp/replanta-care-source.tar HEAD
+          tar -xf /tmp/replanta-care-source.tar -C /tmp/source
           (cd /tmp/source && composer install \
             --no-dev --prefer-dist --no-progress --no-interaction \
             --classmap-authoritative)

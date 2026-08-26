@@ -122,6 +122,7 @@ if ( ! function_exists( 'wp_get_available_translations' ) ) {
 // ── Load Care pipeline classes ────────────────────────────────────────────────
 
 require_once __DIR__ . '/../inc/class-pipeline-client.php';
+require_once __DIR__ . '/../inc/class-staging-provider.php';
 require_once __DIR__ . '/../inc/class-pipeline-outbox.php';
 require_once __DIR__ . '/../inc/class-inventory-snapshot.php';
 require_once __DIR__ . '/../inc/task-updates.php';
@@ -1538,12 +1539,27 @@ class CarePipelineContractTest extends TestCase {
 
 	public function test_pipeline_schedule_is_independent_of_paid_plan(): void {
 		$GLOBALS['_as_pending'] = [];
+		$GLOBALS['_as_enqueued'] = [];
 		RP_Care_Pipeline_Client::ensure_poll_schedule( true );
 		$this->assertArrayHasKey( 'rpcare_task_pipeline_poll', $GLOBALS['_as_pending'] );
 		$this->assertArrayHasKey( 'rpcare_deliver_pipeline_outbox', $GLOBALS['_as_pending'] );
 		$this->assertNotEmpty( array_filter( $GLOBALS['_as_enqueued'], static fn( $job ) => 'rpcare_task_pipeline_poll' === $job['hook'] ) );
+		$scheduled = $GLOBALS['_as_pending'];
+		$enqueued = $GLOBALS['_as_enqueued'];
+		RP_Care_Pipeline_Client::ensure_poll_schedule( true );
+		$this->assertSame( $scheduled, $GLOBALS['_as_pending'], 'Schedule reconciliation must be idempotent.' );
+		$this->assertSame( $enqueued, $GLOBALS['_as_enqueued'], 'A healthy schedule must not enqueue duplicate probes.' );
 		RP_Care_Pipeline_Client::ensure_poll_schedule( false );
 		$this->assertArrayNotHasKey( 'rpcare_task_pipeline_poll', $GLOBALS['_as_pending'] );
 		$this->assertArrayNotHasKey( 'rpcare_deliver_pipeline_outbox', $GLOBALS['_as_pending'] );
+	}
+
+	public function test_plugin_init_reconciles_enabled_pipeline_without_paid_plan(): void {
+		$source = (string) file_get_contents( __DIR__ . '/../replanta-care.php' );
+		$this->assertMatchesRegularExpression(
+			'/is_pipeline_enabled\(\).*ensure_poll_schedule\(\s*true\s*\)/s',
+			$source,
+			'Care init must self-heal the Pipeline schedule independently of plan activation.'
+		);
 	}
 }

@@ -204,13 +204,7 @@ class RP_Care_Environment {
 		$poll_scheduled = function_exists( 'as_next_scheduled_action' )
 			? (bool) as_next_scheduled_action( 'rpcare_task_pipeline_poll', [], 'replanta-care' )
 			: ( function_exists( 'wp_next_scheduled' ) && (bool) wp_next_scheduled( 'rpcare_task_pipeline_poll' ) );
-		$backup          = get_option( 'rpcare_last_b2_backup', [] );
-		$backup_status   = is_array( $backup ) ? (string) ( $backup['status'] ?? '' ) : '';
-		$backup_last_at  = is_array( $backup ) && ! empty( $backup['timestamp'] )
-			? gmdate( 'c', (int) $backup['timestamp'] )
-			: (string) get_option( 'rpcare_last_backup', '' );
-		$backup_usable   = in_array( $backup_status, [ 'complete', 'completed' ], true )
-			|| ( '' === $backup_status && '' !== $backup_last_at );
+		$backup = self::get_backup_report();
 
 		return [
 			'schema_version'         => 2,
@@ -234,10 +228,15 @@ class RP_Care_Environment {
 			'staging_method'          => $opts['staging_method'] ?? 'auto',
 			'maximum_batch_size'      => max( 1, min( 10, (int) ( $opts['maximum_batch_size'] ?? 1 ) ) ),
 			'maintenance_window_auto' => ! empty( $opts['maintenance_window_auto'] ),
-			'backup_mode'            => self::get_effective_backup_mode(),
-			'backup_last_at'         => $backup_last_at ?: null,
-			'backup_status'          => $backup_status ?: null,
-			'backup_usable'          => $backup_usable,
+			'backup_mode'             => $backup['backup_mode'],
+			'backup_provider'         => $backup['backup_provider'],
+			'backup_configured'       => $backup['backup_configured'],
+			'backup_last_at'          => $backup['backup_last_at'],
+			'backup_status'           => $backup['backup_status'],
+			'backup_evidence_id'      => $backup['backup_evidence_id'],
+			'backup_verified'         => $backup['backup_verified'],
+			'backup_restore_available'=> $backup['backup_restore_available'],
+			'backup_usable'           => $backup['backup_usable'],
 		];
 	}
 
@@ -285,6 +284,91 @@ class RP_Care_Environment {
             default      => 'managed_by_host',
         };
     }
+
+	/**
+	 * Canonical provider-specific backup evidence for PC and Pipeline readiness.
+	 * Evidence from another provider is never reused after the effective mode changes.
+	 * `backup_usable` means verified and restorable, not merely observed.
+	 */
+	public static function get_backup_report( ?string $mode = null ): array {
+		$mode = $mode ?? self::get_effective_backup_mode();
+		$report = [
+			'backup_mode'              => $mode,
+			'backup_provider'          => $mode,
+			'backup_configured'        => false,
+			'backup_last_at'           => null,
+			'backup_status'            => null,
+			'backup_evidence_id'       => null,
+			'backup_verified'          => false,
+			'backup_restore_available' => false,
+			'backup_usable'            => false,
+		];
+
+		if ( 'b2' === $mode ) {
+			$data = get_option( 'rpcare_last_b2_backup', [] );
+			$report['backup_configured'] = class_exists( 'RP_Care_Task_Backup' )
+				? RP_Care_Task_Backup::is_b2_configured_public()
+				: ( '' !== (string) get_option( 'rpcare_b2_key_id', '' )
+					&& '' !== (string) get_option( 'rpcare_b2_app_key', '' )
+					&& '' !== (string) get_option( 'rpcare_b2_bucket_id', '' ) );
+			if ( is_array( $data ) && ! empty( $data ) ) {
+				$status = (string) ( $data['status'] ?? '' );
+				$has_artifacts = ! empty( $data['artifacts'] ) || ! empty( $data['files'] );
+				$verified = in_array( $status, [ 'complete', 'completed' ], true )
+					&& ! empty( $data['backup_id'] ) && $has_artifacts;
+				$report['backup_last_at'] = ! empty( $data['timestamp'] ) ? gmdate( 'c', (int) $data['timestamp'] ) : null;
+				$report['backup_status'] = $status ?: null;
+				$report['backup_evidence_id'] = ! empty( $data['backup_id'] ) ? (string) $data['backup_id'] : null;
+				$report['backup_verified'] = $verified;
+				$report['backup_restore_available'] = $verified;
+				$report['backup_usable'] = $verified;
+			}
+			return $report;
+		}
+
+		if ( 'managed_by_host' === $mode ) {
+			$report['backup_provider'] = 'hosting_observed';
+			$report['backup_configured'] = true;
+			if ( class_exists( 'RP_Care_BackuplyObserved' ) ) {
+				$provider = new RP_Care_BackuplyObserved();
+				if ( $provider->detect() ) {
+					$report['backup_provider'] = 'backuply_observed';
+					$evidence = $provider->latestEvidence();
+					if ( $evidence ) {
+						$verified = true === $provider->verify( $evidence );
+						$timestamp = $evidence['timestamp'] ?? '';
+						$report['backup_last_at'] = is_numeric( $timestamp )
+							? gmdate( 'c', (int) $timestamp ) : ( $timestamp ?: null );
+						$report['backup_status'] = $verified ? 'observed_complete' : (string) ( $evidence['status'] ?? 'observed_unverified' );
+						$report['backup_evidence_id'] = ! empty( $evidence['id'] ) ? (string) $evidence['id'] : null;
+						$report['backup_verified'] = $verified;
+					}
+				}
+			}
+			// Observation alone cannot guarantee or automate rollback.
+			return $report;
+		}
+
+		if ( 'updraftplus' === $mode ) {
+			$report['backup_provider'] = 'updraftplus_observed';
+			$report['backup_configured'] = class_exists( 'UpdraftPlus' );
+			$last = (string) get_option( 'rpcare_last_backup', '' );
+			$report['backup_last_at'] = $last ?: null;
+			$report['backup_status'] = $last ? 'observed_unverified' : null;
+			return $report;
+		}
+
+		if ( in_array( $mode, [ 'cloudflare_r2', 's3' ], true ) ) {
+			$report['backup_status'] = 'provider_not_implemented';
+			return $report;
+		}
+
+		if ( 'disabled' === $mode ) {
+			$report['backup_status'] = 'disabled';
+		}
+
+		return $report;
+	}
 
 	/** Human-readable label for UI display. */
 	public static function label( ?string $type = null ): string {

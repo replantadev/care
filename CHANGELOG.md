@@ -1,13 +1,26 @@
 # Changelog — Replanta Care
 
+## [1.16.20]
+
+- El poller Pipeline se autorrecupera en cada `init` aunque staging no tenga
+  plan/licencia propios; la reconciliación es idempotente.
+- Backup status canónico y específico por proveedor: modo, configuración,
+  evidencia, verificación, restore y usabilidad. Evidencia B2 antigua ya no se
+  presenta cuando el modo efectivo es hosting observado.
+- Backuply queda explícitamente en modo observado: una copia visible sin restore
+  probado nunca desbloquea producción.
+- Release reproducible desde `git archive HEAD`, vendor `--no-dev`, smoke del
+  ZIP, dependencias de test aisladas en `.vendor-dev` y TLS obligatorio.
+- Auditoría backup/staging actualizada con el piloto Banban y TODO por sprints.
+
 ## [1.16.19]
 
 - Corrección de emergencia: el ZIP de 1.16.18 se generó desde el filesystem
   local con archivos `vendor/composer/*.php` modificados en disco (sin
   commitear) por dependencias dev de PHPUnit; `autoload_files.php` referenciaba
   `myclabs/deep-copy` que no se incluyó en el ZIP → fatal error en todos los
-  requests WP de las instalaciones actualizadas. El ZIP ahora se genera siempre
-  con `git archive HEAD` para garantizar que solo entran archivos commiteados.
+  requests WP de las instalaciones actualizadas. La 1.16.19 se reconstruyó con
+  el vendor de producción; la automatización reproducible se incorpora en 1.16.20.
 
 ## [1.16.18]
 

@@ -1,121 +1,85 @@
 # Deploy pipeline — Replanta Care
 
-Pipeline obligatorio antes de cualquier release. Cada paso es bloqueante.
+La única ruta normal de release es `.github/workflows/deploy.yml`. Un push a
+`main` ejecuta lint, tests, build reproducible, smoke del ZIP, GitHub Release,
+License API y actualización del Hub. Todos los pasos son bloqueantes.
 
-## Pasos
+## Preparación local
 
-### 1. Tests
-
-```bash
-cd care
-./vendor/bin/phpunit tests/
-```
-
-Todos los tests deben pasar. No se hace release si hay fallos.
-
-### 2. Verificar vendor limpio
+Las dependencias de producción viven en `vendor/`. PHPUnit y sus dependencias
+se instalan exclusivamente en `.vendor-dev`:
 
 ```bash
-git status vendor/
-# vendor/ NO debe tener archivos "modified" ni "untracked" relevantes.
-# Si los hay, restaurar:
-git restore vendor/
+COMPOSER_VENDOR_DIR=.vendor-dev composer install --prefer-dist --no-interaction
+.vendor-dev/bin/phpunit --configuration phpunit.xml.dist
 ```
 
-Los archivos `vendor/composer/*.php` commiteados son la única fuente de verdad.
-**Nunca** crear el ZIP desde el filesystem local sin antes restaurar vendor.
+Nunca ejecutar `composer require --dev` contra `vendor/` ni construir un ZIP
+desde el working tree local.
 
-### 3. Bump de versión
+## Crear una release
 
-En `replanta-care.php`:
-- Header `Version:`
-- Constante `RPCARE_VERSION`
+1. Ejecutar tests y lint local.
+2. Actualizar en `replanta-care.php` tanto el header `Version:` como
+   `RPCARE_VERSION`.
+3. Actualizar `CHANGELOG.md` y comprobar `git diff --check`.
+4. Commit y push a `main`.
+5. Esperar a que `Deploy Replanta Care` finalice en verde.
+6. Verificar desde Plugin Center que la versión latest y el asset coinciden.
 
-Ambos deben coincidir.
+## Contrato del workflow
 
-```bash
-git add replanta-care.php
-git commit -m "chore: bump to X.Y.Z"
-git push origin main
-```
+### Tests
 
-### 4. Generar ZIP desde git archive
+- PHP 8.1.
+- Dependencias dev en `.vendor-dev` mediante `composer install` y lockfile.
+- Suite PHPUnit completa.
 
-**Regla crítica: el ZIP SIEMPRE se genera con `git archive HEAD`, nunca desde el filesystem local.**
+### Build reproducible
 
-Esto garantiza que solo entran archivos commiteados. Los archivos modificados en disco (autoloads de composer, archivos de configuración local) no contaminan el paquete de producción.
+1. `git archive HEAD` crea el árbol fuente inmutable.
+2. En ese árbol temporal se ejecuta `composer install --no-dev
+   --classmap-authoritative`.
+3. Se excluyen documentación, tests, configuración de desarrollo y manifests
+   de Composer que no necesita el plugin distribuido.
+4. El ZIP contiene exactamente una raíz `replanta-care/`.
 
-```bash
-# En el repo local, enviar git archive a Cedro para generar el ZIP en Linux
-git archive HEAD --prefix=replanta-care/ | \
-  ssh -i ~/.ssh/cedro_deploy replanta@178.105.220.233 \
-  "rm -rf /tmp/care-archive-NEW && mkdir /tmp/care-archive-NEW && tar xf - -C /tmp/care-archive-NEW"
+### Smoke obligatorio del ZIP
 
-# Verificar que no hay dependencias dev en el ZIP
-ssh -i ~/.ssh/cedro_deploy replanta@178.105.220.233 \
-  "grep -r 'myclabs\|phpunit\|sebastian\|nikic' /tmp/care-archive-NEW/ 2>/dev/null && echo BAD || echo OK"
+- raíz WordPress correcta;
+- ausencia de `tests/`, PHPUnit y dependencias dev;
+- `vendor/autoload.php` carga sin fatal;
+- fichero principal pasa `php -l`;
+- versión interna igual a la versión del asset.
 
-# Crear ZIP en Linux — IMPORTANTE: hacer cd al directorio padre para que
-# replanta-care/ quede en la raíz del ZIP (WordPress lo exige).
-# MAL: cd /tmp && zip -r foo.zip care-archive/replanta-care/   ← raíz: care-archive/replanta-care/
-# BIEN: cd /tmp/care-archive && zip -r /tmp/foo.zip replanta-care/   ← raíz: replanta-care/
-ssh -i ~/.ssh/cedro_deploy replanta@178.105.220.233 \
-  "cd /tmp/care-archive-NEW && zip -r /tmp/replanta-care-X.Y.Z.zip replanta-care/"
+### Distribución
 
-# Verificar estructura antes de continuar:
-ssh -i ~/.ssh/cedro_deploy replanta@178.105.220.233 \
-  "unzip -l /tmp/replanta-care-X.Y.Z.zip | head -4"
-# Debe mostrar: replanta-care/ como primera entrada (no subcarpeta)
-```
+- GitHub Release `vX.Y.Z` con asset `replanta-care-X.Y.Z.zip`;
+- subida a License API con TLS verificado;
+- registro de metadata en License API;
+- notificación al Hub, que refresca su caché y `care-info.json`.
 
-### 5. GitHub Release
+## Reglas de seguridad
 
-```bash
-# Descargar ZIP de Cedro
-scp -i ~/.ssh/cedro_deploy replanta@178.105.220.233:/tmp/replanta-care-X.Y.Z.zip /tmp/
+- No usar `curl -k`, `--insecure` ni desactivar `sslverify`.
+- No publicar desde un árbol con cambios sin commit.
+- No incluir credenciales, `config.php`, tests o vendor de desarrollo.
+- No declarar una versión `tested_wp` que no esté cubierta por el laboratorio.
+- No actualizar clientes hasta que el workflow y el smoke estén verdes.
 
-# Crear release (usar keyring token, NO GITHUB_TOKEN de entorno)
-cd care
-GITHUB_TOKEN="" gh release create vX.Y.Z --title "Replanta Care X.Y.Z" \
-  --notes "..." /tmp/replanta-care-X.Y.Z.zip
-```
+## Fallos conocidos
 
-### 6. Actualizar Hub (replanta.net)
+| Síntoma | Causa probable | Acción |
+|---|---|---|
+| Fatal en `vendor/X/file.php` | Autoload contaminado o dependencia ausente | Corregir lock/vendor y publicar una versión superior |
+| ZIP instala una carpeta anidada | Raíz incorrecta | El smoke debe bloquear la release |
+| PC descarga 404 | Release/asset o Hub desincronizados | Revisar jobs GitHub Release, License API y Hub |
+| `already_latest` inesperado | Hub o site anuncian versiones distintas | Comparar Care vivo, License API y `PC_Versions::latest()` |
+| Staging sin heartbeat | Poller perdido o Care antiguo | Usar “Actualizar y reparar ambos Care” y verificar schedule |
 
-```bash
-ssh -i ~/.ssh/cedro_deploy replanta@178.105.220.233 "
-  sudo -u repla1030 /usr/local/lsws/lsphp83/bin/php /usr/local/bin/wp \
-    --path=/home/replanta.net/public_html \
-    option update rphub_care_latest_version 'X.Y.Z'
-  sudo -u repla1030 /usr/local/lsws/lsphp83/bin/php /usr/local/bin/wp \
-    --path=/home/replanta.net/public_html \
-    transient delete pc_latest_ver_care 2>/dev/null
-"
-```
+## Instalación en frío
 
-### 7. Verificar desde PC → Sitios
-
-Comprobar en PC admin (replanta.net/wp-admin → Plugin Center → Care → Sites) que:
-- La versión "latest" muestra X.Y.Z
-- Los sitios registrados pueden descargarse la actualización sin error
-
----
-
-## Errores conocidos a evitar
-
-| Error | Causa | Prevención |
-|-------|-------|-----------|
-| Fatal: failed opening vendor/X/file.php | ZIP creado desde filesystem con vendor/ modificado en disco | Siempre `git archive HEAD` (paso 4) |
-| 403 al crear release | `GITHUB_TOKEN` env var de Fine-grained PAT sin permiso releases | Usar `GITHUB_TOKEN="" gh release create` |
-| "Download failed: Not Found" en PC | GitHub release no existe o no tiene asset ZIP | Verificar `gh release view vX.Y.Z` antes de actualizar Hub |
-| Site "already_latest" y no actualiza | Hub tiene versión más baja que la instalada en el site | Hacer release de versión mayor a la instalada |
-
-## Instalación en frío (site sin Care instalado)
-
-El Hub no puede instalar Care en un site que no lo tiene — `remote_action` requiere que Care esté corriendo. Para instalación en frío:
-
-1. Subir ZIP temporalmente a replanta.net: `sudo cp /tmp/replanta-care-X.Y.Z.zip /home/replanta.net/public_html/`
-2. En WP Admin del site cliente → Plugins → Añadir nuevo → Subir plugin → URL: `https://replanta.net/replanta-care-X.Y.Z.zip`
-3. Instalar + Activar
-4. Eliminar ZIP de replanta.net: `sudo rm /home/replanta.net/public_html/replanta-care-X.Y.Z.zip`
-5. El Hub retoma el control para actualizaciones futuras
+Un Care no instalado no puede recibir órdenes autenticadas. La instalación
+inicial se realiza manualmente con el último ZIP verificado. Tras activarlo y
+emparejarlo, Plugin Center retoma las actualizaciones. Cualquier ZIP temporal
+subido al servidor debe eliminarse inmediatamente después de instalarlo.

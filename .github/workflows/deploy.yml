@@ -57,10 +57,12 @@ jobs:
           extensions: mysqli, bz2
 
       - name: Install dev dependencies
-        run: composer require --dev phpunit/phpunit:^10 --no-progress --no-interaction --ignore-platform-reqs
+        env:
+          COMPOSER_VENDOR_DIR: .vendor-dev
+        run: composer install --prefer-dist --no-progress --no-interaction
 
       - name: Run PHPUnit
-        run: vendor/bin/phpunit --configuration phpunit.xml.dist --testdox
+        run: .vendor-dev/bin/phpunit --configuration phpunit.xml.dist --testdox
 
   deploy:
     name: Build, Release & Deploy
@@ -72,6 +74,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
 
       - name: Extract version
         id: meta
@@ -87,7 +94,14 @@ jobs:
       - name: Build plugin zip
         run: |
           VERSION=${{ steps.meta.outputs.version }}
-          mkdir -p /tmp/build/replanta-care
+          rm -rf /tmp/source /tmp/build /tmp/smoke
+          mkdir -p /tmp/source /tmp/build/replanta-care /tmp/smoke
+
+          # Build from the committed tree, never from mutable checkout/vendor files.
+          git archive HEAD | tar -x -C /tmp/source
+          (cd /tmp/source && composer install \
+            --no-dev --prefer-dist --no-progress --no-interaction \
+            --classmap-authoritative)
 
           rsync -av \
             --exclude='.git' \
@@ -100,11 +114,26 @@ jobs:
             --exclude='composer.lock' \
             --exclude='config-sample.php' \
             --exclude='update-info.json' \
-            ./ /tmp/build/replanta-care/
+            /tmp/source/ /tmp/build/replanta-care/
 
           cd /tmp/build
           zip -r "$GITHUB_WORKSPACE/replanta-care-${VERSION}.zip" replanta-care/
           echo "Built replanta-care-${VERSION}.zip"
+
+      - name: Smoke release zip
+        run: |
+          VERSION=${{ steps.meta.outputs.version }}
+          ZIP="$GITHUB_WORKSPACE/replanta-care-${VERSION}.zip"
+          test "$(unzip -Z1 "$ZIP" | head -1)" = "replanta-care/"
+          if unzip -Z1 "$ZIP" | grep -Eq '/tests/|/vendor/(phpunit|myclabs|nikic|phar-io|sebastian|theseer)/'; then
+            echo "FAILED: development dependencies/tests found in release ZIP"
+            exit 1
+          fi
+          unzip -q "$ZIP" -d /tmp/smoke
+          php -r "require '/tmp/smoke/replanta-care/vendor/autoload.php'; echo 'autoload OK', PHP_EOL;"
+          php -l /tmp/smoke/replanta-care/replanta-care.php
+          ZIP_VERSION=$(sed -nE "s/^[[:space:]]*define\([[:space:]]*'RPCARE_VERSION'[[:space:]]*,[[:space:]]*'([0-9]+\.[0-9]+\.[0-9]+)'[[:space:]]*\);/\1/p" /tmp/smoke/replanta-care/replanta-care.php)
+          test "$ZIP_VERSION" = "$VERSION"
 
       - name: Create or update GitHub Release
         id: release
@@ -126,7 +155,7 @@ jobs:
           VERSION=${{ steps.meta.outputs.version }}
           ZIP="${{ env.PLUGIN_SLUG }}-${VERSION}.zip"
 
-          RESPONSE=$(curl -sk -o /tmp/upload_response.json -w "%{http_code}" \
+          RESPONSE=$(curl -sS -o /tmp/upload_response.json -w "%{http_code}" \
             -X POST "https://api.replanta.net/admin/upload/care" \
             -H "X-Admin-Token: ${API_TOKEN}" \
             -F "zip=@${GITHUB_WORKSPACE}/${ZIP};type=application/zip")
@@ -146,7 +175,7 @@ jobs:
           VERSION=${{ steps.meta.outputs.version }}
           ZIP="${{ env.PLUGIN_SLUG }}-${VERSION}.zip"
 
-          RESPONSE=$(curl -sk -o /tmp/api_response.json -w "%{http_code}" \
+          RESPONSE=$(curl -sS -o /tmp/api_response.json -w "%{http_code}" \
             -X POST "https://api.replanta.net/admin/releases" \
             -H "X-Admin-Token: ${API_TOKEN}" \
             -H "Content-Type: application/json" \
@@ -156,7 +185,7 @@ jobs:
               \"zip_filename\": \"${ZIP}\",
               \"requires_wp\":  \"6.0\",
               \"requires_php\": \"8.0\",
-              \"tested_wp\":    \"6.8\",
+              \"tested_wp\":    \"7.0\",
               \"changelog\":    \"v${VERSION}\"
             }")
 

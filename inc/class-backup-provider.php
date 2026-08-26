@@ -81,25 +81,40 @@ interface RP_Care_Backup_Provider {
 class RP_Care_BackuplyObserved implements RP_Care_Backup_Provider {
 
     public function detect(): bool {
-        return class_exists( 'Backuply' ) || defined( 'BACKUPLY_FILE' );
+        return class_exists( 'Backuply' ) || class_exists( 'backuply_backup' )
+            || defined( 'BACKUPLY_FILE' )
+            || is_array( get_option( 'backuply_backup_log', null ) )
+            || is_array( get_option( 'backuply_backup_list', null ) );
     }
 
     public function latestEvidence(): ?array {
         if ( ! $this->detect() ) {
             return null;
         }
-        // Backuply stores log entries in its option; read the most recent entry.
-        $logs = get_option( 'backuply_backup_log', [] );
-        if ( empty( $logs ) || ! is_array( $logs ) ) {
+        // Backuply versions use either backup_log or backup_list. Pick the
+        // newest entry; never infer completion from presence alone.
+        $logs = array_merge(
+            is_array( get_option( 'backuply_backup_log', [] ) ) ? get_option( 'backuply_backup_log', [] ) : [],
+            is_array( get_option( 'backuply_backup_list', [] ) ) ? get_option( 'backuply_backup_list', [] ) : []
+        );
+        if ( empty( $logs ) ) {
             return null;
         }
+        usort( $logs, static function ( $a, $b ): int {
+            $at = is_array( $a ) ? (int) ( $a['time'] ?? $a['timestamp'] ?? strtotime( (string) ( $a['date'] ?? '' ) ) ) : 0;
+            $bt = is_array( $b ) ? (int) ( $b['time'] ?? $b['timestamp'] ?? strtotime( (string) ( $b['date'] ?? '' ) ) ) : 0;
+            return $at <=> $bt;
+        } );
         $last = end( $logs );
-        if ( empty( $last ) ) {
+        if ( empty( $last ) || ! is_array( $last ) ) {
             return null;
         }
+        $timestamp = (int) ( $last['time'] ?? $last['timestamp'] ?? strtotime( (string) ( $last['date'] ?? '' ) ) );
+        $id = (string) ( $last['id'] ?? $last['backup_id'] ?? '' );
+        if ( '' === $id && $timestamp > 0 ) $id = 'backuply_' . $timestamp;
         return [
-            'id'         => (string) ( $last['id'] ?? $last['backup_id'] ?? '' ),
-            'timestamp'  => (string) ( $last['time'] ?? $last['timestamp'] ?? '' ),
+            'id'         => $id,
+            'timestamp'  => $timestamp > 0 ? (string) $timestamp : '',
             'size_bytes' => (int)    ( $last['size'] ?? 0 ),
             'status'     => (string) ( $last['status'] ?? 'unknown' ),
             'provider'   => 'backuply_observed',
@@ -117,9 +132,14 @@ class RP_Care_BackuplyObserved implements RP_Care_Backup_Provider {
         if ( empty( $descriptor['id'] ) ) {
             return new \WP_Error( 'invalid_descriptor', 'Descriptor is missing id.' );
         }
-        $logs = get_option( 'backuply_backup_log', [] );
+        $logs = array_merge(
+            is_array( get_option( 'backuply_backup_log', [] ) ) ? get_option( 'backuply_backup_log', [] ) : [],
+            is_array( get_option( 'backuply_backup_list', [] ) ) ? get_option( 'backuply_backup_list', [] ) : []
+        );
         foreach ( $logs as $entry ) {
-            $entry_id = (string) ( $entry['id'] ?? $entry['backup_id'] ?? '' );
+            if ( ! is_array( $entry ) ) continue;
+            $timestamp = (int) ( $entry['time'] ?? $entry['timestamp'] ?? strtotime( (string) ( $entry['date'] ?? '' ) ) );
+            $entry_id = (string) ( $entry['id'] ?? $entry['backup_id'] ?? ( $timestamp > 0 ? 'backuply_' . $timestamp : '' ) );
             if ( $entry_id === $descriptor['id'] ) {
                 $status = $entry['status'] ?? '';
                 if ( in_array( $status, [ 'complete', 'success', 'completed' ], true ) ) {

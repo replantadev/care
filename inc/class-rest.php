@@ -1730,18 +1730,18 @@ class RP_Care_REST {
 
         $plan = class_exists('RP_Care_Plan') ? (RP_Care_Plan::get_current() ?: '') : '';
 
-        // Last backup timestamp (prefer B2 option, fallback to legacy).
-        $b2_data        = get_option('rpcare_last_b2_backup', null);
-        $backup_last_at = '';
-        $backup_status  = '';
-        if (is_array($b2_data) && !empty($b2_data['timestamp'])) {
-            $backup_last_at = gmdate('Y-m-d H:i:s', (int) $b2_data['timestamp']);
-            $backup_status  = $b2_data['status'] ?? 'completed';
-        } elseif ($ts = get_option('rpcare_last_backup', '')) {
-            $backup_last_at = $ts;
-            $backup_status  = 'completed';
-        }
-		$backup_usable = in_array( $backup_status, [ 'complete', 'completed' ], true );
+        // Provider-specific canonical evidence. Never show a stale B2 result
+        // when the effective mode is managed_by_host (or vice versa).
+        $backup = class_exists( 'RP_Care_Environment' )
+            ? RP_Care_Environment::get_backup_report()
+            : [
+                'backup_mode' => 'disabled', 'backup_provider' => 'disabled',
+                'backup_configured' => false, 'backup_last_at' => null,
+                'backup_status' => null, 'backup_evidence_id' => null,
+                'backup_verified' => false, 'backup_restore_available' => false,
+                'backup_usable' => false,
+            ];
+        $backup_last_at = (string) ( $backup['backup_last_at'] ?? '' );
 
         // Plugin update inventory — cross-referenced with get_plugins() so orphaned
         // transient entries are excluded, matching WordPress admin's own count.
@@ -1843,8 +1843,14 @@ class RP_Care_REST {
             'wp_version'           => get_bloginfo('version'),
             'site_url'             => get_site_url(),
             'backup_last_at'       => $backup_last_at,
-            'backup_status'        => $backup_status,
-			'backup_usable'        => $backup_usable,
+            'backup_mode'          => $backup['backup_mode'],
+            'backup_provider'      => $backup['backup_provider'],
+            'backup_configured'    => $backup['backup_configured'],
+            'backup_status'        => $backup['backup_status'],
+            'backup_evidence_id'   => $backup['backup_evidence_id'],
+            'backup_verified'      => $backup['backup_verified'],
+            'backup_restore_available' => $backup['backup_restore_available'],
+			'backup_usable'        => $backup['backup_usable'],
             'backup_stale'             => $backup_stale,
             'updates_pending_total'    => $inv['actionable_total'],   // installed-only; excludes orphaned
             'updates_checked_at'       => $inv['checked_at'],

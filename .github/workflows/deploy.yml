@@ -100,6 +100,10 @@ jobs:
           # Build from the committed tree, never from mutable checkout/vendor files.
           git archive --format=tar --output=/tmp/replanta-care-source.tar HEAD
           tar -xf /tmp/replanta-care-source.tar -C /tmp/source
+          # composer manifests are intentionally export-ignored from distribution,
+          # but are required transiently to regenerate the production autoloader.
+          git show HEAD:composer.json > /tmp/source/composer.json
+          git show HEAD:composer.lock > /tmp/source/composer.lock
           (cd /tmp/source && composer install \
             --no-dev --prefer-dist --no-progress --no-interaction \
             --classmap-authoritative)

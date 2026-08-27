@@ -198,6 +198,10 @@ reconstrucción `vendor --no-dev`, smoke, publicación y registro en License API
 - 31 plugins instalados: 24 activos y 7 inactivos.
 - 13 muestran la etiqueta visual `Gestionado por Replanta`; esta etiqueta no
   determina si existe una actualización ni si el Pipeline puede prepararla.
+- La condición visual está invertida en el código legacy: la etiqueta se añade
+  cuando `is_plugin_update_allowed()` devuelve `false`. Debe eliminarse o
+  sustituirse por estados explícitos (`inventariado`, `paquete disponible`,
+  `elegible`, `gestionado por Pipeline`), nunca por una heurística premium.
 - WordPress muestra 3 actualizaciones: Advanced Database Cleaner PRO, Astra Pro
   y Elementor Pro.
 - PC muestra 2 porque Advanced Database Cleaner PRO llega en el transient con un

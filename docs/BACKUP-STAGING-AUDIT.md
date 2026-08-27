@@ -193,6 +193,33 @@ reconstrucción `vendor --no-dev`, smoke, publicación y registro en License API
   riesgo solo para forzar el piloto.
 - [ ] Ejecutar el E2E completo de staging, pruebas, aprobación, producción y rollback.
 
+### Inventario observado en Banban — 28-08-2026
+
+- 31 plugins instalados: 24 activos y 7 inactivos.
+- 13 muestran la etiqueta visual `Gestionado por Replanta`; esta etiqueta no
+  determina si existe una actualización ni si el Pipeline puede prepararla.
+- WordPress muestra 3 actualizaciones: Advanced Database Cleaner PRO, Astra Pro
+  y Elementor Pro.
+- PC muestra 2 porque Advanced Database Cleaner PRO llega en el transient con un
+  `plugin_file`/slug que no coincide con la ruta instalada y el inventario
+  canónico actual lo separa como huérfano. Pendiente resolver la identidad por
+  una reconciliación segura, sin aceptar coincidencias ambiguas por nombre.
+
+### Feature apuntado — ZIP premium aportado desde PC
+
+- [ ] Permitir que un administrador aporte el ZIP oficial al preparar un plugin
+  sin `package` en el transient.
+- [ ] Reutilizar `PC_Artifact_Store::store_uploaded_bytes()` y conservar el ZIP
+  fuera del webroot, con SHA-256 y deduplicación.
+- [ ] Validar ZIP antes de aceptarlo: límites de tamaño/descompresión, traversal,
+  symlinks, raíz única, cabecera de plugin, `plugin_file`, slug y versión destino.
+- [ ] Vincular el artefacto a `group_id`, site de producción, `inventory_hash`,
+  plugin y versión; registrar procedencia `admin_uploaded_premium` y auditoría.
+- [ ] Mantener exactamente el mismo SHA-256 para staging y producción; nunca
+  volver a descargar ni sustituir el ZIP después de aprobar el lote.
+- [ ] Añadir expiración/retención, eliminación segura y tests negativos. El ZIP
+  manual no puede saltarse exclusiones, pins, riesgo máximo, backup o aprobación.
+
 ### Sprints posteriores
 
 - [ ] Validar en vivo la proyección PC → Care y las coberturas de `Impulso Ecommerce`.

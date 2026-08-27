@@ -2991,6 +2991,10 @@ class RP_Care_REST {
                 ksort( $orphaned );
                 $plugins  = array_values( $plugins );
                 $orphaned = array_values( $orphaned );
+            } else {
+                // A timestamp without a response[] collection is not a usable
+                // inventory, even when last_checked is recent.
+                $plugins_stale = true;
             }
         }
 

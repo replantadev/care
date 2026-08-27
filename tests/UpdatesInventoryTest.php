@@ -230,10 +230,13 @@ class UpdatesInventoryTest extends TestCase {
 
     public function test_in07_transient_object_without_response_array_returns_null(): void {
         update_option( 'rpcare_options', [ 'site_token' => self::RAW_TOKEN ] );
-        $this->setTransient( new stdClass() );
+        $transient = new stdClass();
+        $transient->last_checked = time();
+        $this->setTransient( $transient );
         $data = $this->callInventory( $this->validHeader() )->get_data();
         $this->assertNull( $data['raw_total'] );
         $this->assertNull( $data['actionable_total'] );
+        $this->assertTrue( $data['stale'], 'A recent timestamp cannot make a missing response[] inventory fresh.' );
     }
 
     public function test_in08_empty_response_returns_zero_totals(): void {

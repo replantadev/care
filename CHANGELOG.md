@@ -1,5 +1,10 @@
 # Changelog — Replanta Care
 
+## [1.16.22]
+
+- Un transient con `last_checked` pero sin colección `response[]` vuelve a
+  declararse `stale=true`; Care nunca presenta un inventario `null` como fresco.
+
 ## [1.16.21]
 
 - `/updates/inventory` acepta `refresh=true` únicamente con autenticación Hub y

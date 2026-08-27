@@ -1,22 +1,36 @@
 # Auditoría de backups, staging e Impulso Ecommerce
 
-Fecha de revisión: 2026-08-26. Este documento distingue capacidades verificadas,
+Fecha de revisión: 2026-08-28. Este documento distingue capacidades verificadas,
 declaradas y pendientes. Es la fuente fresca de decisiones para el piloto
 `dev.banbancosmetics.com` → `dev2.banbancosmetics.com`.
 
 ## Veredicto actual del piloto
 
-El diseño central falla cerrado y es una buena base, pero el piloto no está listo
-para ejecutar un lote real. Estado medido el 26-08-2026:
+El diseño central falla cerrado y el canal Pipeline emparejado está operativo,
+pero el piloto todavía no puede ejecutar un lote real. Estado medido el 28-08-2026:
 
 | Instancia | Care | Pipeline | Último poll | Backup |
 |---|---:|---|---|---|
-| `dev.banbancosmetics.com` | 1.16.19 | activo y programado | reciente | `managed_by_host`, último estado B2 `failed`, no utilizable |
-| `dev2.banbancosmetics.com` | 1.16.15 | activo, pero sin acción programada | 24-08-2026 | sin evidencia utilizable |
+| `dev.banbancosmetics.com` | 1.16.22 | activo, programado, 0 fallos Pipeline | reciente | `managed_by_host`, sin evidencia, no utilizable |
+| `dev2.banbancosmetics.com` | 1.16.22 | activo, programado, 0 fallos Pipeline | reciente | staging emparejado; no se usa como prueba de backup de producción |
 
-Bloqueos confirmados: Care de staging desactualizado, poller de staging ausente,
-backup de producción no utilizable y ausencia de una actualización de riesgo `low`
-con paquete exportable.
+Bloqueo técnico confirmado por PC: `backup_not_usable@production`. Además no hay
+un candidato ejecutable con la política actual: Astra Pro es `medium` y no expone
+paquete; Elementor Pro es `high` aunque sí expone paquete. Con máximo `low` hay
+cero actualizaciones elegibles. El inventario de staging puede ser `null/stale`
+sin bloquear la selección, porque el manifiesto se congela desde producción.
+
+### Cierre de los hallazgos P0 revisados
+
+| Área | Estado vivo |
+|---|---|
+| Pairing, roles y URL de staging | Verificado |
+| Executor Care y auto-updates nativos | Verificado, sin drift |
+| Pull/poller en producción y staging | Verificado, reciente y autorrecuperable |
+| Versiones Care | 1.16.22 en ambas instancias |
+| Backup canónico por proveedor | Verificado; falla cerrado sin evidencia |
+| Elegibilidad por paquete/riesgo | Verificado server-side; 0 elegibles actualmente |
+| Release reproducible | Verificado en CI con ZIP smoke y License API |
 
 ## Contrato operativo
 
@@ -125,7 +139,7 @@ checkout de 30 minutos.
 |---|---|---|
 | Frecuencia 12 h | Parcial | El scheduler la aplica, pero debe respetar el modo de backup y mostrar evidencia del proveedor. |
 | Retención 90 días | Implementado en 1.16.8 | La limpieza B2 usa el máximo entre plan/opción y la retención del addon. Pendiente E2E contra un bucket real. |
-| Staging obligatorio | Implementado en 1.16.8/PC 1.2.13 | PC proyecta la política a producción y stagings y Care la muestra localmente. Pendiente validación en vivo. |
+| Staging obligatorio | Verificado en vivo | PC proyecta la política a producción y staging; roles, pull y ausencia de drift confirmados en Banban. |
 | Checkout/pasarela | Parcial | Comprueba páginas HTTP, REST y que haya una pasarela activa; no valida una sesión real carrito → confirmación ni el flujo de pago. |
 | Ventana fuera de pico | Parcial | Analiza pedidos clásicos en `wp_posts`; falta compatibilidad HPOS y coordinación como fuente única con la ventana de PC. |
 | Alerta/SLA 30 min | Parcial | Dos fallos a intervalos de 15 min generan alerta al Hub; falta medir acuse, escalado y tiempo real de respuesta. |
@@ -139,7 +153,7 @@ checkout de 30 minutos.
   independientemente del plan.
 - [x] Añadir tests de autorrecuperación, idempotencia y ausencia de duplicados.
 - [x] Añadir acción PC para actualizar/reparar Care de staging emparejado.
-- [ ] Actualizar `dev2` y demostrar heartbeat reciente sin crear comandos de lote.
+- [x] Actualizar `dev2` y demostrar heartbeat reciente sin crear comandos de lote.
 
 ### Sprint 2 — backup canónico por sitio
 
@@ -166,9 +180,18 @@ checkout de 30 minutos.
 - [x] Eliminar `curl -k` y actualizar `tested_wp`.
 - [x] Alinear `DEPLOY.md` con el workflow único.
 
-Los elementos marcados `[x]` están implementados y cubiertos localmente para
-Care 1.16.20 / Plugin Center 1.2.23. No sustituyen la validación del ZIP publicado
-ni las comprobaciones en vivo de `dev` y `dev2`.
+Los elementos marcados `[x]` están implementados, cubiertos y aceptados para
+Care 1.16.22 / Plugin Center 1.2.24. El ZIP de Care pasó lint, 483 tests,
+reconstrucción `vendor --no-dev`, smoke, publicación y registro en License API.
+
+### P0 que queda para el primer lote
+
+- [ ] Configurar en producción un perfil B2 con key limitada al bucket/prefijo.
+- [ ] Superar connection test, crear una copia completa y obtener `backup_id` + artefactos.
+- [ ] Verificar listado/integridad y realizar una prueba de restauración controlada.
+- [ ] Seleccionar una actualización `low` con paquete exportable; no elevar el
+  riesgo solo para forzar el piloto.
+- [ ] Ejecutar el E2E completo de staging, pruebas, aprobación, producción y rollback.
 
 ### Sprints posteriores
 

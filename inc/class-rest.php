@@ -2867,9 +2867,12 @@ class RP_Care_REST {
      *   orphaned_total  int|null raw_total − actionable_total
      *   plugins         array  actionable entries (installed, update available)
      *   orphaned_plugins array  orphaned entries (transient entry but file absent)
+     *   installed_plugins_total int all plugin main files currently installed
+     *   installed_plugins array  canonical installed identity list, including plugins
+     *                            whose vendor updater does not populate update_plugins
      *   themes_total    int|null count(themes); null when theme transient absent
      *   themes          array  per-theme entries
-     *   inventory_hash  string sha256 of plugins+orphaned_plugins+themes (stable, no timestamps)
+     *   inventory_hash  string sha256 of installed_plugins+updates+themes (stable, no timestamps)
      *
      * Per-plugin fields (both plugins[] and orphaned_plugins[]):
      *   plugin_file       string  transient key (path relative to wp-content/plugins)
@@ -2928,6 +2931,25 @@ class RP_Care_REST {
             $installed_map = get_plugins();
         }
         $installed_keys = array_flip( array_keys( $installed_map ) );
+
+        // Canonical installed identity list. Some premium vendors render their
+        // own wp-admin notice without adding an entry to update_plugins. PC
+        // needs this list to bind an operator-uploaded ZIP to the exact plugin
+        // main file and installed version without fuzzy name/slug matching.
+        $installed_plugins = [];
+        foreach ( $installed_map as $plugin_file => $headers ) {
+            if ( ! is_string( $plugin_file ) || '' === $plugin_file || ! is_array( $headers ) ) continue;
+            $slug = dirname( $plugin_file );
+            if ( '.' === $slug || '' === $slug ) $slug = $plugin_file;
+            $installed_plugins[ $plugin_file ] = [
+                'plugin_file'       => $plugin_file,
+                'slug'              => $slug,
+                'name'              => (string) ( $headers['Name'] ?? '' ),
+                'installed_version' => (string) ( $headers['Version'] ?? '' ),
+            ];
+        }
+        ksort( $installed_plugins );
+        $installed_plugins = array_values( $installed_plugins );
 
         // ── Plugins ──────────────────────────────────────────────────────────
 
@@ -3023,11 +3045,16 @@ class RP_Care_REST {
         }
 
         // ── Inventory hash ────────────────────────────────────────────────────
-        // Covers plugins + orphaned_plugins + themes; excludes timestamps.
+        // Covers installed identities + updates + themes; excludes timestamps.
         $inventory_hash = hash(
             'sha256',
             json_encode(
-                [ 'plugins' => $plugins, 'orphaned_plugins' => $orphaned, 'themes' => $themes ],
+                [
+                    'installed_plugins' => $installed_plugins,
+                    'plugins'           => $plugins,
+                    'orphaned_plugins'  => $orphaned,
+                    'themes'            => $themes,
+                ],
                 JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
             ) ?: ''
         );
@@ -3044,6 +3071,8 @@ class RP_Care_REST {
                 'orphaned_total'   => $orphaned_count,
                 'plugins'          => $plugins,
                 'orphaned_plugins' => $orphaned,
+                'installed_plugins_total' => count( $installed_plugins ),
+                'installed_plugins'       => $installed_plugins,
                 'themes_total'     => $themes_total,
                 'themes'           => $themes,
                 'inventory_hash'   => $inventory_hash,

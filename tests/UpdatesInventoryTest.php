@@ -64,6 +64,11 @@
  *   IN-33  hub_ping() returns updates_pending=4 (alias, same value as total)
  *   IN-34  hub_ping() returns updates_orphaned=1
  *   IN-35  inventory endpoint separates correctly: 4 in plugins[], 1 in orphaned_plugins[]
+ *
+ * Installed identity list (premium providers without a standard transient):
+ *   IN-36  all installed plugins are exposed even when response[] is empty
+ *   IN-37  installed list is sorted and contains only safe identity metadata
+ *   IN-38  inventory hash changes when an installed-only plugin version changes
  */
 
 declare( strict_types=1 );
@@ -529,6 +534,56 @@ class UpdatesInventoryTest extends TestCase {
         $this->setInstalledPlugins( [ 'q/q.php' => [ 'Name' => 'Q', 'Version' => '1' ] ] );
         $hash3 = $this->callInventory( $this->validHeader() )->get_data()['inventory_hash'];
         $this->assertNotSame( $hash1, $hash3, 'Different content → different hash' );
+    }
+
+    public function test_in36_installed_plugins_include_entries_without_standard_update(): void {
+        update_option( 'rpcare_options', [ 'site_token' => self::RAW_TOKEN ] );
+        $this->setTransient( $this->makePluginTransient( [] ) );
+        $this->setInstalledPlugins( [
+            'advanced-database-cleaner-pro/advanced-db-cleaner.php' => [
+                'Name' => 'Advanced Database Cleaner PRO', 'Version' => '3.2.10',
+            ],
+            'plain/plain.php' => [ 'Name' => 'Plain', 'Version' => '1.0.0' ],
+        ] );
+
+        $data = $this->callInventory( $this->validHeader() )->get_data();
+
+        $this->assertSame( 0, $data['actionable_total'] );
+        $this->assertSame( 2, $data['installed_plugins_total'] );
+        $this->assertCount( 2, $data['installed_plugins'] );
+        $this->assertSame(
+            'advanced-database-cleaner-pro/advanced-db-cleaner.php',
+            $data['installed_plugins'][0]['plugin_file']
+        );
+    }
+
+    public function test_in37_installed_plugins_are_sorted_and_metadata_is_minimal(): void {
+        update_option( 'rpcare_options', [ 'site_token' => self::RAW_TOKEN ] );
+        $this->setTransient( $this->makePluginTransient( [] ) );
+        $this->setInstalledPlugins( [
+            'z/z.php' => [ 'Name' => 'Zulu', 'Version' => '9.0', 'Author' => 'Secret-ish extra' ],
+            'a/a.php' => [ 'Name' => 'Alpha', 'Version' => '1.0' ],
+        ] );
+
+        $items = $this->callInventory( $this->validHeader() )->get_data()['installed_plugins'];
+        $this->assertSame( [ 'a/a.php', 'z/z.php' ], array_column( $items, 'plugin_file' ) );
+        $this->assertSame(
+            [ 'plugin_file', 'slug', 'name', 'installed_version' ],
+            array_keys( $items[0] )
+        );
+        $this->assertStringNotContainsString( 'Secret-ish', wp_json_encode( $items ) );
+    }
+
+    public function test_in38_inventory_hash_binds_installed_only_version(): void {
+        update_option( 'rpcare_options', [ 'site_token' => self::RAW_TOKEN ] );
+        $this->setTransient( $this->makePluginTransient( [] ) );
+        $this->setInstalledPlugins( [ 'premium/premium.php' => [ 'Name' => 'Premium', 'Version' => '1.0.0' ] ] );
+        $first = $this->callInventory( $this->validHeader() )->get_data()['inventory_hash'];
+
+        $this->setInstalledPlugins( [ 'premium/premium.php' => [ 'Name' => 'Premium', 'Version' => '1.0.1' ] ] );
+        $second = $this->callInventory( $this->validHeader() )->get_data()['inventory_hash'];
+
+        $this->assertNotSame( $first, $second );
     }
 
     // ── IN-30: Theme handling ─────────────────────────────────────────────────

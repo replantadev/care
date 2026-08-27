@@ -265,13 +265,14 @@ class RP_Care_Update_Control {
     }
     
     /**
-     * Add an informational label for plugins managed by Care's automatic pipeline.
-     * Does NOT remove the 'update' action link — the administrator can always update manually.
+     * Mark plugins as monitored by Care.
+     *
+     * This label deliberately makes no claim about automatic-update eligibility:
+     * that decision belongs to Plugin Center's live policy and package gates.
+     * The administrator's manual update link is always preserved.
      */
     public function modify_plugin_action_links($actions, $plugin_file) {
-        if (!$this->is_plugin_update_allowed($plugin_file)) {
-            $actions['rpcare_controlled'] = '<span style="display:inline-flex;align-items:center;gap:4px;background:#eaf4ee;color:#1a5e36;border:1px solid #c3e6cd;border-radius:3px;padding:2px 8px;font-size:11px;font-weight:500;line-height:1.6;">&#9679; Gestionado por Replanta</span>';
-        }
+        $actions['rpcare_controlled'] = '<span title="Care supervisa el inventario; Plugin Center decide si la actualización es elegible" style="display:inline-flex;align-items:center;gap:4px;background:#eaf4ee;color:#1a5e36;border:1px solid #c3e6cd;border-radius:3px;padding:2px 8px;font-size:11px;font-weight:500;line-height:1.6;">&#9679; Supervisado por Replanta</span>';
         return $actions;
     }
     
@@ -287,7 +288,7 @@ class RP_Care_Update_Control {
             
             echo '<div class="notice notice-info">
                 <p><span class="dashicons dashicons-shield-alt" style="color:#00a32a;vertical-align:middle;"></span> <strong>Replanta Care — Gestión de Actualizaciones</strong></p>
-                <p>Replanta Care gestiona las actualizaciones automáticas de plugins según tu plan <strong>' . esc_html($plan_name) . '</strong>. Puedes actualizar cualquier plugin manualmente desde esta pantalla en cualquier momento.</p>
+                <p>Replanta Care supervisa el inventario de plugins según tu plan <strong>' . esc_html($plan_name) . '</strong>. Plugin Center decide qué actualizaciones cumplen la política y disponen de un paquete verificable. Puedes actualizar cualquier plugin manualmente desde esta pantalla en cualquier momento.</p>
             </div>';
         }
     }

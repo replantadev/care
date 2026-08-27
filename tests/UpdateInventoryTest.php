@@ -364,7 +364,7 @@ class UpdateInventoryTest extends TestCase {
         $this->assertTrue( $payload['updates_inventory_stale'] );
     }
 
-    // ── UI-18/19: modify_plugin_action_links — non-allowed plugin ─────────────
+    // ── UI-18/19: every installed plugin is truthfully marked as supervised ──
 
     public function test_ui18_update_link_preserved_for_non_allowed_plugin(): void {
         // Plugin with no premium indicators → is_licensed_plugin() = false → not allowed.
@@ -386,7 +386,9 @@ class UpdateInventoryTest extends TestCase {
         $result = $uc->modify_plugin_action_links( $actions, $file );
 
         $this->assertArrayHasKey( 'rpcare_controlled', $result,
-            "'rpcare_controlled' label must be added for plugins Care manages" );
+            "'rpcare_controlled' label must be added for plugins Care supervises" );
+        $this->assertStringContainsString( 'Supervisado por Replanta', $result['rpcare_controlled'] );
+        $this->assertStringNotContainsString( 'Gestionado por Replanta', $result['rpcare_controlled'] );
     }
 
     // ── UI-20/21: modify_plugin_action_links — allowed (replanta-*) plugin ────
@@ -401,15 +403,16 @@ class UpdateInventoryTest extends TestCase {
         $this->assertArrayHasKey( 'update', $result );
     }
 
-    public function test_ui21_label_not_added_for_allowed_replanta_plugin(): void {
+    public function test_ui21_supervision_label_also_added_for_replanta_plugin(): void {
         $file    = 'replanta-care/replanta-care.php';
         $actions = [ 'deactivate' => 'Deactivate', 'update' => 'Update' ];
         $uc      = new RP_Care_Update_Control();
 
         $result = $uc->modify_plugin_action_links( $actions, $file );
 
-        $this->assertArrayNotHasKey( 'rpcare_controlled', $result,
-            "label must NOT be added for replanta-* plugins (they are allowed)" );
+        $this->assertArrayHasKey( 'rpcare_controlled', $result,
+            'inventory supervision applies independently of update eligibility' );
+        $this->assertStringContainsString( 'Plugin Center decide', $result['rpcare_controlled'] );
     }
 
     // ── UI-22: bulk update action NOT removed ─────────────────────────────────

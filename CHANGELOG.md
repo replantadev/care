@@ -1,5 +1,15 @@
 # Changelog — Replanta Care
 
+## [1.16.23]
+
+- `/updates/inventory` incorpora la identidad canónica de todos los plugins
+  instalados, incluidos los proveedores premium que no publican su aviso en el
+  transient estándar. El hash queda ligado también a esas versiones instaladas.
+- La etiqueta legacy `Gestionado por Replanta` se sustituye por
+  `Supervisado por Replanta` para todo el inventario. La elegibilidad real sigue
+  siendo competencia de los gates vivos de Plugin Center y nunca se ocultan las
+  actualizaciones manuales.
+
 ## [1.16.22]
 
 - Un transient con `last_checked` pero sin colección `response[]` vuelve a

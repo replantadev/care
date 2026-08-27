@@ -181,7 +181,9 @@ checkout de 30 minutos.
 - [x] Alinear `DEPLOY.md` con el workflow único.
 
 Los elementos marcados `[x]` están implementados, cubiertos y aceptados para
-Care 1.16.22 / Plugin Center 1.2.24. El ZIP de Care pasó lint, 483 tests,
+Care 1.16.23 / Plugin Center 1.2.25. Care pasa 486 tests y PC 372 tests;
+la publicación y validación en vivo de estas dos versiones queda pendiente.
+El ZIP anterior de Care pasó lint, 483 tests,
 reconstrucción `vendor --no-dev`, smoke, publicación y registro en License API.
 
 ### P0 que queda para el primer lote
@@ -196,32 +198,31 @@ reconstrucción `vendor --no-dev`, smoke, publicación y registro en License API
 ### Inventario observado en Banban — 28-08-2026
 
 - 31 plugins instalados: 24 activos y 7 inactivos.
-- 13 muestran la etiqueta visual `Gestionado por Replanta`; esta etiqueta no
-  determina si existe una actualización ni si el Pipeline puede prepararla.
-- La condición visual está invertida en el código legacy: la etiqueta se añade
-  cuando `is_plugin_update_allowed()` devuelve `false`. Debe eliminarse o
-  sustituirse por estados explícitos (`inventariado`, `paquete disponible`,
-  `elegible`, `gestionado por Pipeline`), nunca por una heurística premium.
+- En Care 1.16.22, 13 mostraban la etiqueta invertida
+  `Gestionado por Replanta`. Care 1.16.23 la sustituye por
+  `Supervisado por Replanta` para todos: describe inventario/monitorización, no
+  promete elegibilidad ni actualización automática.
 - WordPress muestra 3 actualizaciones: Advanced Database Cleaner PRO, Astra Pro
   y Elementor Pro.
-- PC muestra 2 porque Advanced Database Cleaner PRO llega en el transient con un
-  `plugin_file`/slug que no coincide con la ruta instalada y el inventario
-  canónico actual lo separa como huérfano. Pendiente resolver la identidad por
-  una reconciliación segura, sin aceptar coincidencias ambiguas por nombre.
+- PC mostraba 2 porque Advanced Database Cleaner PRO no aparece en absoluto en
+  el transient estándar: su aviso lo genera el actualizador propio del proveedor.
+  Care 1.16.23 expone además el inventario completo instalado; PC 1.2.25 permite
+  aportar el ZIP oficial contra su `plugin_file` exacto, sin coincidencias
+  ambiguas por nombre o slug.
 
 ### Feature apuntado — ZIP premium aportado desde PC
 
-- [ ] Permitir que un administrador aporte el ZIP oficial al preparar un plugin
+- [x] Permitir que un administrador aporte el ZIP oficial al preparar un plugin
   sin `package` en el transient.
-- [ ] Reutilizar `PC_Artifact_Store::store_uploaded_bytes()` y conservar el ZIP
+- [x] Reutilizar `PC_Artifact_Store::store_uploaded_bytes()` y conservar el ZIP
   fuera del webroot, con SHA-256 y deduplicación.
-- [ ] Validar ZIP antes de aceptarlo: límites de tamaño/descompresión, traversal,
+- [x] Validar ZIP antes de aceptarlo: límites de tamaño/descompresión, traversal,
   symlinks, raíz única, cabecera de plugin, `plugin_file`, slug y versión destino.
-- [ ] Vincular el artefacto a `group_id`, site de producción, `inventory_hash`,
+- [x] Vincular el artefacto a `group_id`, site de producción, `inventory_hash`,
   plugin y versión; registrar procedencia `admin_uploaded_premium` y auditoría.
-- [ ] Mantener exactamente el mismo SHA-256 para staging y producción; nunca
+- [x] Mantener exactamente el mismo SHA-256 para staging y producción; nunca
   volver a descargar ni sustituir el ZIP después de aprobar el lote.
-- [ ] Añadir expiración/retención, eliminación segura y tests negativos. El ZIP
+- [x] Añadir expiración/retención, eliminación segura y tests negativos. El ZIP
   manual no puede saltarse exclusiones, pins, riesgo máximo, backup o aprobación.
 
 ### Sprints posteriores

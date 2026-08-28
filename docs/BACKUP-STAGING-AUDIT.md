@@ -182,8 +182,8 @@ checkout de 30 minutos.
 
 Los elementos marcados `[x]` están implementados, cubiertos y aceptados para
 Care 1.16.23 / Plugin Center 1.2.26. Care pasa 486 tests y ya está publicado;
-PC añade carga fragmentada y pasa 377 tests. La publicación y validación en vivo
-de PC 1.2.26 queda pendiente. El ZIP de Care pasó reconstrucción
+PC añade carga fragmentada, pasa 377 tests y su endpoint vivo confirma 1.2.26.
+El ZIP de Care pasó reconstrucción
 `vendor --no-dev`, smoke, publicación y registro en License API.
 
 ### P0 que queda para el primer lote

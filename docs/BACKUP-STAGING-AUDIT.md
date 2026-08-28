@@ -181,10 +181,10 @@ checkout de 30 minutos.
 - [x] Alinear `DEPLOY.md` con el workflow único.
 
 Los elementos marcados `[x]` están implementados, cubiertos y aceptados para
-Care 1.16.23 / Plugin Center 1.2.25. Care pasa 486 tests y PC 372 tests;
-la publicación y validación en vivo de estas dos versiones queda pendiente.
-El ZIP anterior de Care pasó lint, 483 tests,
-reconstrucción `vendor --no-dev`, smoke, publicación y registro en License API.
+Care 1.16.23 / Plugin Center 1.2.26. Care pasa 486 tests y ya está publicado;
+PC añade carga fragmentada y pasa 377 tests. La publicación y validación en vivo
+de PC 1.2.26 queda pendiente. El ZIP de Care pasó reconstrucción
+`vendor --no-dev`, smoke, publicación y registro en License API.
 
 ### P0 que queda para el primer lote
 

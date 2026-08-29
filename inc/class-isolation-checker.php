@@ -163,9 +163,10 @@ class RP_Care_Isolation_Checker {
 
         // Check if 'woocommerce_email_enabled_*' options are all set to 'no'.
         // Or if a staging plugin has hooked 'woocommerce_email_classes' to return [].
-        $option = get_option( 'rpcare_staging_woo_email_suppressed', false );
-        if ( $option ) {
-            return self::ok( 'woo_emails', 'WooCommerce emails suppressed via rpcare option.' );
+        $option      = get_option( 'rpcare_staging_woo_email_suppressed', false );
+        $email_sink  = class_exists( 'RP_Care_Staging_Email_Sink' ) && RP_Care_Staging_Email_Sink::is_active();
+        if ( $option || $email_sink ) {
+            return self::ok( 'woo_emails', 'WooCommerce emails are covered by the staging email sink.' );
         }
 
         return self::fail(
@@ -224,7 +225,12 @@ class RP_Care_Isolation_Checker {
     }
 
     private static function check_redis_isolated(): array {
-        $redis_configured = defined( 'WP_REDIS_HOST' ) || defined( 'WP_REDIS_SCHEME' ) || class_exists( 'WP_Object_Cache' );
+        // WP_Object_Cache is WordPress core and is not evidence of Redis.
+        // Only Redis-specific configuration/drop-ins should activate this gate.
+        $redis_configured = defined( 'WP_REDIS_HOST' )
+            || defined( 'WP_REDIS_SCHEME' )
+            || defined( 'WP_REDIS_SERVERS' )
+            || class_exists( 'Redis_Object_Cache' );
         if ( ! $redis_configured ) {
             return self::skip( 'redis_isolated', 'Redis not detected.' );
         }

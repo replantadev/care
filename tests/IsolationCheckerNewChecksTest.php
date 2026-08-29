@@ -15,6 +15,12 @@ if ( ! function_exists( 'wp_get_environment_type' ) ) {
     }
 }
 
+// WordPress core always provides this class; it must not be mistaken for a
+// Redis drop-in by the isolation gate.
+if ( ! class_exists( 'WP_Object_Cache' ) ) {
+    class WP_Object_Cache {}
+}
+
 if ( ! class_exists( 'RP_Care_Pipeline_Client' ) ) {
     require_once __DIR__ . '/../inc/class-pipeline-client.php';
 }
@@ -56,7 +62,7 @@ class IsolationCheckerNewChecksTest extends TestCase {
     // ── check_redis_isolated ──────────────────────────────────────────────────
 
     public function test_redis_skipped_when_not_configured(): void {
-        // No WP_REDIS_HOST defined, no WP_Object_Cache class.
+        // Core WP_Object_Cache exists, but no Redis-specific signal exists.
         $result = $this->run_check( 'redis_isolated' );
         $this->assertSame( 'skipped', $result['status'] );
     }

@@ -36,6 +36,14 @@ class RP_Care_Staging_Email_Sink {
 			return;
 		}
 		add_filter( 'wp_mail', [ self::class, 'intercept' ], 99 );
+		add_action( 'send_headers', [ self::class, 'send_noindex_header' ], 99 );
+	}
+
+	/** Defense in depth: every staging response discourages indexing. */
+	public static function send_noindex_header(): void {
+		if ( ! headers_sent() ) {
+			header( 'X-Robots-Tag: noindex, nofollow, noarchive', true );
+		}
 	}
 
 	/**

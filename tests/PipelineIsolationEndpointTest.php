@@ -31,6 +31,7 @@ class PipelineIsolationEndpointTest extends TestCase {
 
     protected function tearDown(): void {
         RP_Care_REST::$isolation_report_reader = null;
+        RP_Care_REST::$pipeline_poll_runner = null;
     }
 
     private function request( ?string $token = null ): WP_REST_Request {
@@ -49,6 +50,30 @@ class PipelineIsolationEndpointTest extends TestCase {
         ) );
         $this->assertCount( 1, $matches );
         $this->assertSame( 'POST', $matches[0]['args']['methods'] );
+    }
+
+    public function test_pipeline_poll_now_route_is_registered_as_post(): void {
+        $this->rest->register_routes();
+        $matches = array_values( array_filter(
+            $GLOBALS['_rest_routes'],
+            fn( $r ) => '/pipeline/poll-now' === $r['route']
+        ) );
+        $this->assertCount( 1, $matches );
+        $this->assertSame( 'POST', $matches[0]['args']['methods'] );
+    }
+
+    public function test_pipeline_poll_now_is_authenticated_and_runs_once(): void {
+        $calls = 0;
+        RP_Care_REST::$pipeline_poll_runner = static function () use ( &$calls ): array {
+            $calls++;
+            return [ 'ok' => true, 'commands_processed' => 1 ];
+        };
+
+        $this->assertSame( 403, $this->rest->hub_pipeline_poll_now( $this->request() )->get_status() );
+        $response = $this->rest->hub_pipeline_poll_now( $this->request( hash( 'sha256', self::TOKEN ) ) );
+        $this->assertSame( 200, $response->get_status() );
+        $this->assertSame( 1, $response->get_data()['commands_processed'] );
+        $this->assertSame( 1, $calls );
     }
 
     public function test_missing_or_wrong_token_is_rejected(): void {

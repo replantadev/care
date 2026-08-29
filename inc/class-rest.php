@@ -20,6 +20,9 @@ class RP_Care_REST {
     /** @var callable|null Test seam for an authenticated inventory refresh. */
     public static $inventory_refresher = null;
 
+    /** @var callable|null Test seam for an authenticated immediate pipeline poll. */
+    public static $pipeline_poll_runner = null;
+
     public function __construct() {
         add_action('rest_api_init', [$this, 'register_routes']);
     }
@@ -155,6 +158,11 @@ class RP_Care_REST {
 		register_rest_route( $this->control_ns, '/pipeline/heartbeat', [
 			'methods'             => 'POST',
 			'callback'            => [ $this, 'hub_pipeline_heartbeat' ],
+			'permission_callback' => '__return_true',
+		] );
+		register_rest_route( $this->control_ns, '/pipeline/poll-now', [
+			'methods'             => 'POST',
+			'callback'            => [ $this, 'hub_pipeline_poll_now' ],
 			'permission_callback' => '__return_true',
 		] );
 
@@ -2844,6 +2852,21 @@ class RP_Care_REST {
 		}
 		$result = RP_Care_Pipeline_Client::send_heartbeat();
 		return new WP_REST_Response( $result, ! empty( $result['success'] ) ? 200 : 502 );
+	}
+
+	/** Authenticated operational trigger: lease and execute the next PC command now. */
+	public function hub_pipeline_poll_now( WP_REST_Request $request ): WP_REST_Response {
+		if ( ! $this->validate_hub_token( $request, true ) ) {
+			return new WP_REST_Response( [ 'error' => 'Unauthorized' ], 403 );
+		}
+		if ( is_callable( self::$pipeline_poll_runner ) ) {
+			$result = call_user_func( self::$pipeline_poll_runner );
+			return new WP_REST_Response( is_array( $result ) ? $result : [ 'ok' => false, 'error' => 'invalid_poll_result' ], 200 );
+		}
+		if ( ! class_exists( 'RP_Care_Pipeline_Client' ) || ! RP_Care_Pipeline_Client::is_pipeline_enabled() ) {
+			return new WP_REST_Response( [ 'ok' => false, 'error' => 'pipeline_disabled' ], 409 );
+		}
+		return new WP_REST_Response( RP_Care_Pipeline_Client::poll_and_execute(), 200 );
 	}
 
     /**

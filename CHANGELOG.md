@@ -1,5 +1,12 @@
 # Changelog — Replanta Care
 
+## [1.16.24]
+
+- El estado de Smart Updates publica un SHA-256 de la identidad Pipeline local,
+  nunca su UUID ni credenciales. Plugin Center puede así demostrar que el Care
+  que mantiene un heartbeat está consultando exactamente la cola de la instancia
+  emparejada y bloquear identidades antiguas tras un reemparejamiento.
+
 ## [1.16.23]
 
 - `/updates/inventory` incorpora la identidad canónica de todos los plugins

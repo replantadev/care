@@ -205,6 +205,9 @@ class RP_Care_Environment {
 			? (bool) as_next_scheduled_action( 'rpcare_task_pipeline_poll', [], 'replanta-care' )
 			: ( function_exists( 'wp_next_scheduled' ) && (bool) wp_next_scheduled( 'rpcare_task_pipeline_poll' ) );
 		$backup = self::get_backup_report();
+		$pipeline_instance_id = class_exists( 'RP_Care_Pipeline_Client' )
+			? (string) get_option( RP_Care_Pipeline_Client::OPT_INSTANCE_ID, '' )
+			: '';
 
 		return [
 			'schema_version'         => 2,
@@ -214,6 +217,7 @@ class RP_Care_Environment {
 			'update_executor_source' => $source,
 			'native_auto_updates'    => $native,
 			'pipeline_enabled'       => $pipeline,
+			'pipeline_instance_fingerprint' => $pipeline_instance_id !== '' ? hash( 'sha256', $pipeline_instance_id ) : null,
 			'pipeline_last_poll'     => $last_poll ?: null,
 			'pipeline_poll_age_seconds' => $poll_age,
 			'pipeline_poll_scheduled' => $poll_scheduled,

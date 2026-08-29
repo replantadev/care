@@ -46,6 +46,7 @@ class SmartUpdatesStatusTest extends TestCase {
 			'pipeline_last_poll', 'pipeline_poll_age_seconds', 'pipeline_poll_scheduled',
 			'action_scheduler_available', 'as_failed_24h', 'backup_mode', 'backup_usable',
 			'pipeline_failed_actions',
+			'pipeline_instance_fingerprint',
         ];
         foreach ( $required as $key ) {
             $this->assertArrayHasKey( $key, $report, "Status report must include key: {$key}" );
@@ -163,5 +164,15 @@ class SmartUpdatesStatusTest extends TestCase {
         $report = RP_Care_Environment::get_status_report();
 
         $this->assertSame( RPCARE_VERSION, $report['plugin_version'] );
+    }
+
+    public function test_pipeline_instance_is_exposed_only_as_sha256_fingerprint(): void {
+        $raw = '5983e230-6e75-40e0-e8db-24981d210d76';
+        update_option( RP_Care_Pipeline_Client::OPT_INSTANCE_ID, $raw );
+
+        $report = RP_Care_Environment::get_status_report();
+
+        $this->assertSame( hash( 'sha256', $raw ), $report['pipeline_instance_fingerprint'] );
+        $this->assertStringNotContainsString( $raw, wp_json_encode( $report ) );
     }
 }

@@ -235,3 +235,28 @@ El ZIP de Care pasó reconstrucción
 - [ ] Validar WP Toolkit mediante credenciales/permisos reales del panel.
 - [ ] Actualizar checkout monitor para HPOS y prueba sintética sin cobros/emails.
 - [ ] E2E: backup verificable → staging → tests → aprobación → producción → rollback.
+
+## Incidente del primer lote — 29-08-2026
+
+El lote `a0ef3258-a29d-4f92-9678-f47dfb2b680a` permaneció toda la noche en
+`staging_sync_requested` pese a mostrar heartbeats recientes en producción y
+staging. El lote y el ZIP de Astra siguen siendo válidos; no deben recrearse.
+
+Causa de contrato: PC no comprobaba el resultado de `enqueue(prepare_staging)` y
+el panel no enlazaba el lote con el estado de su comando. Además, un heartbeat
+solo probaba actividad del poller, no que Care consultase con el mismo
+`instance_id` que el grupo canónico de PC. Tras un reemparejamiento podía existir
+un canal verde hacia una cola distinta.
+
+Corrección Care 1.16.24 / PC 1.2.29:
+
+- [x] Care expone únicamente el SHA-256 de su identidad Pipeline; nunca el UUID.
+- [x] PC compara esa huella con la instancia canónica y bloquea el falso verde.
+- [x] “Actualizar y reparar ambos Care” reempareja una identidad obsoleta.
+- [x] La creación del lote falla de forma explícita si no puede encolar staging.
+- [x] Operaciones muestra estado, intentos, fase y caducidad de `prepare_staging`.
+- [x] Recuperación idempotente: conserva lote/manifest/ZIP y solo reencola si la
+  orden falta, caducó, falló o terminó sin producir la transición esperada.
+- [ ] Validar en vivo que el lote #1 pasa a `waiting_manual_staging_refresh`.
+- [ ] Refrescar dev2 desde dev mediante WP Toolkit, comprobar aislamiento y
+  continuar con la actualización únicamente en staging.

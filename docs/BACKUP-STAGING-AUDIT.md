@@ -287,3 +287,47 @@ Corrección en Care 1.16.26 / PC 1.2.30:
 
 Regla operativa: después de cada refresh/clonado completo de staging se debe
 ejecutar **Reparar o reemparejar** antes de reencolar el lote.
+
+### Cierre en vivo del reemparejamiento — 2026-08-29
+
+El rechazo genérico `Pairing rejected by PC` no era un fallo de autorización.
+La instrumentación segura de PC 1.2.31/1.2.32 situó el fallo en `staging_link`:
+la instalación viva ya estaba marcada como schema `1.7.3`, pero no tenía la
+columna `extra_staging_instance_ids` que se había añadido al migrador sin subir
+su versión. MySQL rechazaba el enlace y la transacción devolvía el token a
+estado no consumido.
+
+Corrección y evidencia:
+
+- [x] PC 1.2.33 / schema 1.8.0 fuerza la migración idempotente y no avanza la
+  versión si faltan `extra_staging_instance_ids` o `result_json`.
+- [x] Dev2 obtuvo un UUID nuevo (`e622fbd8-...`), rol `staging` y credenciales
+  independientes; producción conservó su identidad.
+- [x] El grupo `27514146-...` y el lote #1 se conservaron; no se borró historial.
+- [x] La orden antigua, caducada y dirigida al UUID clonado quedó intacta para
+  auditoría; se creó una nueva `prepare_staging` para el UUID canónico.
+- [x] Care 1.16.27 añade `POST /pipeline/poll-now`, autenticado con Hub token;
+  PC 1.2.34 lo usa después de reencolar y mantiene la cola durable como fallback.
+- [x] El poll inmediato procesó una orden, la marcó `completed` y el lote #1
+  avanzó de `staging_sync_requested` a `waiting_manual_staging_refresh`.
+- [x] Care 1.16.28 corrige el falso positivo Redis (la clase core
+  `WP_Object_Cache` no prueba Redis), reconoce el email sink también para Woo y
+  emite `X-Robots-Tag` en respuestas staging.
+
+Gate vivo restante antes de aplicar Astra en dev2:
+
+- [ ] Cambiar en el `wp-config.php` de **dev2** el valor efectivo de
+  `WP_ENVIRONMENT_TYPE` de `production` a `staging`. Es el único fallo crítico
+  actual y no debe relajarse desde un plugin, porque WordPress carga esa
+  configuración antes que Care.
+- [ ] Repetir el informe de aislamiento. `db_isolated` y `robots_header` son
+  avisos, no bloqueos; conviene registrar la DB de producción y purgar caché
+  para que la cabecera nueva quede visible.
+- [ ] Confirmar el refresh manual y continuar el lote únicamente cuando el
+  informe autenticado devuelva `passed=true`.
+
+Observación: al actualizar Care en staging, el backup previo B2 fue bloqueado
+por el guard de webhooks para `api003.backblazeb2.com`. La actualización terminó
+correctamente, pero debe decidirse por contrato si un staging requiere backup
+propio o hereda la garantía del backup verificable de producción; no se debe
+ampliar la allowlist global de salida como atajo.

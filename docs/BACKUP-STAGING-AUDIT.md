@@ -266,3 +266,24 @@ que el guard de webhooks bloqueaba también el callback de emparejamiento hacia
 el Hub. Se permite ahora exclusivamente el origen configurado y el namespace
 `/wp-json/replanta-pc/v1/pipeline/`; no se añade el dominio a la allowlist global
 y el resto de POST externos o rutas del Hub siguen bloqueados.
+
+## Incidente de identidad tras clonación — 2026-08-29
+
+Al clonar `dev.banbancosmetics.com` sobre `dev2.banbancosmetics.com`, WP Toolkit
+copió también los tokens del Hub, el UUID Pipeline, la protección de replay y la
+cola de salida de producción. Un grupo que seguía completo en PC podía contener
+dos instalaciones con la misma identidad lógica.
+
+Corrección en Care 1.16.26 / PC 1.2.30:
+
+- Pipeline muestra **Reparar o reemparejar** incluso en grupos completos.
+- PC rota primero el token Hub exclusivo del staging y solicita rotación del UUID.
+- Care limpia los command IDs heredados y pone en `dead_letter` los eventos no
+  entregados copiados de producción, conservándolos para auditoría.
+- PC rechaza cualquier UUID que ya pertenezca a otra URL/rol/grupo y sustituye
+  el staging primario del grupo sin borrar la instancia anterior.
+- **Eliminar grupo** solo funciona si el grupo nunca tuvo lotes; con lote activo
+  o historial obliga a reparar/archivar para no dejar registros huérfanos.
+
+Regla operativa: después de cada refresh/clonado completo de staging se debe
+ejecutar **Reparar o reemparejar** antes de reencolar el lote.

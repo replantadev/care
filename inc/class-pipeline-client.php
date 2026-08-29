@@ -1503,13 +1503,16 @@ class RP_Care_Pipeline_Client {
         if ( $action === 'consume' ) {
             $raw_token     = sanitize_text_field( $body['token'] ?? '' );
             $canonical_url = esc_url_raw( $body['canonical_url'] ?? home_url() );
+            $rotate_identity = ! empty( $body['rotate_instance_id'] );
 
             if ( empty( $raw_token ) ) {
                 return new \WP_Error( 'missing_token', 'token is required.' );
             }
 
             $hub_url     = self::get_hub_url();
-            $instance_id = (string) get_option( self::OPT_INSTANCE_ID, wp_generate_uuid4() );
+            $instance_id = $rotate_identity
+                ? wp_generate_uuid4()
+                : (string) get_option( self::OPT_INSTANCE_ID, wp_generate_uuid4() );
 
             update_option( self::OPT_PAIRING_STATUS, self::STATUS_PAIRING );
             update_option( self::OPT_INSTANCE_ID, $instance_id );
@@ -1563,8 +1566,20 @@ class RP_Care_Pipeline_Client {
             update_option( self::OPT_GROUP_ID, $data['group_id'] ?? '' );
             update_option( self::OPT_ENVIRONMENT, $data['environment'] ?? 'production' );
             update_option( 'rpcare_pipeline_canonical_url', $canonical_url );
+
+            if ( $rotate_identity ) {
+                // A cloned staging must not replay production commands/events.
+                update_option( self::OPT_PROCESSED_CMDS, [] );
+                delete_option( self::OPT_LAST_POLL );
+                if ( class_exists( 'RP_Care_Pipeline_Outbox' ) ) {
+                    RP_Care_Pipeline_Outbox::quarantine_after_identity_rotation();
+                }
+            }
 			update_option( self::OPT_ENABLED, true );
 			self::ensure_poll_schedule( true );
+			if ( function_exists( 'as_enqueue_async_action' ) ) {
+				as_enqueue_async_action( 'rpcare_task_pipeline_poll', [], 'replanta-care', true );
+			}
 
             return [
                 'status'      => self::STATUS_READY,

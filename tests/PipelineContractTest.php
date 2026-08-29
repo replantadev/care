@@ -303,6 +303,43 @@ class CarePipelineContractTest extends TestCase {
         );
     }
 
+    public function test_clone_repair_rotates_staging_identity_and_replay_state(): void {
+        update_option( 'rpcare_options', [ 'hub_url' => 'https://hub.contract-test.example' ] );
+        update_option( RP_Care_Pipeline_Client::OPT_INSTANCE_ID, 'production-uuid-copied-by-clone' );
+        update_option( RP_Care_Pipeline_Client::OPT_PROCESSED_CMDS, [ 'production-command' ] );
+        update_option( RP_Care_Pipeline_Client::OPT_LAST_POLL, '2026-08-29 09:00:00' );
+
+        $sent_instance = '';
+        $GLOBALS['_wp_remote_post_mock'] = static function ( string $url, array $args ) use ( &$sent_instance ): array {
+            $request       = json_decode( (string) ( $args['body'] ?? '' ), true );
+            $sent_instance = (string) ( $request['instance_id'] ?? '' );
+            return [
+                'response' => [ 'code' => 200 ],
+                'body'     => wp_json_encode( [
+                    'ok'          => true,
+                    'token'       => 'new-staging-token',
+                    'secret'      => 'new-staging-secret',
+                    'group_id'    => 'clone-repair-group',
+                    'environment' => 'staging',
+                ] ),
+            ];
+        };
+
+        $result = RP_Care_Pipeline_Client::handle_pairing_request( [
+            'action'             => 'consume',
+            'token'              => 'one-time-token',
+            'canonical_url'      => 'https://dev2.example.test',
+            'rotate_instance_id' => true,
+        ] );
+
+        $this->assertNotInstanceOf( WP_Error::class, $result );
+        $this->assertNotSame( 'production-uuid-copied-by-clone', $sent_instance );
+        $this->assertSame( $sent_instance, get_option( RP_Care_Pipeline_Client::OPT_INSTANCE_ID ) );
+        $this->assertSame( [], get_option( RP_Care_Pipeline_Client::OPT_PROCESSED_CMDS ) );
+        $this->assertFalse( get_option( RP_Care_Pipeline_Client::OPT_LAST_POLL ) );
+        $this->assertContains( 'rpcare_task_pipeline_poll', array_column( $GLOBALS['_as_enqueued'], 'hook' ) );
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // CC-003: Pairing fails if PC response is missing token or secret
     // ─────────────────────────────────────────────────────────────────────────

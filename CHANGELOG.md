@@ -1,5 +1,10 @@
 # Changelog — Replanta Care
 
+## [1.16.26]
+
+- Hace el reemparejamiento staging seguro tras clonar con WP Toolkit: rota el UUID Pipeline, limpia la protección de replay heredada y pone en cuarentena eventos salientes copiados de producción.
+- Encola un poll inmediato tras emparejar para no esperar al siguiente ciclo programado.
+
 ## [1.16.25]
 
 - El guard de webhooks de staging permite el plano de control Pipeline únicamente

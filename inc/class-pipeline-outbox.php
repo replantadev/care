@@ -39,6 +39,34 @@ class RP_Care_Pipeline_Outbox {
     private const MAX_ATTEMPTS  = 10;
     private const LEASE_SECONDS = 300; // 5-min lease; scheduler runs every ~1 min
 
+    /**
+     * Quarantine undelivered rows copied from another installation by a clone.
+     *
+     * A staging identity rotation deliberately starts a new delivery stream. Rows
+     * inherited from production must remain auditable, but may never be delivered
+     * with the new staging credentials.
+     */
+    public static function quarantine_after_identity_rotation(): int {
+        global $wpdb;
+
+        $table = $wpdb->prefix . self::TABLE;
+        $now   = gmdate( 'Y-m-d H:i:s' );
+        $sql   = $wpdb->prepare(
+            "UPDATE `{$table}` SET
+                status='dead_letter',
+                last_error_code='identity_rotated_after_clone',
+                last_error_safe='Quarantined after Pipeline identity rotation',
+                lease_owner=NULL,
+                lease_expires_at=NULL,
+                next_attempt_at=%s
+             WHERE delivered_at IS NULL
+               AND status IN ('pending','delivering')",
+            $now
+        );
+
+        return max( 0, (int) $wpdb->query( $sql ) );
+    }
+
     // ── Enqueue ────────────────────────────────────────────────────────────────
 
     /**

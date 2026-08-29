@@ -260,3 +260,9 @@ Corrección Care 1.16.24 / PC 1.2.29:
 - [ ] Validar en vivo que el lote #1 pasa a `waiting_manual_staging_refresh`.
 - [ ] Refrescar dev2 desde dev mediante WP Toolkit, comprobar aislamiento y
   continuar con la actualización únicamente en staging.
+
+Hotfix Care 1.16.25: el primer intento de reparar la identidad staging reveló
+que el guard de webhooks bloqueaba también el callback de emparejamiento hacia
+el Hub. Se permite ahora exclusivamente el origen configurado y el namespace
+`/wp-json/replanta-pc/v1/pipeline/`; no se añade el dominio a la allowlist global
+y el resto de POST externos o rutas del Hub siguen bloqueados.

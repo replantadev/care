@@ -1,5 +1,12 @@
 # Changelog — Replanta Care
 
+## [1.16.25]
+
+- El guard de webhooks de staging permite el plano de control Pipeline únicamente
+  sobre el origen exacto del Hub configurado y bajo su namespace REST cerrado.
+  El emparejamiento, polling y ACK dejan de bloquearse, mientras cualquier otra
+  ruta del Hub y todos los webhooks externos continúan bloqueados.
+
 ## [1.16.24]
 
 - El estado de Smart Updates publica un SHA-256 de la identidad Pipeline local,

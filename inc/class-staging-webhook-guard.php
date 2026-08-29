@@ -71,6 +71,14 @@ class RP_Care_Staging_Webhook_Guard {
 			return $response;
 		}
 
+		// The paired Pipeline control plane is part of staging isolation, not a
+		// customer webhook. Permit only its closed REST namespace on the exact
+		// configured Hub origin. The Hub still authenticates every command/ACK
+		// (or consumes a single-use pairing token); no other Hub path is opened.
+		if ( self::is_pipeline_control_plane_url( $url ) ) {
+			return $response;
+		}
+
 		error_log( sprintf(
 			'Replanta Care Staging: Blocked outgoing %s to %s (not in allowlist).',
 			$method,
@@ -127,6 +135,55 @@ class RP_Care_Staging_Webhook_Guard {
 			}
 		}
 		return false;
+	}
+
+	/**
+	 * Whether a URL targets the exact configured PC Pipeline REST namespace.
+	 *
+	 * Matching is fail-closed on scheme, host, effective port and optional Hub
+	 * base path. HTTPS is required for public hosts. User-info and fragments are
+	 * rejected. This deliberately does not allow other replanta.net endpoints.
+	 */
+	public static function is_pipeline_control_plane_url( string $url ): bool {
+		if ( ! class_exists( 'RP_Care_Pipeline_Client' ) ) {
+			return false;
+		}
+
+		$hub_url = RP_Care_Pipeline_Client::get_hub_url_public();
+		$hub     = parse_url( $hub_url );
+		$target  = parse_url( $url );
+		if ( ! is_array( $hub ) || ! is_array( $target ) ) {
+			return false;
+		}
+
+		$hub_scheme    = strtolower( (string) ( $hub['scheme'] ?? '' ) );
+		$target_scheme = strtolower( (string) ( $target['scheme'] ?? '' ) );
+		$hub_host      = strtolower( rtrim( (string) ( $hub['host'] ?? '' ), '.' ) );
+		$target_host   = strtolower( rtrim( (string) ( $target['host'] ?? '' ), '.' ) );
+		if ( '' === $hub_host || '' === $target_host || $hub_scheme !== $target_scheme || $hub_host !== $target_host ) {
+			return false;
+		}
+		if ( 'https' !== $hub_scheme && ! self::is_internal( $hub_host ) ) {
+			return false;
+		}
+		if ( isset( $target['user'] ) || isset( $target['pass'] ) || isset( $target['fragment'] ) ) {
+			return false;
+		}
+
+		$default_port = 'https' === $hub_scheme ? 443 : 80;
+		$hub_port     = (int) ( $hub['port'] ?? $default_port );
+		$target_port  = (int) ( $target['port'] ?? $default_port );
+		if ( $hub_port !== $target_port ) {
+			return false;
+		}
+
+		$base_path = rtrim( (string) ( $hub['path'] ?? '' ), '/' );
+		$namespace = $base_path . '/wp-json/replanta-pc/v1/pipeline/';
+		$path      = (string) ( $target['path'] ?? '' );
+		if ( str_contains( $path, '%' ) || str_contains( $path, '\\' ) || str_contains( $path, '/../' ) ) {
+			return false;
+		}
+		return str_starts_with( $path, $namespace ) && strlen( $path ) > strlen( $namespace );
 	}
 
 	/**

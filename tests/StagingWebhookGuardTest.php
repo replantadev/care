@@ -135,6 +135,59 @@ class StagingWebhookGuardTest extends TestCase {
         $this->assertFalse( $result );
     }
 
+	public function test_pipeline_post_to_exact_configured_hub_origin_is_allowed(): void {
+		update_option( RP_Care_Pipeline_Client::OPT_ENVIRONMENT, 'staging' );
+		update_option( 'rpcare_options', [ 'hub_url' => 'https://replanta.net' ] );
+
+		$result = RP_Care_Staging_Webhook_Guard::maybe_block(
+			false,
+			[ 'method' => 'POST' ],
+			'https://replanta.net/wp-json/replanta-pc/v1/pipeline/pairing/consume'
+		);
+
+		$this->assertFalse( $result );
+	}
+
+	public function test_non_pipeline_post_on_hub_remains_blocked(): void {
+		update_option( RP_Care_Pipeline_Client::OPT_ENVIRONMENT, 'staging' );
+		update_option( 'rpcare_options', [ 'hub_url' => 'https://replanta.net' ] );
+
+		$result = RP_Care_Staging_Webhook_Guard::maybe_block(
+			false,
+			[ 'method' => 'POST' ],
+			'https://replanta.net/wp-json/rphub/v1/care-event'
+		);
+
+		$this->assertInstanceOf( WP_Error::class, $result );
+	}
+
+	public function test_pipeline_path_on_subdomain_or_different_port_remains_blocked(): void {
+		update_option( 'rpcare_options', [ 'hub_url' => 'https://replanta.net' ] );
+		$this->assertFalse( RP_Care_Staging_Webhook_Guard::is_pipeline_control_plane_url(
+			'https://evil.replanta.net/wp-json/replanta-pc/v1/pipeline/command-ack'
+		) );
+		$this->assertFalse( RP_Care_Staging_Webhook_Guard::is_pipeline_control_plane_url(
+			'https://replanta.net:444/wp-json/replanta-pc/v1/pipeline/command-ack'
+		) );
+	}
+
+	public function test_public_pipeline_control_plane_requires_https(): void {
+		update_option( 'rpcare_options', [ 'hub_url' => 'http://replanta.net' ] );
+		$this->assertFalse( RP_Care_Staging_Webhook_Guard::is_pipeline_control_plane_url(
+			'http://replanta.net/wp-json/replanta-pc/v1/pipeline/command-ack'
+		) );
+	}
+
+	public function test_encoded_or_plain_path_traversal_is_not_treated_as_pipeline(): void {
+		update_option( 'rpcare_options', [ 'hub_url' => 'https://replanta.net' ] );
+		$this->assertFalse( RP_Care_Staging_Webhook_Guard::is_pipeline_control_plane_url(
+			'https://replanta.net/wp-json/replanta-pc/v1/pipeline/%2e%2e/rphub/v1/care-event'
+		) );
+		$this->assertFalse( RP_Care_Staging_Webhook_Guard::is_pipeline_control_plane_url(
+			'https://replanta.net/wp-json/replanta-pc/v1/pipeline/../rphub/v1/care-event'
+		) );
+	}
+
     public function test_already_handled_response_is_passed_through(): void {
         $existing = [ 'response' => [ 'code' => 200 ], 'body' => 'ok' ];
         $result   = RP_Care_Staging_Webhook_Guard::maybe_block(

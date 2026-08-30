@@ -157,6 +157,32 @@ class CarePipelineContractTest extends TestCase {
         return (string) $m->invoke( null, $plaintext );
     }
 
+    public function test_manifest_hash_uses_pc_string_key_sort_for_large_lists(): void {
+        $manifest = [
+            'plugins' => array_map(
+                static fn( int $i ): array => [ 'version' => '1.' . $i, 'slug' => 'plugin-' . $i ],
+                range( 0, 11 )
+            ),
+            'batch_id' => 'large-list-contract',
+        ];
+
+        $sort = static function ( array $value ) use ( &$sort ): array {
+            ksort( $value, SORT_STRING );
+            foreach ( $value as &$entry ) {
+                if ( is_array( $entry ) ) {
+                    $entry = $sort( $entry );
+                }
+            }
+            unset( $entry );
+            return $value;
+        };
+        $expected = hash( 'sha256', wp_json_encode( $sort( $manifest ), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES ) );
+
+        $method = new ReflectionMethod( RP_Care_Task_Updates::class, 'compute_manifest_hash_local' );
+        $method->setAccessible( true );
+        $this->assertSame( $expected, $method->invoke( null, $manifest ) );
+    }
+
     /**
      * Build a properly signed command that passes verify_command_public().
      */

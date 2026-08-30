@@ -1484,7 +1484,10 @@ class RP_Care_Task_Updates {
     }
 
     private static function sort_keys_recursive_local( array $arr ): array {
-        ksort( $arr );
+        // Must match PC_Manifest::sort_keys_recursive() byte-for-byte. The
+        // explicit string mode matters for numeric list keys once a manifest
+        // contains 10+ entries (0,1,10,11,2...).
+        ksort( $arr, SORT_STRING );
         foreach ( $arr as &$v ) {
             if ( is_array( $v ) ) {
                 $v = self::sort_keys_recursive_local( $v );

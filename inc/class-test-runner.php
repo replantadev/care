@@ -576,7 +576,12 @@ class RP_Care_Test_Suite_Ecommerce implements RP_Care_Test_Runner_Interface {
     }
 
     private function check_emails_disabled(): array {
-        $suppressed = (bool) get_option( 'rpcare_staging_suppress_email', false );
+		$suppressed = defined( 'RPCARE_STAGING_SUPPRESS_EMAIL' ) && RPCARE_STAGING_SUPPRESS_EMAIL;
+		$suppressed = $suppressed || (bool) get_option( 'rpcare_staging_suppress_email', false );
+		$suppressed = $suppressed || (
+			class_exists( 'RP_Care_Staging_Email_Sink' )
+			&& RP_Care_Staging_Email_Sink::is_active()
+		);
         if ( $suppressed ) {
             return [ 'name' => 'emails_disabled', 'status' => 'ok', 'message' => 'Email suppression active.' ];
         }

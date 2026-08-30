@@ -2910,7 +2910,14 @@ class RP_Care_REST {
 			return new WP_REST_Response( [ 'ok' => false, 'error' => 'journal_precondition_failed' ], 409 );
 		}
 		$result = RP_Care_Task_Updates::apply_staging_batch( $batch_id, $command_id );
-		return new WP_REST_Response( [ 'ok' => ! empty( $result['success'] ), 'result' => $result ], ! empty( $result['success'] ) ? 200 : 409 );
+		// The operation result is authenticated and already structured/redacted.
+		// Return 200 even on a task failure so PC can display the exact fail-closed
+		// reason instead of collapsing it to an opaque HTTP 409.
+		return new WP_REST_Response( [
+			'ok'     => ! empty( $result['success'] ),
+			'error'  => ! empty( $result['success'] ) ? null : sanitize_text_field( (string) ( $result['error'] ?? 'local_command_failed' ) ),
+			'result' => $result,
+		], 200 );
 	}
 
     /**

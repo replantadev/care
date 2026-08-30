@@ -381,6 +381,20 @@ class RP_Care_Pipeline_Command_Journal {
         return (int) $row['action_id'];
     }
 
+    /** Safe command context for authenticated operational recovery. */
+    public static function get_context( string $command_id ): ?array {
+        global $wpdb;
+        $row = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT command_id, environment, command_type, batch_id, state, action_id, error_message
+                 FROM `{$wpdb->prefix}" . self::TABLE . "` WHERE command_id=%s LIMIT 1",
+                $command_id
+            ),
+            ARRAY_A
+        );
+        return is_array( $row ) ? $row : null;
+    }
+
     // ── Internal helpers ───────────────────────────────────────────────────────
 
     /**

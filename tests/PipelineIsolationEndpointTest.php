@@ -32,6 +32,7 @@ class PipelineIsolationEndpointTest extends TestCase {
     protected function tearDown(): void {
         RP_Care_REST::$isolation_report_reader = null;
         RP_Care_REST::$pipeline_poll_runner = null;
+        RP_Care_REST::$pipeline_local_runner = null;
     }
 
     private function request( ?string $token = null ): WP_REST_Request {
@@ -74,6 +75,23 @@ class PipelineIsolationEndpointTest extends TestCase {
         $this->assertSame( 200, $response->get_status() );
         $this->assertSame( 1, $response->get_data()['commands_processed'] );
         $this->assertSame( 1, $calls );
+    }
+
+    public function test_pipeline_local_run_is_authenticated_and_bound_to_ids(): void {
+        $seen = [];
+        RP_Care_REST::$pipeline_local_runner = static function ( string $batch_id, string $command_id ) use ( &$seen ): array {
+            $seen = [ $batch_id, $command_id ];
+            return [ 'ok' => true, 'result' => [ 'success' => true ] ];
+        };
+
+        $request = $this->request( hash( 'sha256', self::TOKEN ) );
+        $request->set_param( 'batch_id', 'batch-1' );
+        $request->set_param( 'command_id', 'command-1' );
+        $response = $this->rest->hub_pipeline_run_local_command( $request );
+
+        $this->assertSame( 200, $response->get_status() );
+        $this->assertSame( [ 'batch-1', 'command-1' ], $seen );
+        $this->assertSame( 403, $this->rest->hub_pipeline_run_local_command( new WP_REST_Request() )->get_status() );
     }
 
     public function test_missing_or_wrong_token_is_rejected(): void {

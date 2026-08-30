@@ -23,6 +23,9 @@ class RP_Care_REST {
     /** @var callable|null Test seam for an authenticated immediate pipeline poll. */
     public static $pipeline_poll_runner = null;
 
+    /** @var callable|null Test seam for controlled local-command recovery. */
+    public static $pipeline_local_runner = null;
+
     public function __construct() {
         add_action('rest_api_init', [$this, 'register_routes']);
     }
@@ -163,6 +166,11 @@ class RP_Care_REST {
 		register_rest_route( $this->control_ns, '/pipeline/poll-now', [
 			'methods'             => 'POST',
 			'callback'            => [ $this, 'hub_pipeline_poll_now' ],
+			'permission_callback' => '__return_true',
+		] );
+		register_rest_route( $this->control_ns, '/pipeline/local-command/run', [
+			'methods'             => 'POST',
+			'callback'            => [ $this, 'hub_pipeline_run_local_command' ],
 			'permission_callback' => '__return_true',
 		] );
 
@@ -2867,6 +2875,42 @@ class RP_Care_REST {
 			return new WP_REST_Response( [ 'ok' => false, 'error' => 'pipeline_disabled' ], 409 );
 		}
 		return new WP_REST_Response( RP_Care_Pipeline_Client::poll_and_execute(), 200 );
+	}
+
+	/**
+	 * Recover one accepted staging update whose Action Scheduler worker did not run.
+	 * The durable journal must bind command, batch, environment and command type.
+	 */
+	public function hub_pipeline_run_local_command( WP_REST_Request $request ): WP_REST_Response {
+		if ( ! $this->validate_hub_token( $request, true ) ) {
+			return new WP_REST_Response( [ 'error' => 'Unauthorized' ], 403 );
+		}
+		$command_id = sanitize_text_field( (string) $request->get_param( 'command_id' ) );
+		$batch_id   = sanitize_text_field( (string) $request->get_param( 'batch_id' ) );
+		if ( '' === $command_id || '' === $batch_id ) {
+			return new WP_REST_Response( [ 'ok' => false, 'error' => 'missing_identifiers' ], 422 );
+		}
+		if ( is_callable( self::$pipeline_local_runner ) ) {
+			return new WP_REST_Response( call_user_func( self::$pipeline_local_runner, $batch_id, $command_id ), 200 );
+		}
+		if ( ! class_exists( 'RP_Care_Pipeline_Client' ) || ! RP_Care_Pipeline_Client::is_pipeline_enabled() || ! RP_Care_Pipeline_Client::is_staging() ) {
+			return new WP_REST_Response( [ 'ok' => false, 'error' => 'staging_pipeline_unavailable' ], 409 );
+		}
+		if ( ! class_exists( 'RP_Care_Pipeline_Command_Journal' ) || ! class_exists( 'RP_Care_Task_Updates' ) ) {
+			return new WP_REST_Response( [ 'ok' => false, 'error' => 'pipeline_components_unavailable' ], 503 );
+		}
+		$context = RP_Care_Pipeline_Command_Journal::get_context( $command_id );
+		if (
+			! $context
+			|| ! hash_equals( (string) ( $context['batch_id'] ?? '' ), $batch_id )
+			|| 'staging' !== ( $context['environment'] ?? '' )
+			|| 'apply_update_batch' !== ( $context['command_type'] ?? '' )
+			|| ! in_array( (string) ( $context['state'] ?? '' ), [ 'accepted', 'running', 'failed_retryable' ], true )
+		) {
+			return new WP_REST_Response( [ 'ok' => false, 'error' => 'journal_precondition_failed' ], 409 );
+		}
+		$result = RP_Care_Task_Updates::apply_staging_batch( $batch_id, $command_id );
+		return new WP_REST_Response( [ 'ok' => ! empty( $result['success'] ), 'result' => $result ], ! empty( $result['success'] ) ? 200 : 409 );
 	}
 
     /**

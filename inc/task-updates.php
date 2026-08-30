@@ -1432,17 +1432,31 @@ class RP_Care_Task_Updates {
         }
 
         $body = json_decode( wp_remote_retrieve_body( $response ), true );
-        if ( ! is_array( $body ) || ! isset( $body['manifest'] ) || ! isset( $body['manifest_hash'] ) ) {
+        if ( ! is_array( $body ) || ! isset( $body['manifest_hash'] )
+            || ( ! isset( $body['manifest_canonical_json'] ) && ! isset( $body['manifest'] ) ) ) {
             return new \WP_Error( 'invalid_manifest', 'Manifest response missing required keys.' );
         }
 
-        $manifest = is_array( $body['manifest'] ) ? $body['manifest'] : json_decode( (string) $body['manifest'], true );
+        // PC 1.2.35+ supplies the exact canonical bytes it hashed. Verify those
+        // bytes before decoding so the trust boundary does not depend on two
+        // PHP/WordPress runtimes independently serialising the same structure.
+        // Keep the structural fallback for older Plugin Center installations.
+        if ( isset( $body['manifest_canonical_json'] ) ) {
+            if ( ! is_string( $body['manifest_canonical_json'] ) || '' === $body['manifest_canonical_json'] ) {
+                return new \WP_Error( 'invalid_manifest', 'Canonical manifest JSON is invalid.' );
+            }
+            $canonical_json = $body['manifest_canonical_json'];
+            $recalculated   = hash( 'sha256', $canonical_json );
+            $manifest       = json_decode( $canonical_json, true );
+        } else {
+            $manifest = is_array( $body['manifest'] ) ? $body['manifest'] : json_decode( (string) $body['manifest'], true );
+            $recalculated = is_array( $manifest ) ? self::compute_manifest_hash_local( $manifest ) : '';
+        }
+
         if ( ! is_array( $manifest ) ) {
             return new \WP_Error( 'invalid_manifest', 'Manifest could not be decoded.' );
         }
 
-        // Locally recalculate hash to verify PC is not sending a tampered manifest.
-        $recalculated = self::compute_manifest_hash_local( $manifest );
         if ( ! hash_equals( $recalculated, (string) $body['manifest_hash'] ) ) {
             return new \WP_Error( 'manifest_hash_mismatch', 'Locally recalculated manifest hash does not match the value returned by PC.' );
         }

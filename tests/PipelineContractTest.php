@@ -819,6 +819,50 @@ class CarePipelineContractTest extends TestCase {
         );
     }
 
+    public function test_manifest_fetch_prefers_pc_canonical_bytes_over_reserialised_structure(): void {
+        update_option( 'rpcare_hub_url', 'https://hub.example.com' );
+        update_option( RP_Care_Pipeline_Client::OPT_TOKEN, $this->care_encrypt( 'canonical-token' ) );
+        update_option( RP_Care_Pipeline_Client::OPT_INSTANCE_ID, 'canonical-instance' );
+
+        $canonical = '{"a":"á/β","nested":{"a":1,"z":2}}';
+        $GLOBALS['_wp_remote_get_mock'] = [
+            'response' => [ 'code' => 200 ],
+            'body'     => json_encode( [
+                'manifest'                => [ 'tampered_transport_copy' => true ],
+                'manifest_canonical_json' => $canonical,
+                'manifest_hash'           => hash( 'sha256', $canonical ),
+            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES ),
+        ];
+
+        $method = new ReflectionMethod( RP_Care_Task_Updates::class, 'fetch_manifest_from_pc' );
+        $method->setAccessible( true );
+        $result = $method->invoke( null, 'canonical-batch' );
+
+        $this->assertIsArray( $result );
+        $this->assertSame( [ 'a' => 'á/β', 'nested' => [ 'a' => 1, 'z' => 2 ] ], $result['manifest'] );
+    }
+
+    public function test_manifest_fetch_rejects_modified_canonical_bytes(): void {
+        update_option( 'rpcare_hub_url', 'https://hub.example.com' );
+        update_option( RP_Care_Pipeline_Client::OPT_TOKEN, $this->care_encrypt( 'canonical-token' ) );
+        update_option( RP_Care_Pipeline_Client::OPT_INSTANCE_ID, 'canonical-instance' );
+
+        $GLOBALS['_wp_remote_get_mock'] = [
+            'response' => [ 'code' => 200 ],
+            'body'     => json_encode( [
+                'manifest_canonical_json' => '{"a":2}',
+                'manifest_hash'           => hash( 'sha256', '{"a":1}' ),
+            ] ),
+        ];
+
+        $method = new ReflectionMethod( RP_Care_Task_Updates::class, 'fetch_manifest_from_pc' );
+        $method->setAccessible( true );
+        $result = $method->invoke( null, 'canonical-batch' );
+
+        $this->assertInstanceOf( WP_Error::class, $result );
+        $this->assertSame( 'manifest_hash_mismatch', $result->get_error_code() );
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // CC-S09: validate_manifest_artifacts passes with proper id field (not artifact_id)
     // ─────────────────────────────────────────────────────────────────────────

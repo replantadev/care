@@ -2874,7 +2874,15 @@ class RP_Care_REST {
 		if ( ! class_exists( 'RP_Care_Pipeline_Client' ) || ! RP_Care_Pipeline_Client::is_pipeline_enabled() ) {
 			return new WP_REST_Response( [ 'ok' => false, 'error' => 'pipeline_disabled' ], 409 );
 		}
-		return new WP_REST_Response( RP_Care_Pipeline_Client::poll_and_execute(), 200 );
+		$result = RP_Care_Pipeline_Client::poll_and_execute();
+		$batch_id = sanitize_text_field( (string) $request->get_param( 'batch_id' ) );
+		if ( class_exists( 'RP_Care_Pipeline_Outbox' ) ) {
+			RP_Care_Pipeline_Outbox::deliver_pending();
+			if ( '' !== $batch_id ) {
+				$result['outbox'] = RP_Care_Pipeline_Outbox::safe_status_for_batch( $batch_id );
+			}
+		}
+		return new WP_REST_Response( $result, 200 );
 	}
 
 	/**

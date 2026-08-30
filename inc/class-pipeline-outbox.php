@@ -208,6 +208,48 @@ class RP_Care_Pipeline_Outbox {
         }
     }
 
+    /**
+     * Redacted operational summary for one batch. Never returns payloads,
+     * credentials, event UUIDs or instance secrets.
+     */
+    public static function safe_status_for_batch( string $batch_id ): array {
+        global $wpdb;
+        $table = $wpdb->prefix . self::TABLE;
+        $rows  = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT status, COUNT(*) AS total
+                 FROM `{$table}` WHERE batch_id=%s GROUP BY status",
+                $batch_id
+            ),
+            ARRAY_A
+        ) ?: [];
+        $counts = [];
+        foreach ( $rows as $row ) {
+            $counts[ sanitize_key( (string) $row['status'] ) ] = (int) $row['total'];
+        }
+        $oldest = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT status, attempts, next_attempt_at, last_error_code, last_error_safe
+                 FROM `{$table}`
+                 WHERE batch_id=%s AND delivered_at IS NULL
+                 ORDER BY id ASC LIMIT 1",
+                $batch_id
+            ),
+            ARRAY_A
+        );
+
+        return [
+            'counts' => $counts,
+            'oldest_undelivered' => $oldest ? [
+                'status'          => sanitize_key( (string) $oldest['status'] ),
+                'attempts'        => (int) $oldest['attempts'],
+                'next_attempt_at' => (string) $oldest['next_attempt_at'],
+                'error_code'      => sanitize_key( (string) $oldest['last_error_code'] ),
+                'error'           => sanitize_text_field( (string) $oldest['last_error_safe'] ),
+            ] : null,
+        ];
+    }
+
     // ── Expired lease recovery ─────────────────────────────────────────────────
 
     /**

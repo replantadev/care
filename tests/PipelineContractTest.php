@@ -1669,4 +1669,34 @@ class CarePipelineContractTest extends TestCase {
 			'Care init must self-heal the Pipeline schedule independently of plan activation.'
 		);
 	}
+
+	public function test_poll_now_flushes_durable_outbox_and_exposes_only_safe_summary(): void {
+		$source = (string) file_get_contents( __DIR__ . '/../inc/class-rest.php' );
+		$this->assertStringContainsString( 'RP_Care_Pipeline_Outbox::deliver_pending()', $source );
+		$this->assertStringContainsString( 'RP_Care_Pipeline_Outbox::safe_status_for_batch( $batch_id )', $source );
+
+		$previous = $GLOBALS['wpdb'];
+		try {
+			$GLOBALS['wpdb'] = new class extends wpdb {
+				public function get_results( string $sql, string $output = 'OBJECT' ): array {
+					return [ [ 'status' => 'delivered', 'total' => 2 ], [ 'status' => 'pending', 'total' => 1 ] ];
+				}
+				public function get_row( string $sql, string $output = 'OBJECT', int $row_offset = 0 ) {
+					return [
+						'status' => 'pending', 'attempts' => 2,
+						'next_attempt_at' => '2026-08-30 17:00:00',
+						'last_error_code' => 'retryable',
+						'last_error_safe' => 'HTTP 503 from Plugin Center',
+					];
+				}
+			};
+			$status = RP_Care_Pipeline_Outbox::safe_status_for_batch( 'batch-safe' );
+			$this->assertSame( [ 'delivered' => 2, 'pending' => 1 ], $status['counts'] );
+			$this->assertSame( 2, $status['oldest_undelivered']['attempts'] );
+			$this->assertArrayNotHasKey( 'payload_json', $status['oldest_undelivered'] );
+			$this->assertArrayNotHasKey( 'event_id', $status['oldest_undelivered'] );
+		} finally {
+			$GLOBALS['wpdb'] = $previous;
+		}
+	}
 }

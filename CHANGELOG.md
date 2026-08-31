@@ -1,5 +1,11 @@
 # Changelog — Replanta Care
 
+## [1.16.37]
+
+- Hace idempotente la aplicación de plugins, temas y core cuando staging ya
+  está en la versión objetivo: verifica la versión y continúa a tests sin
+  descargar ni reinstalar el artefacto.
+
 ## [1.16.36]
 
 - Añade `installed_state_hash` (`installed-state-v1`) al inventario operativo y

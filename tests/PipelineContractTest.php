@@ -143,6 +143,28 @@ class CarePipelineContractTest extends TestCase {
         $GLOBALS['_wp_remote_get_mock']    = null;
         $GLOBALS['_as_pending']            = [];
         $GLOBALS['_as_enqueued']           = [];
+        $GLOBALS['_wp_plugin_data_mock']    = [];
+    }
+
+    public function test_already_at_target_plugin_is_idempotent_without_download(): void {
+        $plugin_file = 'astra-addon/astra-addon.php';
+        $GLOBALS['_wp_plugin_data_mock'][ WP_PLUGIN_DIR . '/' . $plugin_file ] = [
+            'Name' => 'Astra Pro', 'Version' => '4.13.8',
+        ];
+        $method = new ReflectionMethod( RP_Care_Task_Updates::class, 'apply_pipeline_plugin' );
+        $method->setAccessible( true );
+
+        $result = $method->invoke( null, [
+            'slug'         => 'astra-addon',
+            'file'         => $plugin_file,
+            'from_version' => '4.10.1',
+            'to_version'   => '4.13.8',
+        ], [ 'artifacts' => [] ], 'batch-already-target', 'staging' );
+
+        $this->assertTrue( $result['success'] );
+        $this->assertTrue( $result['already_at_target'] );
+        $this->assertSame( '4.13.8', $result['installed_version'] );
+        $this->assertArrayNotHasKey( 'artifact_id', $result );
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

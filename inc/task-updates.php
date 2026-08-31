@@ -1687,6 +1687,15 @@ class RP_Care_Task_Updates {
             return $result_base;
         }
 
+        $installed_before = self::get_installed_version( 'plugin', $slug, $file );
+        if ( '' !== $to_version && hash_equals( (string) $to_version, (string) $installed_before ) ) {
+            $result_base['success']           = true;
+            $result_base['already_at_target'] = true;
+            $result_base['installed_version'] = $installed_before;
+            $result_base['duration_ms']       = (int) ( ( microtime( true ) - $start_ts ) * 1000 );
+            return $result_base;
+        }
+
         // Locate artifact by full identity: type + slug + expected version.
         $artifact = self::find_artifact( $manifest, 'plugin', $slug, $to_version );
         if ( is_wp_error( $artifact ) ) {
@@ -1768,6 +1777,15 @@ class RP_Care_Task_Updates {
             return $result_base;
         }
 
+        $installed_before = self::get_installed_version( 'theme', $slug, null );
+        if ( '' !== $to_version && hash_equals( (string) $to_version, (string) $installed_before ) ) {
+            $result_base['success']           = true;
+            $result_base['already_at_target'] = true;
+            $result_base['installed_version'] = $installed_before;
+            $result_base['duration_ms']       = (int) ( ( microtime( true ) - $start_ts ) * 1000 );
+            return $result_base;
+        }
+
         // Locate artifact by full identity: type + slug + expected version.
         $artifact = self::find_artifact( $manifest, 'theme', $slug, $to_version );
         if ( is_wp_error( $artifact ) ) {
@@ -1834,6 +1852,15 @@ class RP_Care_Task_Updates {
             'from_version'      => $from_version,
             'requested_version' => $to_version,
         ];
+
+        $installed_before = self::get_installed_version( 'core', 'wordpress', null );
+        if ( '' !== $to_version && hash_equals( (string) $to_version, (string) $installed_before ) ) {
+            $result_base['success']           = true;
+            $result_base['already_at_target'] = true;
+            $result_base['installed_version'] = $installed_before;
+            $result_base['duration_ms']       = (int) ( ( microtime( true ) - $start_ts ) * 1000 );
+            return $result_base;
+        }
 
         // Core must use a frozen artifact — no live WordPress.org downloads in pipeline.
         $artifact = self::find_artifact( $manifest, 'core', 'wordpress', $to_version );

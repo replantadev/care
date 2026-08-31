@@ -151,6 +151,24 @@ class RP_Care_Inventory_Snapshot {
             return [];
         }
 
+        // wp_get_available_translations() is an admin helper and is not loaded
+        // during normal REST requests. Pipeline inventory is collected from a
+        // REST-triggered command, so load the helper explicitly instead of
+        // allowing a fatal error on non-en_US sites.
+        if ( ! function_exists( 'wp_get_available_translations' ) ) {
+            $translation_helper = ABSPATH . 'wp-admin/includes/translation-install.php';
+            if ( is_readable( $translation_helper ) ) {
+                require_once $translation_helper;
+            }
+        }
+
+        // Fail closed to the current locale if a non-standard WordPress build
+        // does not provide the helper. Inventory collection must remain usable
+        // without silently claiming that no translation is installed.
+        if ( ! function_exists( 'wp_get_available_translations' ) ) {
+            return [ $locale ];
+        }
+
         $available = wp_get_available_translations();
         if ( empty( $available ) ) {
             return [ $locale ];

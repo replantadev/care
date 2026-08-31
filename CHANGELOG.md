@@ -1,5 +1,11 @@
 # Changelog — Replanta Care
 
+## [1.16.35]
+
+- Corrige el fatal del inventario Pipeline en peticiones REST de sitios con
+  idioma distinto de `en_US`: Care carga explícitamente el helper de
+  traducciones de WordPress y conserva un fallback seguro al locale actual.
+
 ## [1.16.26]
 
 - Hace el reemparejamiento staging seguro tras clonar con WP Toolkit: rota el UUID Pipeline, limpia la protección de replay heredada y pone en cuarentena eventos salientes copiados de producción.

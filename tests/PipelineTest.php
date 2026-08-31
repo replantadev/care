@@ -346,4 +346,19 @@ class PipelineTest extends TestCase {
             'Hash must be order-independent (canonical JSON with ksort).'
         );
     }
+
+    public function test_inventory_translation_helper_is_guarded_for_rest_requests(): void {
+        $source = (string) file_get_contents( __DIR__ . '/../inc/class-inventory-snapshot.php' );
+        $guard  = strpos( $source, "function_exists( 'wp_get_available_translations' )" );
+        $call   = strrpos( $source, 'wp_get_available_translations();' );
+
+        $this->assertNotFalse( $guard, 'The admin-only translation helper must be guarded.' );
+        $this->assertNotFalse( $call, 'The translation inventory call must remain present.' );
+        $this->assertLessThan( $call, $guard, 'The REST-safe guard must run before the helper call.' );
+        $this->assertStringContainsString(
+            "wp-admin/includes/translation-install.php",
+            $source,
+            'Care must explicitly load the WordPress translation helper outside wp-admin.'
+        );
+    }
 }

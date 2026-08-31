@@ -447,3 +447,30 @@ congeló el hash estable `a18ddbb…9481`, superó 10/10 controles de aislamient
 las suites staging (**13 ok, 0 warning, 0 critical, 2 skipped**). Está en
 `awaiting_approval` hasta 2026-09-02 07:44:47 UTC. Producción permanece en Astra
 4.10.1; no se ha ejecutado ninguna actualización de producción.
+
+## Cierre del piloto end-to-end — 2026-08-31
+
+El lote #2 fue aprobado por Luis Javier Gil a las 08:41:12 UTC. El inventario
+fresco de producción devolvió exactamente el `installed_state_hash` congelado
+`a18ddbb…9481`, por lo que el gate de drift avanzó legítimamente a backup.
+
+- [x] Backup B2 nuevo y ligado al lote:
+  `backup_2026-08-31_08-46-54`.
+- [x] La orden `apply_production_batch` incluyó ese mismo `backup_id`, el
+  `approval_id` y el `manifest_hash` congelado.
+- [x] Astra Pro se actualizó en producción de 4.10.1 a **4.13.8**.
+- [x] Verificación posterior: home 200, login 200, REST 200, base de datos OK,
+  25 plugins activos y ausencia de errores PHP visibles.
+- [x] Lote en estado terminal `completed` a las 08:49:23 UTC.
+
+La verificación de producción terminó con severidad `warning`, no crítica:
+detectó 21 acciones antiguas fallidas de Action Scheduler en las últimas 24 h.
+No eran acciones del pipeline y el piloto no registró ningún fallo propio, pero
+deben seguir siendo visibles para depuración. También quedaron los dos skips ya
+conocidos: loopback de Site Health no disponible y baseline DOM sin capturar.
+
+Defecto de auditoría encontrado al cerrar el lote: PC validaba el backup y lo
+incluía en la orden de actualización, pero no persistía `production_backup_id`
+en `pc_update_batches`. Plugin Center 1.2.44 corrige la transición para guardar
+el ID verificado y añade una prueba contractual. El lote #2 requiere backfill
+exacto desde su orden inmutable; no se infiere ni reutiliza otro backup.

@@ -423,3 +423,27 @@ actualizaciones incluye metadatos transitorios que pueden desaparecer al
 caducar el transient. Debe definirse un único `installed_state_hash` estable
 (core/PHP, plugins y temas instalados, versiones y activación), compartido por
 creación y drift, separado del inventario volátil de actualizaciones.
+
+## Contrato estable y lote #2 — 2026-08-31
+
+- [x] Care 1.16.36 implementó `installed-state-v1` y lo publica como
+  `installed_state_hash` tanto en `/updates/inventory` como en
+  `report_inventory`. Cubre WordPress, PHP, versiones y activación de plugins y
+  temas; excluye transients, paquetes, timestamps, traducciones y el propio
+  Care. Un transient ausente no cambia el hash.
+- [x] PC 1.2.42 congeló el contrato en manifiesto 1.1 y lo exige para cualquier
+  lote `staging_required`. Añadió traza de eventos/órdenes, estado efectivo de
+  órdenes caducadas y recuperación limitada del inventario posterior a una
+  aprobación todavía vigente.
+- [x] Care 1.16.37 hace idempotente un objetivo ya aplicado: dev2 tenía Astra
+  4.13.8 y continuó sin descarga ni reinstalación (`already_at_target=true`).
+- [x] PC 1.2.43 trata `staging_provider=paired` como transporte manual hacia el
+  Care staging ya emparejado y comprueba `WP_Error` antes de invocar cualquier
+  proveedor. Se eliminó el fatal `WP_Error::capabilities()`.
+
+El lote #1 quedó `cancelled` con `failure_code=inventory_contract_migrated`; no
+se borró su historial. El lote #2 (`56ed79a8-ae68-41ee-b511-241e797ab791`)
+congeló el hash estable `a18ddbb…9481`, superó 10/10 controles de aislamiento y
+las suites staging (**13 ok, 0 warning, 0 critical, 2 skipped**). Está en
+`awaiting_approval` hasta 2026-09-02 07:44:47 UTC. Producción permanece en Astra
+4.10.1; no se ha ejecutado ninguna actualización de producción.

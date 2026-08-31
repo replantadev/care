@@ -3019,15 +3019,25 @@ class RP_Care_REST {
         // needs this list to bind an operator-uploaded ZIP to the exact plugin
         // main file and installed version without fuzzy name/slug matching.
         $installed_plugins = [];
+        $state_plugins     = [];
+        $active_plugins    = array_fill_keys( (array) get_option( 'active_plugins', [] ), true );
+        $network_active    = function_exists( 'get_site_option' )
+            ? (array) get_site_option( 'active_sitewide_plugins', [] )
+            : [];
         foreach ( $installed_map as $plugin_file => $headers ) {
             if ( ! is_string( $plugin_file ) || '' === $plugin_file || ! is_array( $headers ) ) continue;
             $slug = dirname( $plugin_file );
             if ( '.' === $slug || '' === $slug ) $slug = $plugin_file;
+            $is_active = isset( $active_plugins[ $plugin_file ] ) || isset( $network_active[ $plugin_file ] );
             $installed_plugins[ $plugin_file ] = [
                 'plugin_file'       => $plugin_file,
                 'slug'              => $slug,
                 'name'              => (string) ( $headers['Name'] ?? '' ),
                 'installed_version' => (string) ( $headers['Version'] ?? '' ),
+            ];
+            $state_plugins[ $plugin_file ] = [
+                'version' => (string) ( $headers['Version'] ?? '' ),
+                'active'  => $is_active,
             ];
         }
         ksort( $installed_plugins );
@@ -3126,6 +3136,30 @@ class RP_Care_REST {
             $themes = array_values( $themes );
         }
 
+        // Installed-state drift contract. Unlike inventory_hash below, this
+        // covers only durable application state and never depends on whether an
+        // update transient happens to be fresh, expired or temporarily absent.
+        $state_themes = [];
+        $active_theme = function_exists( 'get_stylesheet' ) ? (string) get_stylesheet() : '';
+        $all_themes   = function_exists( 'wp_get_themes' ) ? (array) wp_get_themes() : [];
+        foreach ( $all_themes as $theme_slug => $theme ) {
+            if ( ! is_string( $theme_slug ) || '' === $theme_slug || ! is_object( $theme ) || ! method_exists( $theme, 'get' ) ) continue;
+            $state_themes[ $theme_slug ] = [
+                'version' => (string) $theme->get( 'Version' ),
+                'active'  => hash_equals( $active_theme, $theme_slug ),
+            ];
+        }
+        ksort( $state_plugins, SORT_STRING );
+        ksort( $state_themes, SORT_STRING );
+        $installed_state_hash = class_exists( 'RP_Care_Inventory_Snapshot' )
+            ? RP_Care_Inventory_Snapshot::installed_state_hash( [
+                'wp_version'  => (string) get_bloginfo( 'version' ),
+                'php_version' => PHP_VERSION,
+                'plugins'     => $state_plugins,
+                'themes'      => $state_themes,
+            ] )
+            : '';
+
         // ── Inventory hash ────────────────────────────────────────────────────
         // Covers installed identities + updates + themes; excludes timestamps.
         $inventory_hash = hash(
@@ -3158,6 +3192,7 @@ class RP_Care_REST {
                 'themes_total'     => $themes_total,
                 'themes'           => $themes,
                 'inventory_hash'   => $inventory_hash,
+                'installed_state_hash' => $installed_state_hash,
             ],
             200
         );

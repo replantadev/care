@@ -86,6 +86,7 @@ if ( ! function_exists( 'rest_ensure_response' ) ) {
 }
 
 require_once __DIR__ . '/../inc/class-update-control.php';
+require_once __DIR__ . '/../inc/class-inventory-snapshot.php';
 require_once __DIR__ . '/../inc/class-rest.php';
 
 use PHPUnit\Framework\TestCase;
@@ -584,6 +585,57 @@ class UpdatesInventoryTest extends TestCase {
         $second = $this->callInventory( $this->validHeader() )->get_data()['inventory_hash'];
 
         $this->assertNotSame( $first, $second );
+    }
+
+    public function test_installed_state_hash_ignores_update_transient_lifecycle(): void {
+        update_option( 'rpcare_options', [ 'site_token' => self::RAW_TOKEN ] );
+        update_option( 'active_plugins', [ 'premium/premium.php' ] );
+        $this->setInstalledPlugins( [ 'premium/premium.php' => [ 'Name' => 'Premium', 'Version' => '1.0.0' ] ] );
+
+        $this->setTransient( $this->makePluginTransient( [
+            'premium/premium.php' => $this->makeEntry( 'premium', '1.1.0' ),
+        ] ) );
+        $fresh = $this->callInventory( $this->validHeader() )->get_data();
+
+        $this->setTransient( null, null );
+        $expired = $this->callInventory( $this->validHeader() )->get_data();
+
+        $this->assertNotSame( $fresh['inventory_hash'], $expired['inventory_hash'] );
+        $this->assertSame( $fresh['installed_state_hash'], $expired['installed_state_hash'] );
+    }
+
+    public function test_installed_state_hash_changes_with_version_or_activation(): void {
+        update_option( 'rpcare_options', [ 'site_token' => self::RAW_TOKEN ] );
+        $this->setTransient( null, null );
+        $this->setInstalledPlugins( [ 'premium/premium.php' => [ 'Name' => 'Premium', 'Version' => '1.0.0' ] ] );
+        update_option( 'active_plugins', [] );
+        $inactive = $this->callInventory( $this->validHeader() )->get_data()['installed_state_hash'];
+
+        update_option( 'active_plugins', [ 'premium/premium.php' ] );
+        $active = $this->callInventory( $this->validHeader() )->get_data()['installed_state_hash'];
+        $this->assertNotSame( $inactive, $active );
+
+        $this->setInstalledPlugins( [ 'premium/premium.php' => [ 'Name' => 'Premium', 'Version' => '1.0.1' ] ] );
+        $updated = $this->callInventory( $this->validHeader() )->get_data()['installed_state_hash'];
+        $this->assertNotSame( $active, $updated );
+    }
+
+    public function test_installed_state_hash_excludes_care_control_plane_version(): void {
+        update_option( 'rpcare_options', [ 'site_token' => self::RAW_TOKEN ] );
+        $this->setTransient( null, null );
+        update_option( 'active_plugins', [ 'replanta-care/replanta-care.php', 'app/app.php' ] );
+        $this->setInstalledPlugins( [
+            'replanta-care/replanta-care.php' => [ 'Name' => 'Replanta Care', 'Version' => '1.16.35' ],
+            'app/app.php'                     => [ 'Name' => 'App', 'Version' => '1.0.0' ],
+        ] );
+        $before = $this->callInventory( $this->validHeader() )->get_data()['installed_state_hash'];
+
+        $this->setInstalledPlugins( [
+            'replanta-care/replanta-care.php' => [ 'Name' => 'Replanta Care', 'Version' => '1.16.36' ],
+            'app/app.php'                     => [ 'Name' => 'App', 'Version' => '1.0.0' ],
+        ] );
+        $after = $this->callInventory( $this->validHeader() )->get_data()['installed_state_hash'];
+        $this->assertSame( $before, $after );
     }
 
     // ── IN-30: Theme handling ─────────────────────────────────────────────────

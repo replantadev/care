@@ -20,6 +20,11 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class RP_Care_Inventory_Snapshot {
 
+    /** Pipeline/control-plane plugins do not describe customer application state. */
+    private const CONTROL_PLANE_PLUGINS = [
+        'replanta-care/replanta-care.php',
+    ];
+
     /**
      * Capture the full current-site inventory.
      *
@@ -41,7 +46,7 @@ class RP_Care_Inventory_Snapshot {
             require_once ABSPATH . 'wp-admin/includes/update.php';
         }
 
-        return [
+        $inventory = [
             'captured_at'  => gmdate( 'c' ),
             'wp_version'   => self::get_wp_version(),
             'php_version'  => PHP_VERSION,
@@ -50,6 +55,8 @@ class RP_Care_Inventory_Snapshot {
             'themes'       => self::get_themes_snapshot(),
             'translations' => self::get_translations_snapshot(),
         ];
+        $inventory['installed_state_hash'] = self::installed_state_hash( $inventory );
+        return $inventory;
     }
 
     /**
@@ -74,12 +81,62 @@ class RP_Care_Inventory_Snapshot {
     }
 
     /**
+     * Stable application-state hash shared by inventory discovery and drift.
+     *
+     * Deliberately excludes update transients, package URLs, timestamps,
+     * translations and the Care control-plane plugin itself. Those values may
+     * change without the customer's installed application changing. Activation
+     * state is included because enabling/disabling code is a material drift.
+     */
+    public static function installed_state_hash( array $inventory ): string {
+        $plugins = [];
+        foreach ( (array) ( $inventory['plugins'] ?? [] ) as $file => $info ) {
+            if ( ! is_string( $file ) || '' === $file || in_array( $file, self::CONTROL_PLANE_PLUGINS, true ) ) {
+                continue;
+            }
+            $info = is_array( $info ) ? $info : [];
+            $plugins[ $file ] = [
+                'version' => (string) ( $info['version'] ?? $info['Version'] ?? $info['installed_version'] ?? '' ),
+                'active'  => ! empty( $info['active'] ),
+            ];
+        }
+        ksort( $plugins, SORT_STRING );
+
+        $themes = [];
+        foreach ( (array) ( $inventory['themes'] ?? [] ) as $slug => $info ) {
+            if ( ! is_string( $slug ) || '' === $slug ) continue;
+            $info = is_array( $info ) ? $info : [];
+            $themes[ $slug ] = [
+                'version' => (string) ( $info['version'] ?? $info['Version'] ?? $info['installed_version'] ?? '' ),
+                'active'  => ! empty( $info['active'] ),
+            ];
+        }
+        ksort( $themes, SORT_STRING );
+
+        $canonical = [
+            'contract'    => 'installed-state-v1',
+            'wp_version'  => (string) ( $inventory['wp_version'] ?? '' ),
+            'php_version' => (string) ( $inventory['php_version'] ?? '' ),
+            'plugins'     => $plugins,
+            'themes'      => $themes,
+        ];
+
+        return hash(
+            'sha256',
+            (string) wp_json_encode(
+                self::sort_recursive( $canonical ),
+                JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+            )
+        );
+    }
+
+    /**
      * Returns true if the current inventory hash matches $expected_hash.
      * Used by the production drift-check step.
      */
     public static function matches_hash( string $expected_hash ): bool {
         $inv    = self::capture();
-        $actual = self::hash( $inv );
+        $actual = self::installed_state_hash( $inv );
         return hash_equals( $expected_hash, $actual );
     }
 

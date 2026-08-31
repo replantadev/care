@@ -1,5 +1,11 @@
 # Changelog — Replanta Care
 
+## [1.16.36]
+
+- Añade `installed_state_hash` (`installed-state-v1`) al inventario operativo y
+  al snapshot Pipeline. El hash cubre estado instalado estable y no cambia al
+  expirar/refrescar transients ni al actualizar el propio Care.
+
 ## [1.16.35]
 
 - Corrige el fatal del inventario Pipeline en peticiones REST de sitios con

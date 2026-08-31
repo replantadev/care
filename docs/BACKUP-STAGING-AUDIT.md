@@ -472,5 +472,9 @@ conocidos: loopback de Site Health no disponible y baseline DOM sin capturar.
 Defecto de auditoría encontrado al cerrar el lote: PC validaba el backup y lo
 incluía en la orden de actualización, pero no persistía `production_backup_id`
 en `pc_update_batches`. Plugin Center 1.2.44 corrige la transición para guardar
-el ID verificado y añade una prueba contractual. El lote #2 requiere backfill
-exacto desde su orden inmutable; no se infiere ni reutiliza otro backup.
+el ID verificado y añade una prueba contractual. PC 1.2.44 quedó desplegado y
+activo en Cedro; suite **394/394** (1171 assertions, 7 skips de entorno). El
+lote #2 recibió un backfill compare-and-set exacto desde su orden inmutable y
+ahora conserva `production_backup_id=backup_2026-08-31_08-46-54`. Se registró
+el evento `production_backup_evidence_backfilled`; no se infirió ni reutilizó
+otro backup.

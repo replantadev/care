@@ -314,20 +314,112 @@ Corrección y evidencia:
   `WP_Object_Cache` no prueba Redis), reconoce el email sink también para Woo y
   emite `X-Robots-Tag` en respuestas staging.
 
-Gate vivo restante antes de aplicar Astra en dev2:
+Gate vivo antes de aplicar Astra en dev2 (cerrado el 2026-08-30):
 
-- [ ] Cambiar en el `wp-config.php` de **dev2** el valor efectivo de
+- [x] Cambiar en el `wp-config.php` de **dev2** el valor efectivo de
   `WP_ENVIRONMENT_TYPE` de `production` a `staging`. Es el único fallo crítico
   actual y no debe relajarse desde un plugin, porque WordPress carga esa
   configuración antes que Care.
-- [ ] Repetir el informe de aislamiento. `db_isolated` y `robots_header` son
-  avisos, no bloqueos; conviene registrar la DB de producción y purgar caché
-  para que la cabecera nueva quede visible.
-- [ ] Confirmar el refresh manual y continuar el lote únicamente cuando el
-  informe autenticado devuelva `passed=true`.
+- [x] Repetir el informe de aislamiento. El informe autenticado devolvió 10/10
+  controles correctos.
+- [x] Confirmar el refresh manual y continuar el lote únicamente cuando el
+  informe autenticado devolvió `passed=true`.
 
 Observación: al actualizar Care en staging, el backup previo B2 fue bloqueado
 por el guard de webhooks para `api003.backblazeb2.com`. La actualización terminó
 correctamente, pero debe decidirse por contrato si un staging requiere backup
 propio o hereda la garantía del backup verificable de producción; no se debe
 ampliar la allowlist global de salida como atajo.
+
+## Cierre del primer lote en staging — 2026-08-30
+
+Resultado vivo: Astra Pro se actualizó **solo en dev2** de 4.10.1 a 4.13.8.
+Producción permanece en 4.10.1, no existe aprobación registrada y el lote
+`a0ef3258-a29d-4f92-9678-f47dfb2b680a` quedó en `awaiting_approval`, con
+severidad `ok` y caducidad de aprobación `2026-09-01 17:09:19 UTC`.
+
+Evidencia final del runner: **13 ok, 0 warning, 0 critical, 2 skipped**. Pasaron
+home/login sin errores PHP, REST, base de datos, Action Scheduler, plugins,
+WooCommerce, ausencia de gateways live, REST WC, tienda, carrito y supresión de
+correo. Los dos skips son loopback de `WP_Site_Health` no disponible y huella
+DOM sin baseline; deben evolucionar, pero no ocultan un fallo.
+
+Incidentes descubiertos y cerrados durante el piloto:
+
+- [x] Care 1.16.29/1.16.30 añadió recuperación autenticada de una orden local
+  aceptada cuando Action Scheduler no ejecuta el callback, ligada exactamente a
+  comando, lote, rol y estado del journal.
+- [x] Care 1.16.31 alineó `SORT_STRING`, pero el piloto mostró que duplicar la
+  serialización entre runtimes seguía siendo frágil.
+- [x] PC 1.2.35–1.2.36 y Care 1.16.32 fijaron el contrato definitivo: PC exporta
+  los bytes JSON canónicos que firmó y Care verifica su SHA-256 antes de
+  decodificarlos. La variante autenticada y la administrativa quedan cubiertas.
+- [x] PC 1.2.37 eliminó salida residual antes de servir ZIPs. El endpoint añadía
+  un byte `0a` delante de `PK` y truncaba el último byte por `Content-Length`;
+  ahora el ZIP servido conserva 5.010.807 bytes y coincide con el SHA-256
+  congelado `865a61f2…19bac`.
+- [x] Care 1.16.33 integra la outbox durable en el poll operativo y expone un
+  resumen sin payloads, UUIDs ni secretos. Se entregaron 6/6 eventos pendientes.
+- [x] PC 1.2.38 trata fallos repetidos como idempotentes y permite que un éxito
+  posterior, entregado en orden FIFO, recupere staging hacia tests sin recrear
+  lote, manifiesto ni artefacto.
+- [x] Care 1.16.34 unifica el criterio del runner ecommerce con el email sink
+  que realmente intercepta `wp_mail`; elimina el falso crítico de correo.
+- [x] PC 1.2.39 permite repetir solo las pruebas tras remediar runner/config.
+- [x] PC 1.2.40 normaliza el sobre de resultado de Care (`severity` exterior y
+  suites dentro de `test_report`); las suites obligatorias ya no se interpretan
+  falsamente como ausentes.
+
+Suites al cierre: Care **501 tests / 1263 assertions**, PC **388 tests / 1152
+assertions**; ambas verdes (skips de entorno documentados). Producción no debe
+avanzar hasta una aprobación humana explícita y una nueva comprobación de drift
+e inventario.
+
+Pendientes no bloqueantes para el siguiente sprint:
+
+- [ ] Definir el contrato de backup de staging. Hoy B2 está permitido para
+  producción, pero el guard bloquea `api003.backblazeb2.com` en dev2. Elegir
+  explícitamente entre «sin backup propio; staging es desechable» o un permiso
+  B2 limitado por host/ruta; nunca allowlist global.
+- [ ] Capturar baseline DOM antes del próximo lote para que la regresión HTML no
+  quede en `skipped`.
+- [ ] Habilitar/implementar el loopback de Site Health en el runner o sustituirlo
+  por una comprobación equivalente auditable.
+- [ ] Publicar Plugin Center 1.2.35–1.2.40 mediante su workflow de release. En
+  este piloto se desplegó desde el commit validado por SSH porque GitHub Actions
+  del repositorio no era consultable, aunque el push sí funcionaba.
+
+## Auditoría posterior a la aprobación — 2026-08-31
+
+La aprobación humana quedó registrada correctamente el 2026-08-30 17:54:18
+UTC, pero producción **no se actualizó**: Astra Pro continúa en 4.10.1 y solo
+dev2 tiene 4.13.8. La primera orden `report_inventory` agotó tres intentos y
+caducó; el heartbeat de producción no dejó una traza operativa suficiente en
+la interfaz.
+
+La reproducción controlada descubrió y cerró dos defectos:
+
+- [x] Care 1.16.35 carga explícitamente
+  `wp-admin/includes/translation-install.php`. En una petición REST de un sitio
+  `es_ES`, `RP_Care_Inventory_Snapshot` llamaba a la función administrativa
+  `wp_get_available_translations()` sin que WordPress la hubiese cargado y
+  provocaba el error crítico durante `report_inventory`. Build, smoke y release
+  oficiales verdes; 502 tests / 1267 assertions. Desplegado en dev y dev2.
+- [x] Plugin Center 1.2.41 distingue el retorno del gate de drift del éxito.
+  Antes, la transición correcta a `production_drifted` devolvía `true` y el
+  receptor la confundía con «sin drift», encolando `prepare_production`. Ahora
+  drift devuelve `false`, no se encola preparación y existe una prueba REST de
+  regresión. Suite: 389 tests / 1155 assertions. Desplegado en Cedro.
+
+Estado final observado: lote #1 en `production_drifted`, `failure_code` =
+`inventory_drift`, sin `production_backup_id` y sin orden de actualización de
+producción. La aprobación queda invalidada por diseño y el lote debe reiniciarse
+desde un inventario fresco; no se debe reutilizar ni alterar manualmente su hash.
+
+Hallazgo de contrato para el siguiente sprint: el lote antiguo congeló el
+`inventory_hash` del endpoint de actualizaciones, mientras `report_inventory`
+envía el snapshot completo con otro esquema/hash. Además, el hash de
+actualizaciones incluye metadatos transitorios que pueden desaparecer al
+caducar el transient. Debe definirse un único `installed_state_hash` estable
+(core/PHP, plugins y temas instalados, versiones y activación), compartido por
+creación y drift, separado del inventario volátil de actualizaciones.

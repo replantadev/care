@@ -500,3 +500,34 @@ contrato:
 
 Suite local final: **515 tests / 1302 assertions**, 0 fallos y 0 warnings PHP;
 6 skips corresponden a integraciones de entorno no disponibles en PHPUnit.
+
+## Cierre operativo de los gates — 2026-09-01
+
+- [x] Care 1.16.39 expone por separado en `/ping` y
+  `/smart-updates/status` los fallos globales, los de Care y los del pipeline.
+  Plugin Center 1.2.45 está desplegado en Cedro y solo usa
+  `care_failed_24h` para la alerta proactiva; conserva el contador global como
+  diagnóstico y mantiene fallback compatible para Care antiguos.
+- [x] Care 1.16.41 está desplegado en producción y staging. La actualización
+  controlada de dev2 1.16.40→1.16.41 devolvió salud HTTP 200 y
+  `backup_warning=null`: un staging emparejado ya no intenta un backup B2 de
+  producción aunque la clase del pipeline todavía no se haya cargado.
+- [x] La actualización de producción 1.16.37→1.16.41 generó y verificó el
+  backup B2 `backup_2026-09-01_15-38-16`, terminó con salud HTTP 200 y sin
+  advertencia de backup.
+- [x] Pull forzado después del despliegue: producción y staging respondieron
+  `success=true`, sin órdenes pendientes, con heartbeat de 1 s y 3 s
+  respectivamente. Ambos publican `pipeline_failed_24h=0` y
+  `pipeline_failed_actions=0`.
+- [x] Staging conserva la evidencia fallida histórica
+  `backup_2026-09-01_15-35-25` creada por la versión anterior. No se borra ni
+  se reetiqueta: es evidencia real; no bloquea producción y la 1.16.41 evita
+  que vuelva a generarse por una autoactualización de Care.
+- [x] Producción conserva 15 fallos Care antiguos dentro de la ventana móvil de
+  24 h. Son alerta operativa visible, no fallos del lote ni del canal pipeline.
+
+Estado de etapa: **pipeline end-to-end y controles de operación cerrados**.
+La baseline DOM y el loopback están cubiertos por contrato y PHPUnit, pero su
+evidencia de ejecución real se obtendrá con el siguiente lote de plugin; no se
+crea una actualización artificial ni se sobrescribe una baseline solo para
+probarlos.

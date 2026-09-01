@@ -162,6 +162,8 @@ final class PipelineQualityGatesTest extends TestCase {
     public function test_staging_self_update_never_attempts_b2_backup(): void {
         $source = (string) file_get_contents( __DIR__ . '/../inc/class-rest.php' );
         $this->assertStringContainsString( '$is_pipeline_staging', $source );
+        $this->assertStringContainsString( "'rpcare_pipeline_environment'", $source );
+        $this->assertStringContainsString( "get_option( \$pipeline_environment_option, 'production' )", $source );
         $this->assertMatchesRegularExpression(
             '/if \( ! \$is_pipeline_staging && class_exists\( \'RP_Care_Task_Backup\' \)/',
             $source

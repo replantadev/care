@@ -1,5 +1,10 @@
 # Changelog — Replanta Care
 
+## [1.16.41]
+
+### Fixed
+- Self-update now reads the persisted pipeline environment directly, so a paired staging instance never attempts the production-only B2 pre-update backup even when the pipeline client class has not loaded yet.
+
 ## [1.16.40]
 
 - Los self-updates de Care en una instancia con rol staging ya no intentan

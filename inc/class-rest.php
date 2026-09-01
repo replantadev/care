@@ -2111,7 +2111,13 @@ class RP_Care_REST {
         // and its webhook guard intentionally blocks B2; attempting a backup
         // there creates false failures and can never protect production.
         $backup_warning = null;
-        $is_pipeline_staging = class_exists( 'RP_Care_Pipeline_Client' ) && RP_Care_Pipeline_Client::is_staging();
+        // The self-update REST route can run before the pipeline client class is
+        // loaded. Read the persisted identity directly so staging never falls
+        // through to a production-only B2 backup merely because of load order.
+        $pipeline_environment_option = class_exists( 'RP_Care_Pipeline_Client' )
+            ? RP_Care_Pipeline_Client::OPT_ENVIRONMENT
+            : 'rpcare_pipeline_environment';
+        $is_pipeline_staging = 'staging' === get_option( $pipeline_environment_option, 'production' );
         if ( ! $is_pipeline_staging && class_exists( 'RP_Care_Task_Backup' ) && RP_Care_Task_Backup::is_b2_configured_public() ) {
             $pre_update = RP_Care_Task_Backup::create_b2_backup( [
                 'reason' => 'pre_update',

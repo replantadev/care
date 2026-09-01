@@ -44,7 +44,7 @@ class SmartUpdatesStatusTest extends TestCase {
             'update_executor', 'update_executor_source', 'native_auto_updates',
             'pipeline_enabled', 'staging_role', 'wp_toolkit_detected', 'direct_updates_blocked',
 			'pipeline_last_poll', 'pipeline_poll_age_seconds', 'pipeline_poll_scheduled',
-			'action_scheduler_available', 'as_failed_24h', 'backup_mode', 'backup_usable',
+			'action_scheduler_available', 'as_failed_24h', 'care_failed_24h', 'pipeline_failed_24h', 'backup_mode', 'backup_usable',
 			'pipeline_failed_actions',
 			'pipeline_instance_fingerprint',
         ];

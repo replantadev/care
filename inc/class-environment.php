@@ -208,6 +208,9 @@ class RP_Care_Environment {
 		$pipeline_instance_id = class_exists( 'RP_Care_Pipeline_Client' )
 			? (string) get_option( RP_Care_Pipeline_Client::OPT_INSTANCE_ID, '' )
 			: '';
+		$as_scope = class_exists( 'RP_Care_Test_Suite_WordPress' )
+			? RP_Care_Test_Suite_WordPress::action_scheduler_failure_scope()
+			: [ 'global_failed' => null, 'care_failed' => null, 'pipeline_failed' => null ];
 
 		return [
 			'schema_version'         => 2,
@@ -222,7 +225,9 @@ class RP_Care_Environment {
 			'pipeline_poll_age_seconds' => $poll_age,
 			'pipeline_poll_scheduled' => $poll_scheduled,
 			'action_scheduler_available' => function_exists( 'as_next_scheduled_action' ),
-			'as_failed_24h'          => class_exists( 'RP_Care_Plan' ) ? RP_Care_Plan::count_as_failures_24h() : 0,
+			'as_failed_24h'          => $as_scope['global_failed'], // legacy global field
+			'care_failed_24h'        => $as_scope['care_failed'],
+			'pipeline_failed_24h'    => $as_scope['pipeline_failed'],
 			'pipeline_failed_actions' => class_exists( 'RP_Care_Pipeline_Client' ) ? RP_Care_Pipeline_Client::count_failed_actions() : null,
 			'staging_role'           => $opts['staging_role'] ?? 'unset',
 			'wp_toolkit_detected'    => self::is_wptoolkit(),

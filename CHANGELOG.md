@@ -1,5 +1,12 @@
 # Changelog — Replanta Care
 
+## [1.16.39]
+
+- Publica en `/ping` y `/smart-updates/status` los conteos separados
+  `care_failed_24h` y `pipeline_failed_24h`, manteniendo `as_failed_24h` como
+  campo global legacy. Plugin Center puede ignorar el ruido ajeno sin perder
+  observabilidad ni compatibilidad con Care anteriores.
+
 ## [1.16.38]
 
 - Captura una huella DOM inmutable y ligada al lote antes de actualizar tanto

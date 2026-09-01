@@ -364,8 +364,25 @@ class RP_Care_Test_Suite_WordPress implements RP_Care_Test_Runner_Interface {
     }
 
     private function check_action_scheduler( string $batch_id = '' ): array {
+        $scope = self::action_scheduler_failure_scope( $batch_id );
+        return array_merge( [ 'name' => 'action_scheduler' ], $scope );
+    }
+
+    /**
+     * Return scoped Action Scheduler failures for tests, health pushes and PC.
+     * Global noise remains observable while only Care/current-batch failures
+     * influence the pipeline result.
+     */
+    public static function action_scheduler_failure_scope( string $batch_id = '' ): array {
         if ( ! function_exists( 'as_next_scheduled_action' ) ) {
-            return [ 'name' => 'action_scheduler', 'status' => 'skipped', 'message' => 'Action Scheduler not active.' ];
+            return [
+                'status'          => 'skipped',
+                'message'         => 'Action Scheduler not active.',
+                'global_failed'   => null,
+                'care_failed'     => null,
+                'pipeline_failed' => null,
+                'batch_failed'    => null,
+            ];
         }
         global $wpdb;
         $actions = $wpdb->prefix . 'actionscheduler_actions';
@@ -393,9 +410,12 @@ class RP_Care_Test_Suite_WordPress implements RP_Care_Test_Runner_Interface {
 
         if ( null === $global_raw || null === $care_raw || null === $pipeline_raw || null === $batch_raw ) {
             return [
-                'name'    => 'action_scheduler',
-                'status'  => 'warning',
-                'message' => 'Action Scheduler failure scope could not be queried safely.',
+                'status'          => 'warning',
+                'message'         => 'Action Scheduler failure scope could not be queried safely.',
+                'global_failed'   => null,
+                'care_failed'     => null,
+                'pipeline_failed' => null,
+                'batch_failed'    => null,
             ];
         }
         $global_failed   = (int) $global_raw;
@@ -405,7 +425,6 @@ class RP_Care_Test_Suite_WordPress implements RP_Care_Test_Runner_Interface {
 
         $status = $batch_failed > 0 ? 'critical' : ( $care_failed > 0 ? 'warning' : 'ok' );
         return [
-            'name'            => 'action_scheduler',
             'status'          => $status,
             'message'         => "AS 24h: global $global_failed, Care $care_failed, pipeline $pipeline_failed, lote actual $batch_failed.",
             'global_failed'   => $global_failed,

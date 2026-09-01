@@ -823,6 +823,13 @@ class RP_Care_Pipeline_Client {
             }
             return [ 'success' => false, 'error' => 'Action Scheduler not available.' ];
         }
+        if ( ! class_exists( 'RP_Care_Task_StagingEval' ) ) {
+            return [ 'success' => false, 'error' => 'dom_baseline_component_unavailable' ];
+        }
+        $baseline = RP_Care_Task_StagingEval::capture_pipeline_baseline( $batch_id );
+        if ( is_wp_error( $baseline ) ) {
+            return [ 'success' => false, 'error' => 'dom_baseline_capture_failed' ];
+        }
         $action_id = (int) as_enqueue_async_action(
             'rpcare_pipeline_apply_staging_batch',
             [ 'batch_id' => $batch_id, 'command_id' => $command_id ],
@@ -906,6 +913,14 @@ class RP_Care_Pipeline_Client {
                 RP_Care_Pipeline_Command_Journal::mark_failed( $command_id, false, 'action_scheduler_not_available' );
             }
             return [ 'success' => false, 'error' => 'Action Scheduler not available.' ];
+        }
+
+        if ( ! class_exists( 'RP_Care_Task_StagingEval' ) ) {
+            return [ 'success' => false, 'error' => 'dom_baseline_component_unavailable' ];
+        }
+        $baseline = RP_Care_Task_StagingEval::capture_pipeline_baseline( $batch_id );
+        if ( is_wp_error( $baseline ) ) {
+            return [ 'success' => false, 'error' => 'dom_baseline_capture_failed' ];
         }
 
         $action_id = (int) as_enqueue_async_action(

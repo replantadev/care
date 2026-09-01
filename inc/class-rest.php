@@ -173,6 +173,11 @@ class RP_Care_REST {
 			'callback'            => [ $this, 'hub_pipeline_run_local_command' ],
 			'permission_callback' => '__return_true',
 		] );
+		register_rest_route( $this->control_ns, '/pipeline/loopback-probe', [
+			'methods'             => 'GET',
+			'callback'            => [ $this, 'pipeline_loopback_probe' ],
+			'permission_callback' => '__return_true',
+		] );
 
         // ── Update inventory: full raw transient dump for 4-way count reconciliation ─
         // Returns every plugin/theme entry from the raw update_plugins transient,
@@ -2926,6 +2931,25 @@ class RP_Care_REST {
 			'error'  => ! empty( $result['success'] ) ? null : sanitize_text_field( (string) ( $result['error'] ?? 'local_command_failed' ) ),
 			'result' => $result,
 		], 200 );
+	}
+
+	/**
+	 * One-time local HTTP probe used by the pipeline test runner.
+	 * The URL token is random, expires after 60 seconds and only its SHA-256 is
+	 * stored. The endpoint returns no site data and consumes the token on use.
+	 */
+	public function pipeline_loopback_probe( WP_REST_Request $request ): WP_REST_Response {
+		$probe = sanitize_text_field( (string) $request->get_param( 'probe' ) );
+		if ( '' === $probe ) {
+			return new WP_REST_Response( [ 'ok' => false, 'error' => 'missing_probe' ], 403 );
+		}
+		$key    = 'rpcare_loopback_' . hash( 'sha256', $probe );
+		$stored = get_transient( $key );
+		delete_transient( $key );
+		if ( '1' !== $stored ) {
+			return new WP_REST_Response( [ 'ok' => false, 'error' => 'invalid_or_consumed_probe' ], 403 );
+		}
+		return new WP_REST_Response( [ 'ok' => true, 'schema_version' => 1 ], 200 );
 	}
 
     /**

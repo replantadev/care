@@ -288,6 +288,7 @@ class RP_Care_Test_Suite_WordPress implements RP_Care_Test_Runner_Interface {
         $loopback = $this->check_loopback();
         $checks[] = $loopback;
         if ( $loopback['status'] === 'critical' ) $has_crit = true;
+        if ( $loopback['status'] === 'warning' )  $has_warn = true;
 
         // Database connectivity.
         $db = $this->check_database();
@@ -295,8 +296,9 @@ class RP_Care_Test_Suite_WordPress implements RP_Care_Test_Runner_Interface {
         if ( $db['status'] === 'critical' ) $has_crit = true;
 
         // Action Scheduler health.
-        $as = $this->check_action_scheduler();
+        $as = $this->check_action_scheduler( (string) ( $context['batch_id'] ?? '' ) );
         $checks[] = $as;
+        if ( $as['status'] === 'critical' ) $has_crit = true;
         if ( $as['status'] === 'warning' ) $has_warn = true;
 
         // Plugin status: all expected plugins active.
@@ -327,18 +329,29 @@ class RP_Care_Test_Suite_WordPress implements RP_Care_Test_Runner_Interface {
     }
 
     private function check_loopback(): array {
-        if ( ! function_exists( 'WP_Site_Health' ) ) {
-            return [ 'name' => 'loopback', 'status' => 'skipped', 'message' => 'WP_Site_Health not available.' ];
-        }
-        $result = wp_remote_get( admin_url( 'admin-ajax.php?action=health-check-site-status-result' ), [
+        $token = wp_generate_password( 48, false, false );
+        $key   = 'rpcare_loopback_' . hash( 'sha256', $token );
+        set_transient( $key, '1', 60 );
+        $url = add_query_arg(
+            [ 'probe' => $token ],
+            rest_url( 'replanta-care/v1/pipeline/loopback-probe' )
+        );
+        $result = wp_remote_get( $url, [
             'timeout'    => 10,
             'cookies'    => [],
             'sslverify'  => true,
+            'redirection'=> 0,
         ] );
+        delete_transient( $key );
         if ( is_wp_error( $result ) ) {
             return [ 'name' => 'loopback', 'status' => 'warning', 'message' => 'Loopback check failed: ' . $result->get_error_message() ];
         }
-        return [ 'name' => 'loopback', 'status' => 'ok', 'message' => 'Loopback request succeeded.' ];
+        $code = (int) wp_remote_retrieve_response_code( $result );
+        $body = json_decode( wp_remote_retrieve_body( $result ), true );
+        if ( 200 !== $code || ! is_array( $body ) || empty( $body['ok'] ) ) {
+            return [ 'name' => 'loopback', 'status' => 'warning', 'message' => "Authenticated loopback returned HTTP $code." ];
+        }
+        return [ 'name' => 'loopback', 'status' => 'ok', 'message' => 'Authenticated one-time loopback succeeded.' ];
     }
 
     private function check_database(): array {
@@ -350,20 +363,56 @@ class RP_Care_Test_Suite_WordPress implements RP_Care_Test_Runner_Interface {
         return [ 'name' => 'database', 'status' => 'critical', 'message' => 'Database query failed.' ];
     }
 
-    private function check_action_scheduler(): array {
-        if ( ! class_exists( 'ActionScheduler' ) ) {
+    private function check_action_scheduler( string $batch_id = '' ): array {
+        if ( ! function_exists( 'as_next_scheduled_action' ) ) {
             return [ 'name' => 'action_scheduler', 'status' => 'skipped', 'message' => 'Action Scheduler not active.' ];
         }
         global $wpdb;
-        $failed = (int) $wpdb->get_var(
-            "SELECT COUNT(*) FROM {$wpdb->prefix}actionscheduler_actions
-             WHERE status = 'failed'
-             AND scheduled_date_gmt > DATE_SUB(UTC_TIMESTAMP(), INTERVAL 24 HOUR)"
+        $actions = $wpdb->prefix . 'actionscheduler_actions';
+        $groups  = $wpdb->prefix . 'actionscheduler_groups';
+        $window  = "a.status = 'failed' AND a.scheduled_date_gmt > DATE_SUB(UTC_TIMESTAMP(), INTERVAL 24 HOUR)";
+        $global_raw = $wpdb->get_var(
+            "SELECT COUNT(*) FROM {$actions} a WHERE {$window}"
         );
-        if ( $failed > 5 ) {
-            return [ 'name' => 'action_scheduler', 'status' => 'warning', 'message' => "$failed AS actions failed in the last 24h." ];
+        $care_filter = "(g.slug IN ('replanta-care','pipeline') OR a.hook LIKE 'rpcare\\_%')";
+        $pipeline_filter = "(g.slug = 'pipeline' OR a.hook LIKE 'rpcare\\_pipeline\\_%' OR a.hook = 'rpcare_create_production_backup')";
+        $care_raw = $wpdb->get_var(
+            "SELECT COUNT(*) FROM {$actions} a LEFT JOIN {$groups} g ON g.group_id = a.group_id WHERE {$window} AND {$care_filter}"
+        );
+        $pipeline_raw = $wpdb->get_var(
+            "SELECT COUNT(*) FROM {$actions} a LEFT JOIN {$groups} g ON g.group_id = a.group_id WHERE {$window} AND {$pipeline_filter}"
+        );
+        $batch_raw = '0';
+        if ( '' !== $batch_id ) {
+            $like = '%' . $wpdb->esc_like( $batch_id ) . '%';
+            $batch_raw = $wpdb->get_var( $wpdb->prepare(
+                "SELECT COUNT(*) FROM {$actions} a LEFT JOIN {$groups} g ON g.group_id = a.group_id WHERE {$window} AND {$pipeline_filter} AND a.args LIKE %s",
+                $like
+            ) );
         }
-        return [ 'name' => 'action_scheduler', 'status' => 'ok', 'message' => "$failed AS failures in 24h." ];
+
+        if ( null === $global_raw || null === $care_raw || null === $pipeline_raw || null === $batch_raw ) {
+            return [
+                'name'    => 'action_scheduler',
+                'status'  => 'warning',
+                'message' => 'Action Scheduler failure scope could not be queried safely.',
+            ];
+        }
+        $global_failed   = (int) $global_raw;
+        $care_failed     = (int) $care_raw;
+        $pipeline_failed = (int) $pipeline_raw;
+        $batch_failed    = (int) $batch_raw;
+
+        $status = $batch_failed > 0 ? 'critical' : ( $care_failed > 0 ? 'warning' : 'ok' );
+        return [
+            'name'            => 'action_scheduler',
+            'status'          => $status,
+            'message'         => "AS 24h: global $global_failed, Care $care_failed, pipeline $pipeline_failed, lote actual $batch_failed.",
+            'global_failed'   => $global_failed,
+            'care_failed'     => $care_failed,
+            'pipeline_failed' => $pipeline_failed,
+            'batch_failed'    => $batch_failed,
+        ];
     }
 
     private function check_plugin_status(): array {
@@ -397,12 +446,21 @@ class RP_Care_Test_Suite_DOM implements RP_Care_Test_Runner_Interface {
 
     public function run( array $context ): array {
         $baseline = get_option( 'rpcare_staging_eval_baseline', [] );
+        $batch_id = (string) ( $context['batch_id'] ?? '' );
+        $baseline_batch_id = (string) get_option( 'rpcare_staging_eval_baseline_batch_id', '' );
 
         if ( empty( $baseline ) ) {
             return [
-                'status'  => 'skipped',
-                'checks'  => [ [ 'name' => 'dom_baseline', 'status' => 'skipped', 'message' => 'No baseline captured.' ] ],
-                'summary' => 'DOM fingerprint: no baseline',
+                'status'  => '' !== $batch_id ? 'critical' : 'skipped',
+                'checks'  => [ [ 'name' => 'dom_baseline', 'status' => '' !== $batch_id ? 'critical' : 'skipped', 'message' => 'No baseline captured for this batch.' ] ],
+                'summary' => 'DOM fingerprint: baseline missing',
+            ];
+        }
+        if ( '' !== $batch_id && ! hash_equals( $baseline_batch_id, $batch_id ) ) {
+            return [
+                'status'  => 'critical',
+                'checks'  => [ [ 'name' => 'dom_baseline_batch', 'status' => 'critical', 'message' => 'DOM baseline belongs to a different batch.' ] ],
+                'summary' => 'DOM fingerprint: stale baseline rejected',
             ];
         }
 
@@ -414,30 +472,30 @@ class RP_Care_Test_Suite_DOM implements RP_Care_Test_Runner_Interface {
             ];
         }
 
-        $current = RP_Care_Task_StagingEval::capture_production_snapshot();
-        if ( empty( $current ) || empty( $current['http'] ) || empty( $baseline['http'] ) ) {
+        $current = RP_Care_Task_StagingEval::capture_snapshot();
+        if ( empty( $current ) || ! empty( $current['error'] ) || empty( $baseline['status_code'] ) ) {
             return [
-                'status'  => 'skipped',
-                'checks'  => [ [ 'name' => 'dom_comparison', 'status' => 'skipped', 'message' => 'Could not capture current snapshot.' ] ],
-                'summary' => 'DOM fingerprint: skipped',
+                'status'  => '' !== $batch_id ? 'critical' : 'skipped',
+                'checks'  => [ [ 'name' => 'dom_comparison', 'status' => '' !== $batch_id ? 'critical' : 'skipped', 'message' => 'Could not capture current snapshot.' ] ],
+                'summary' => 'DOM fingerprint: current snapshot unavailable',
             ];
         }
 
         // delegate to existing diff logic.
-        $diff = RP_Care_Task_StagingEval::diff_http_snapshots( $baseline['http'], $current['http'] );
+        $diff = RP_Care_Task_StagingEval::diff_http_snapshots( $baseline, $current );
 
         $checks   = [];
         $has_crit = false;
         $has_warn = false;
 
-        foreach ( $diff as $check ) {
+        foreach ( $diff['issues'] ?? [] as $check ) {
             $checks[] = [
-                'name'    => $check['check'] ?? 'dom_check',
-                'status'  => $check['severity'] ?? 'ok',
-                'message' => $check['message'] ?? '',
+                'name'    => $check['type'] ?? 'dom_check',
+                'status'  => $check['sev'] ?? 'ok',
+                'message' => $check['msg'] ?? '',
             ];
-            if ( ( $check['severity'] ?? '' ) === 'critical' ) $has_crit = true;
-            if ( ( $check['severity'] ?? '' ) === 'warning' )  $has_warn = true;
+            if ( ( $check['sev'] ?? '' ) === 'critical' ) $has_crit = true;
+            if ( ( $check['sev'] ?? '' ) === 'warning' )  $has_warn = true;
         }
 
         if ( empty( $checks ) ) {

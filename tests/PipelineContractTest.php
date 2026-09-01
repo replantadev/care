@@ -1018,6 +1018,27 @@ class CarePipelineContractTest extends TestCase {
 
     // CC-S13: handle_verify_production returns event='production_verified'.
     public function test_handle_verify_production_returns_production_verified_event(): void {
+        $previous_wpdb = $GLOBALS['wpdb'];
+        $GLOBALS['wpdb'] = new class extends wpdb {
+            public function get_var( string $sql, int $col_offset = 0, int $row_offset = 0 ): ?string {
+                return str_contains( $sql, 'SELECT 1' ) ? '1' : '0';
+            }
+        };
+        $GLOBALS['_wp_remote_get_mock'] = static function ( string $url ): array {
+            if ( str_contains( $url, '/pipeline/loopback-probe' ) ) {
+                parse_str( (string) parse_url( $url, PHP_URL_QUERY ), $query );
+                $request = new WP_REST_Request();
+                $request->set_param( 'probe', $query['probe'] ?? '' );
+                $response = ( new RP_Care_REST() )->pipeline_loopback_probe( $request );
+                return [ 'response' => [ 'code' => $response->get_status() ], 'body' => wp_json_encode( $response->get_data() ) ];
+            }
+            return [ 'response' => [ 'code' => 200 ], 'body' => '<html><body><p>stable production</p></body></html>' ];
+        };
+        update_option( 'active_plugins', [ 'replanta-care/replanta-care.php' ] );
+        $baseline = RP_Care_Task_StagingEval::capture_snapshot();
+        update_option( RP_Care_Task_StagingEval::OPT_BASELINE, $baseline );
+        update_option( RP_Care_Task_StagingEval::OPT_BASELINE_BATCH, 'cc-s13-batch' );
+
         $ref = new ReflectionMethod( RP_Care_Pipeline_Client::class, 'handle_verify_production' );
         $ref->setAccessible( true );
 
@@ -1026,8 +1047,14 @@ class CarePipelineContractTest extends TestCase {
             'payload' => [ 'batch_id' => 'cc-s13-batch' ],
         ] );
 
+        $GLOBALS['_wp_remote_get_mock'] = null;
+        $GLOBALS['wpdb'] = $previous_wpdb;
+        delete_option( 'active_plugins' );
+        delete_option( RP_Care_Task_StagingEval::OPT_BASELINE );
+        delete_option( RP_Care_Task_StagingEval::OPT_BASELINE_BATCH );
+
         $this->assertSame( 'production_verified', $result['event'] ?? null,
-            'handle_verify_production must set event=production_verified at top level' );
+            'handle_verify_production must set event=production_verified at top level: ' . wp_json_encode( $result ) );
         $this->assertTrue( $result['success'] ?? false,
             'handle_verify_production must set success=true' );
         $this->assertArrayHasKey( 'test_report', $result,

@@ -184,7 +184,10 @@ class RP_Care_Route_Monitor {
 
         $http_code  = (int) wp_remote_retrieve_response_code( $response );
         $body       = wp_remote_retrieve_body( $response );
-        $final_url  = $response['http_response']?->get_response_object()?->get_final_location() ?? $url;
+        $http_response = $response['http_response'] ?? null;
+        $final_url = is_object( $http_response ) && method_exists( $http_response, 'get_response_object' )
+            ? ( $http_response->get_response_object()?->get_final_location() ?? $url )
+            : $url;
 
         return [
             'url'              => $url,

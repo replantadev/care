@@ -1,5 +1,17 @@
 # Changelog — Replanta Care
 
+## [1.16.38]
+
+- Captura una huella DOM inmutable y ligada al lote antes de actualizar tanto
+  staging como producción; una baseline ausente, ajena o ilegible bloquea el
+  pipeline y la comparación ya no sobrescribe su propio estado de referencia.
+- Sustituye el falso skip de `WP_Site_Health` por un loopback HTTP autenticado,
+  de un solo uso y sin exposición de datos del sitio.
+- Separa fallos de Action Scheduler globales, de Care, del pipeline y del lote
+  actual. El ruido de otros plugins queda visible pero no degrada el lote; un
+  fallo del lote actual es crítico.
+- Elimina warnings del harness de rutas y Woo Ops para mantener la suite limpia.
+
 ## [1.16.37]
 
 - Hace idempotente la aplicación de plugins, temas y core cuando staging ya

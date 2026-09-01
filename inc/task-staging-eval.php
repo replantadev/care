@@ -21,6 +21,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 class RP_Care_Task_StagingEval {
 
     const OPT_BASELINE = 'rpcare_staging_eval_baseline';
+    const OPT_BASELINE_BATCH = 'rpcare_staging_eval_baseline_batch_id';
 
     // ── Public API ────────────────────────────────────────────────────────────
 
@@ -91,17 +92,54 @@ class RP_Care_Task_StagingEval {
      * Full production snapshot: HTTP fingerprint + Elementor DB.
      * Stored as OPT_BASELINE for later comparison by PC.
      */
-    public static function capture_production_snapshot(): array {
+    public static function capture_snapshot(): array {
         $http      = self::capture_http_snapshot( home_url( '/' ) );
         $elementor = self::capture_local_elementor_snapshot();
 
-        $snapshot = array_merge( $http, [
+        return array_merge( $http, [
             'elementor_db' => $elementor,
             'captured_at'  => time(),
         ] );
+    }
+
+    public static function capture_production_snapshot(): array {
+        $snapshot = self::capture_snapshot();
 
         update_option( self::OPT_BASELINE, $snapshot, false );
+        delete_option( self::OPT_BASELINE_BATCH );
 
+        return $snapshot;
+    }
+
+    /**
+     * Capture the immutable pre-update baseline for one pipeline batch.
+     * Retries for the same batch reuse the original snapshot so a worker cannot
+     * accidentally replace the pre-update state after the update has run.
+     *
+     * @return array|WP_Error
+     */
+    public static function capture_pipeline_baseline( string $batch_id ) {
+        $batch_id = sanitize_text_field( $batch_id );
+        if ( '' === $batch_id ) {
+            return new WP_Error( 'missing_batch_id', 'A batch_id is required for a pipeline DOM baseline.' );
+        }
+
+        $stored_batch = (string) get_option( self::OPT_BASELINE_BATCH, '' );
+        $stored       = get_option( self::OPT_BASELINE, [] );
+        if ( hash_equals( $stored_batch, $batch_id ) && is_array( $stored ) && ! empty( $stored ) ) {
+            return $stored;
+        }
+
+        $snapshot = self::capture_snapshot();
+        if ( ! empty( $snapshot['error'] ) || 200 !== (int) ( $snapshot['status_code'] ?? 0 ) ) {
+            return new WP_Error(
+                'dom_baseline_capture_failed',
+                sanitize_text_field( (string) ( $snapshot['error'] ?? 'Homepage did not return HTTP 200.' ) )
+            );
+        }
+
+        update_option( self::OPT_BASELINE, $snapshot, false );
+        update_option( self::OPT_BASELINE_BATCH, $batch_id, false );
         return $snapshot;
     }
 

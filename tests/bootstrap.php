@@ -82,6 +82,12 @@ if ( ! function_exists( 'register_uninstall_hook' ) ) {
 if ( ! function_exists( 'home_url' ) ) {
     function home_url( string $path = '' ): string { return 'http://localhost' . $path; }
 }
+if ( ! function_exists( 'wp_login_url' ) ) {
+    function wp_login_url(): string { return 'http://localhost/wp-login.php'; }
+}
+if ( ! function_exists( 'rest_url' ) ) {
+    function rest_url( string $path = '' ): string { return 'http://localhost/wp-json/' . ltrim( $path, '/' ); }
+}
 if ( ! function_exists( 'get_site_url' ) ) {
     function get_site_url( ?int $blog_id = null, string $path = '', string $scheme = '' ): string {
         return 'http://localhost' . $path;
@@ -272,6 +278,9 @@ if ( ! class_exists( 'wpdb' ) ) {
     class wpdb {
         public string $prefix      = 'wp_';
         public string $dbname      = 'test_db';
+        public string $posts       = 'wp_posts';
+        public string $postmeta    = 'wp_postmeta';
+        public string $options     = 'wp_options';
         public ?string $last_error = null;
 
         public function insert( string $table, array $data, $format = null ): int|false { return false; }

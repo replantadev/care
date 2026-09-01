@@ -381,10 +381,13 @@ Pendientes no bloqueantes para el siguiente sprint:
   producción, pero el guard bloquea `api003.backblazeb2.com` en dev2. Elegir
   explícitamente entre «sin backup propio; staging es desechable» o un permiso
   B2 limitado por host/ruta; nunca allowlist global.
-- [ ] Capturar baseline DOM antes del próximo lote para que la regresión HTML no
-  quede en `skipped`.
-- [ ] Habilitar/implementar el loopback de Site Health en el runner o sustituirlo
-  por una comprobación equivalente auditable.
+- [x] Care 1.16.38 captura una baseline DOM inmutable, ligada al `batch_id`,
+  inmediatamente antes de actualizar staging y producción. Una baseline
+  ausente, ajena o ilegible es crítica; el snapshot posterior ya no sobrescribe
+  la referencia y el parser consume correctamente `issues[]`.
+- [x] Care 1.16.38 sustituye el falso skip de Site Health por un loopback HTTP
+  autenticado de un solo uso: token aleatorio, solo su SHA-256 en transient,
+  caducidad de 60 s, consumo único y respuesta sin datos del sitio.
 - [ ] Publicar Plugin Center 1.2.35–1.2.40 mediante su workflow de release. En
   este piloto se desplegó desde el commit validado por SSH porque GitHub Actions
   del repositorio no era consultable, aunque el push sí funcionaba.
@@ -478,3 +481,22 @@ lote #2 recibió un backfill compare-and-set exacto desde su orden inmutable y
 ahora conserva `production_backup_id=backup_2026-08-31_08-46-54`. Se registró
 el evento `production_backup_evidence_backfilled`; no se infirió ni reutilizó
 otro backup.
+
+## Cierre de gates de calidad — Care 1.16.38
+
+Los tres huecos observados en el primer piloto quedan cerrados en código y
+contrato:
+
+- Action Scheduler informa por separado `global_failed`, `care_failed`,
+  `pipeline_failed` y `batch_failed`. Los fallos de otros plugins permanecen
+  visibles pero no degradan el lote; un fallo que contenga el `batch_id` actual
+  es crítico y bloquea. Si las consultas de alcance no pueden ejecutarse, el
+  resultado es warning, nunca un cero inventado.
+- La baseline DOM se captura antes de encolar la actualización y los reintentos
+  del mismo lote reutilizan exactamente la primera captura. Otro lote fuerza
+  una baseline nueva.
+- El loopback valida HTTP 200 y un sobre autenticado válido; errores de red,
+  WAF, redirecciones o respuestas opacas quedan como warning auditable.
+
+Suite local final: **515 tests / 1302 assertions**, 0 fallos y 0 warnings PHP;
+6 skips corresponden a integraciones de entorno no disponibles en PHPUnit.

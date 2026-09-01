@@ -158,4 +158,13 @@ final class PipelineQualityGatesTest extends TestCase {
         $this->assertGreaterThanOrEqual( 2, substr_count( $source, 'capture_pipeline_baseline( $batch_id )' ) );
         $this->assertStringContainsString( "'dom_baseline_capture_failed'", $source );
     }
+
+    public function test_staging_self_update_never_attempts_b2_backup(): void {
+        $source = (string) file_get_contents( __DIR__ . '/../inc/class-rest.php' );
+        $this->assertStringContainsString( '$is_pipeline_staging', $source );
+        $this->assertMatchesRegularExpression(
+            '/if \( ! \$is_pipeline_staging && class_exists\( \'RP_Care_Task_Backup\' \)/',
+            $source
+        );
+    }
 }

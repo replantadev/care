@@ -2107,9 +2107,12 @@ class RP_Care_REST {
             ], 200);
         }
 
-        // 3b. Pre-update backup: database + config. Fallo = warning, no bloquea la actualización.
+        // 3b. Pre-update backup: production only. A paired staging is disposable
+        // and its webhook guard intentionally blocks B2; attempting a backup
+        // there creates false failures and can never protect production.
         $backup_warning = null;
-        if ( class_exists( 'RP_Care_Task_Backup' ) && RP_Care_Task_Backup::is_b2_configured_public() ) {
+        $is_pipeline_staging = class_exists( 'RP_Care_Pipeline_Client' ) && RP_Care_Pipeline_Client::is_staging();
+        if ( ! $is_pipeline_staging && class_exists( 'RP_Care_Task_Backup' ) && RP_Care_Task_Backup::is_b2_configured_public() ) {
             $pre_update = RP_Care_Task_Backup::create_b2_backup( [
                 'reason' => 'pre_update',
                 'scopes' => [ 'database', 'config' ],

@@ -1,5 +1,11 @@
 # Changelog — Replanta Care
 
+## [1.16.40]
+
+- Los self-updates de Care en una instancia con rol staging ya no intentan
+  crear backups B2. Staging es desechable y su guard bloquea correctamente ese
+  tráfico; el backup obligatorio permanece ligado exclusivamente a producción.
+
 ## [1.16.39]
 
 - Publica en `/ping` y `/smart-updates/status` los conteos separados

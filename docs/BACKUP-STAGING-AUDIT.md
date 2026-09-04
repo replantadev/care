@@ -575,12 +575,18 @@ Estado verificado:
   cero inventado.
 - [x] Se aprovisionó un perfil B2 dedicado para producción, con credencial
   restringida al bucket del site y secreto transmitido una sola vez a Care.
-  El primer backup real quedó despachado como Action Scheduler `508844`; la
-  evidencia final debe ser `complete`, verificable y restaurable antes de abrir
-  el gate.
-- [ ] El endpoint de diagnóstico B2 de Care devuelve HTTP 200 con cuerpo vacío
-  en este hosting. No se considera PASS. Debe compararse con el resultado del
-  backup real y corregirse sin exponer credenciales ni relajar el gate.
+- [ ] El primer backup real (Action Scheduler `508844`) alcanzó B2 con 120 MB de
+  base de datos y configuración, pero terminó `partial`: no llegó a subir
+  plugins, temas ni manifiesto y la acción finalizó `failed`. Es evidencia real
+  y restaurable a nivel de base de datos, pero no abre el gate de producción.
+  La siguiente prueba debe usar el alcance del rollback de actualizaciones
+  (`database`, `plugins`, `themes`) y conservar errores estructurados aunque el
+  proceso sea terminado por el límite del hosting.
+- [x] El HTTP 200 vacío del diagnóstico B2 se reprodujo y su causa fue una
+  llamada desde el controlador REST a un método privado del proveedor. Care
+  1.16.43 usa el wrapper público y añade una prueba de regresión. La corrección
+  debe desplegarse en Maqui tras disponer de una vía de actualización que no
+  expire durante el backup previo.
 - [ ] `dev.maquistoresas.com` responde HTTP 503 con cuerpo `Maintenance` desde
   LiteSpeed tanto en `/` como en `/wp-json/`. El fallo ocurre antes de cargar
   WordPress/Care; no puede resolverse desde Plugin Center.

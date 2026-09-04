@@ -65,6 +65,60 @@ class HotfixTest extends TestCase {
         $this->assertSame( [ 'ecommerce' ], $opts['addons'] ?? [] );
     }
 
+    public function test_semilla_includes_staging_capability(): void {
+        RP_Care_Plan::apply_hub_entitlements( 'active', 'semilla', [] );
+        $this->assertTrue( RP_Care_Plan::can_access_feature( 'staging', 'semilla' ) );
+        $this->assertTrue( RP_Care_Plan::can_access_feature( 'staging_clone', 'semilla' ) );
+    }
+
+    public function test_site_feature_grant_is_additive_to_plan(): void {
+        RP_Care_Plan::apply_hub_entitlements( 'active', 'semilla', [], [ 'monitoring' ] );
+        $this->assertTrue( RP_Care_Plan::can_access_feature( 'monitoring', 'semilla' ) );
+        $this->assertFalse( RP_Care_Plan::can_access_feature( 'audit', 'semilla' ) );
+    }
+
+    public function test_feature_grants_change_effective_runtime_levels(): void {
+        RP_Care_Plan::apply_hub_entitlements(
+            'active',
+            'semilla',
+            [],
+            [ 'wpo_advanced', 'monitoring', 'seo_reviews', 'priority_support' ]
+        );
+        $this->assertSame( 'advanced', RP_Care_Plan::get_wpo_level( 'semilla' ) );
+        $this->assertSame( 'monthly', RP_Care_Plan::get_review_frequency( 'semilla' ) );
+        $this->assertTrue( RP_Care_Plan::has_monitoring( 'semilla' ) );
+        $this->assertTrue( RP_Care_Plan::has_priority_support( 'semilla' ) );
+    }
+
+    public function test_unknown_and_duplicate_feature_grants_are_filtered(): void {
+        RP_Care_Plan::apply_hub_entitlements(
+            'active',
+            'semilla',
+            [],
+            [ 'monitoring', 'monitoring', 'delete_everything', 'AUDIT' ]
+        );
+        $opts = get_option( 'rpcare_options', [] );
+        $this->assertSame( [ 'monitoring', 'audit' ], $opts['feature_grants'] ?? [] );
+    }
+
+    public function test_feature_grant_cannot_restore_access_for_invalid_plan(): void {
+        update_option( 'rpcare_options', [ 'feature_grants' => [ 'monitoring' ] ] );
+        $this->assertFalse( RP_Care_Plan::can_access_feature( 'monitoring', 'invalid' ) );
+    }
+
+    public function test_legacy_entitlement_payload_preserves_existing_grants(): void {
+        update_option( 'rpcare_options', [ 'feature_grants' => [ 'monitoring' ] ] );
+        RP_Care_Plan::apply_hub_entitlements( 'active', 'semilla', [] );
+        $this->assertSame( [ 'monitoring' ], RP_Care_Plan::get_feature_grants() );
+    }
+
+    public function test_explicit_empty_feature_grants_removes_site_override(): void {
+        update_option( 'rpcare_options', [ 'feature_grants' => [ 'monitoring' ] ] );
+        RP_Care_Plan::apply_hub_entitlements( 'active', 'semilla', [], [] );
+        $this->assertSame( [], RP_Care_Plan::get_feature_grants() );
+        $this->assertFalse( RP_Care_Plan::can_access_feature( 'monitoring', 'semilla' ) );
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // Bug 1: RP_Care_Addon_Manager singleton integration
     // ─────────────────────────────────────────────────────────────────────────

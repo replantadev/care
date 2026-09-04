@@ -1684,9 +1684,11 @@ class RP_Care_REST {
         $plan   = sanitize_key($request->get_param('plan')   ?? '');
         $addons = $request->get_param('addons');
         $addons = is_array($addons) ? $addons : [];
+        $feature_grants = $request->get_param('feature_grants');
+        $feature_grants = is_array($feature_grants) ? $feature_grants : null;
 
         if (class_exists('RP_Care_Plan')) {
-            RP_Care_Plan::apply_hub_entitlements('active', $plan, $addons);
+            RP_Care_Plan::apply_hub_entitlements('active', $plan, $addons, $feature_grants);
         }
 
         delete_transient('rpcare_hub_backoff');
@@ -2018,6 +2020,26 @@ class RP_Care_REST {
             $opts['backup_mode']  = $backup_mode;
             update_option( 'rpcare_options', $opts );
             $updated['backup_mode'] = $backup_mode;
+        }
+
+        // Additive per-site capabilities. Unknown grants are dropped by the
+        // Care-side allowlist; a site can never invent an entitlement locally.
+        $feature_grants = $request->get_param( 'feature_grants' );
+        if ( ! is_null( $feature_grants ) && is_array( $feature_grants ) && class_exists( 'RP_Care_Plan' ) ) {
+            $opts = get_option( 'rpcare_options', [] );
+            $old_feature_grants = RP_Care_Plan::sanitize_feature_grants( (array) ( $opts['feature_grants'] ?? [] ) );
+            $opts['feature_grants'] = RP_Care_Plan::sanitize_feature_grants( $feature_grants );
+            update_option( 'rpcare_options', $opts );
+            $updated['feature_grants'] = $opts['feature_grants'];
+            if ( $old_feature_grants !== $opts['feature_grants'] && class_exists( 'RP_Care_Scheduler' ) ) {
+                $current_plan = (string) ( $opts['plan'] ?? get_option( 'rpcare_detected_plan', '' ) );
+                if ( RP_Care_Plan::is_valid_plan( $current_plan ) ) {
+                    $scheduler = new RP_Care_Scheduler( $current_plan );
+                    $scheduler->clear_all();
+                    $scheduler->ensure();
+                    $updated['feature_grants_schedule'] = 'rescheduled';
+                }
+            }
         }
 
         // Read-only operator policy projection from Plugin Center. Care stores

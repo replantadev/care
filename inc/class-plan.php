@@ -20,6 +20,16 @@ class RP_Care_Plan {
     const PLAN_ADVANCED = 'advanced';
     const PLAN_PREMIUM = 'premium';
 
+    /** Additive per-site grants accepted from Plugin Center. */
+    const FEATURE_GRANT_ALLOWLIST = [
+        'wpo_advanced',
+        'monitoring',
+        'priority_support',
+        'seo_reviews',
+        'cdn_config',
+        'audit',
+    ];
+
     // Reentrancy guard: prevents get_current() → detect_plan_from_hub() → get_current() loops.
     private static bool $detecting = false;
 
@@ -417,10 +427,13 @@ class RP_Care_Plan {
             $plan   = (string) ($d['plan']   ?? '');
             $status = (string) ($d['status'] ?? 'active');
             $addons = is_array($d['addons'] ?? null) ? $d['addons'] : [];
+            $feature_grants = array_key_exists('feature_grants', $d) && is_array($d['feature_grants'])
+                ? $d['feature_grants']
+                : null;
 
             if (self::is_valid_plan($plan)) {
                 update_option('rpcare_activated', true);
-                self::apply_hub_entitlements($status, $plan, $addons);
+                self::apply_hub_entitlements($status, $plan, $addons, $feature_grants);
 
                 if (defined('WP_DEBUG') && WP_DEBUG) {
                     error_log('Care Plugin: Plan detected from Hub — status=' . $status . ' plan=' . $plan . ' site=' . $site_url);
@@ -441,9 +454,11 @@ class RP_Care_Plan {
      *
      * @param string   $status   'active' | 'suspended' | 'expired' | 'cancelled'
      * @param string   $plan     plan slug, e.g. 'semilla'
-     * @param string[] $addons   e.g. ['ecommerce']
+     * @param string[] $addons          e.g. ['ecommerce']
+     * @param string[]|null $feature_grants additive site-specific capabilities;
+     *                                      null preserves grants from an older Hub response
      */
-    public static function apply_hub_entitlements(string $status, string $plan, array $addons): void {
+    public static function apply_hub_entitlements(string $status, string $plan, array $addons, ?array $feature_grants = null): void {
         $opts     = get_option('rpcare_options', []);
         $plan     = self::normalize_plan($plan);
         // Whitelist to known addon slugs and deduplicate
@@ -451,6 +466,9 @@ class RP_Care_Plan {
             array_filter(array_map('sanitize_key', $addons), 'strlen'),
             ['ecommerce']
         )));
+        $feature_grants = null === $feature_grants
+            ? self::sanitize_feature_grants((array) ($opts['feature_grants'] ?? []))
+            : self::sanitize_feature_grants($feature_grants);
 
         if (self::is_valid_plan($plan)) {
             update_option('rpcare_detected_plan', $plan);
@@ -458,7 +476,9 @@ class RP_Care_Plan {
         }
 
         $old_addons  = (array) ($opts['addons'] ?? []);
+        $old_feature_grants = self::sanitize_feature_grants((array) ($opts['feature_grants'] ?? []));
         $opts['addons'] = $addons;
+        $opts['feature_grants'] = $feature_grants;
 
         $was_suspended = (bool) get_option('rpcare_hub_suspended', false);
         $suspended     = in_array($status, ['suspended', 'expired', 'cancelled', 'verification_stale'], true);
@@ -482,6 +502,7 @@ class RP_Care_Plan {
         sort($old_addons);
         $new_sorted = $addons; sort($new_sorted);
         $addons_changed = ($old_addons !== $new_sorted);
+        $feature_grants_changed = ($old_feature_grants !== $feature_grants);
 
         if ($addons_changed) {
             do_action('rpcare_addons_synced', $addons, $old_addons);
@@ -493,7 +514,7 @@ class RP_Care_Plan {
                 $scheduler = new \RP_Care_Scheduler($effective_plan);
                 if ($suspended) {
                     $scheduler->clear_all();
-                } elseif ($addons_changed || $was_suspended) {
+                } elseif ($addons_changed || $feature_grants_changed || $was_suspended) {
                     $scheduler->clear_all();
                     $scheduler->ensure();
                 }
@@ -501,6 +522,16 @@ class RP_Care_Plan {
         }
 
         delete_transient('rpcare_plan_cache');
+    }
+
+    public static function sanitize_feature_grants(array $grants): array {
+        $grants = array_filter(array_map('sanitize_key', $grants), 'strlen');
+        return array_values(array_unique(array_intersect(self::FEATURE_GRANT_ALLOWLIST, $grants)));
+    }
+
+    public static function get_feature_grants(): array {
+        $opts = get_option('rpcare_options', []);
+        return self::sanitize_feature_grants((array) ($opts['feature_grants'] ?? []));
     }
 
     public static function get_plan_config($plan = null) {
@@ -640,22 +671,29 @@ class RP_Care_Plan {
     
     public static function get_wpo_level($plan = null) {
         $config = self::get_plan_config($plan);
+        if (self::can_access_feature('wpo_advanced', $plan) && ($config['wpo'] ?? 'basic') === 'basic') {
+            return 'advanced';
+        }
         return $config['wpo'] ?? 'basic';
     }
     
     public static function get_review_frequency($plan = null) {
+        if (self::can_access_feature('audit', $plan)) {
+            return 'quarterly_audit';
+        }
+        if (self::can_access_feature('seo_reviews', $plan)) {
+            return 'monthly';
+        }
         $config = self::get_plan_config($plan);
         return $config['reviews'] ?? 'quarterly';
     }
     
     public static function has_monitoring($plan = null) {
-        $config = self::get_plan_config($plan);
-        return $config['monitoring'] ?? false;
+        return self::can_access_feature('monitoring', $plan);
     }
     
     public static function has_priority_support($plan = null) {
-        $config = self::get_plan_config($plan);
-        return $config['priority_support'] ?? false;
+        return self::can_access_feature('priority_support', $plan);
     }
     
     public static function has_hosting_included($plan = null) {
@@ -734,14 +772,20 @@ class RP_Care_Plan {
             'cdn_config'           => [self::PLAN_RAIZ, self::PLAN_ECOSISTEMA],
             'anomaly'              => [self::PLAN_RAIZ, self::PLAN_ECOSISTEMA],
             'anomaly_detection'    => [self::PLAN_RAIZ, self::PLAN_ECOSISTEMA],
-            'staging'              => [self::PLAN_ECOSISTEMA],
-            'staging_clone'        => [self::PLAN_ECOSISTEMA],
+            // A safe update path is part of maintenance itself, not an upsell.
+            // Commercial plans still differ in cadence, support and automation.
+            'staging'              => [self::PLAN_SEMILLA, self::PLAN_RAIZ, self::PLAN_ECOSISTEMA],
+            'staging_clone'        => [self::PLAN_SEMILLA, self::PLAN_RAIZ, self::PLAN_ECOSISTEMA],
             'cwv'                  => [self::PLAN_SEMILLA, self::PLAN_RAIZ, self::PLAN_ECOSISTEMA],
             'cwv_reports'          => [self::PLAN_SEMILLA, self::PLAN_RAIZ, self::PLAN_ECOSISTEMA],
             'technical_consulting' => [self::PLAN_ECOSISTEMA],
         ];
 
-        return in_array($plan, $features_by_plan[$feature] ?? []);
+        if (in_array($feature, self::get_feature_grants(), true)) {
+            return true;
+        }
+
+        return in_array($plan, $features_by_plan[$feature] ?? [], true);
     }
     
     public static function get_schedule_intervals() {

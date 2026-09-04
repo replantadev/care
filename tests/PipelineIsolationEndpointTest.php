@@ -3,6 +3,7 @@
 declare( strict_types=1 );
 
 require_once __DIR__ . '/bootstrap.php';
+require_once __DIR__ . '/../inc/class-plan.php';
 
 if ( ! class_exists( 'RP_Care_Pipeline_Client' ) ) {
     class RP_Care_Pipeline_Client {
@@ -144,5 +145,17 @@ class PipelineIsolationEndpointTest extends TestCase {
         $this->assertSame( 'disabled', $opts['native_auto_updates'] );
         $this->assertSame( 'staging', $opts['staging_role'] );
         $this->assertTrue( (bool) get_option( RP_Care_Pipeline_Client::OPT_ENABLED, false ) );
+    }
+
+    public function test_hub_config_sanitizes_site_feature_grants(): void {
+        $request = $this->request( hash( 'sha256', self::TOKEN ) );
+        $request->set_param( 'feature_grants', [ 'monitoring', 'audit', 'root_shell', 'monitoring' ] );
+
+        $response = $this->rest->hub_config( $request );
+        $this->assertSame( 200, $response->get_status() );
+        $this->assertSame(
+            [ 'monitoring', 'audit' ],
+            get_option( 'rpcare_options', [] )['feature_grants'] ?? []
+        );
     }
 }

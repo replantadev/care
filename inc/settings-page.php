@@ -664,6 +664,7 @@ class RP_Care_Settings_Page {
                             'cdn_config'   => 'CDN / Cloudflare',
                             'audit'        => 'Auditoria SEO/WPO',
                         ];
+                        $site_feature_grants = class_exists('RP_Care_Plan') ? RP_Care_Plan::get_feature_grants() : [];
                         ?>
                         <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--rp-border);">
                             <label class="rpc-label" style="margin-bottom:10px;display:block;">Funciones incluidas en tu plan</label>
@@ -674,13 +675,15 @@ class RP_Care_Settings_Page {
                                     $active = true;
                                 }
                             ?>
-                                <span class="rcp-feat-chip <?php echo $active ? 'rcp-feat-ok' : 'rcp-feat-off'; ?>">
+                                <span class="rcp-feat-chip <?php echo $active ? 'rcp-feat-ok' : 'rcp-feat-off'; ?>"
+                                      title="<?php echo esc_attr(in_array($feat, $site_feature_grants, true) ? 'Concesión específica administrada desde Plugin Center' : 'Incluido por plan o política operativa'); ?>">
                                     <?php if ($active): ?>
                                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
                                     <?php else: ?>
                                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
                                     <?php endif; ?>
                                     <?php echo esc_html($label); ?>
+                                    <?php if (in_array($feat, $site_feature_grants, true)): ?> · PC<?php endif; ?>
                                 </span>
                             <?php endforeach; ?>
                             </div>

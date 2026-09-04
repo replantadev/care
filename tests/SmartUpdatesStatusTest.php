@@ -40,7 +40,7 @@ class SmartUpdatesStatusTest extends TestCase {
     public function test_all_required_fields_present(): void {
         $report   = RP_Care_Environment::get_status_report();
         $required = [
-            'schema_version', 'generated_at', 'plugin_version',
+            'schema_version', 'generated_at', 'plugin_version', 'plan', 'addons', 'feature_grants',
             'update_executor', 'update_executor_source', 'native_auto_updates',
             'pipeline_enabled', 'staging_role', 'wp_toolkit_detected', 'direct_updates_blocked',
 			'pipeline_last_poll', 'pipeline_poll_age_seconds', 'pipeline_poll_scheduled',

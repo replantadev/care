@@ -1,5 +1,13 @@
 # Changelog — Replanta Care
 
+## [1.16.42]
+
+### Added
+- Additive per-site feature grants controlled by Plugin Center and protected by a Care-side allowlist.
+
+### Changed
+- Staging capability is included in Semilla, Raíz and Ecosistema; the operator policy still decides when a paired staging is activated.
+
 ## [1.16.41]
 
 ### Fixed

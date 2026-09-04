@@ -531,3 +531,25 @@ La baseline DOM y el loopback están cubiertos por contrato y PHPUnit, pero su
 evidencia de ejecución real se obtendrá con el siguiente lote de plugin; no se
 crea una actualización artificial ni se sobrescribe una baseline solo para
 probarlos.
+
+## Contrato de capacidades por sitio — 2026-09-04
+
+- [x] Staging deja de ser una capacidad exclusiva de Ecosistema: está incluido
+  en Semilla, Raíz y Ecosistema. La seguridad del proceso de actualización no
+  se comercializa como extra; frecuencia, automatización, soporte y alcance de
+  pruebas siguen diferenciando los planes.
+- [x] Los grupos nuevos nacen con `staging_required`, aprobación humana,
+  auto-updates nativos desactivados, lote máximo 1, backup y rollback
+  requeridos. Hasta completar el emparejamiento quedan bloqueados de forma
+  segura.
+- [x] Plugin Center mantiene `feature_grants` aditivos por site, separados de
+  plan y add-ons. Solo se admiten WPO avanzado, monitorización, soporte
+  prioritario, revisiones SEO, CDN/Cloudflare y auditoría SEO/WPO.
+- [x] PC y Care aplican allowlists independientes; valores desconocidos se
+  descartan. Un grant nunca elimina una prestación incluida por plan y una
+  licencia/plan inválido no recupera acceso mediante grants.
+- [x] Plan, add-ons y grants se proyectan a producción y staging. Smart Updates
+  compara los tres campos y bloquea ante drift.
+- [x] PC → Care → Sites muestra badges de Staging, Ecommerce y concesiones por
+  cliente. Care refleja las concesiones con el sufijo `· PC` en sus chips de
+  funciones incluidas.

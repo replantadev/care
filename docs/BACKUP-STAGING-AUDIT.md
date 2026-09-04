@@ -553,3 +553,47 @@ probarlos.
 - [x] PC → Care → Sites muestra badges de Staging, Ecommerce y concesiones por
   cliente. Care refleja las concesiones con el sufijo `· PC` en sus chips de
   funciones incluidas.
+
+## Piloto Maqui — estado vivo 2026-09-04
+
+Objetivo: validar el segundo piloto con `maquistoresas.com` como producción y
+`dev.maquistoresas.com` como staging emparejado. El plan comercial es Semilla
+con add-on Ecommerce. Staging forma parte del contrato de seguridad de todos los
+planes; la instancia técnica no consume otra plaza comercial.
+
+Estado verificado:
+
+- [x] Plugin Center 1.2.46 desplegado en Cedro.
+- [x] Care de producción actualizado de 1.16.37 a 1.16.42 y saludable.
+- [x] La License API, el registro de PC y Care coinciden en
+  `plan=semilla`, `addons=[ecommerce]`, `feature_grants=[]`.
+- [x] El grupo existente `maquistore` conserva la URL canónica de staging y
+  permanece con `pipeline_enabled=0`; no se ha forzado una activación parcial.
+- [x] Producción usa `care_pipeline`, tiene auto-updates nativos desactivados y
+  no registra fallos del pipeline en 24 h. Los 44 fallos Care visibles son
+  históricos/ajenos al pipeline y deben investigarse sin convertirlos en un
+  cero inventado.
+- [x] Se aprovisionó un perfil B2 dedicado para producción, con credencial
+  restringida al bucket del site y secreto transmitido una sola vez a Care.
+  El primer backup real quedó despachado como Action Scheduler `508844`; la
+  evidencia final debe ser `complete`, verificable y restaurable antes de abrir
+  el gate.
+- [ ] El endpoint de diagnóstico B2 de Care devuelve HTTP 200 con cuerpo vacío
+  en este hosting. No se considera PASS. Debe compararse con el resultado del
+  backup real y corregirse sin exponer credenciales ni relajar el gate.
+- [ ] `dev.maquistoresas.com` responde HTTP 503 con cuerpo `Maintenance` desde
+  LiteSpeed tanto en `/` como en `/wp-json/`. El fallo ocurre antes de cargar
+  WordPress/Care; no puede resolverse desde Plugin Center.
+- [ ] Cuando se retire el modo mantenimiento del staging: actualizar Care,
+  reparar el emparejamiento para generar identidades independientes, proyectar
+  Semilla + Ecommerce, ejecutar el informe de aislamiento y activar el poller.
+- [ ] Solo después: exigir backup de producción utilizable, comprobar drift,
+  crear un lote de una actualización, ejecutar pruebas en staging y solicitar
+  aprobación humana. No actualizar producción mientras falte cualquiera de
+  estos gates.
+
+Decisión operativa: los grupos nuevos siguen naciendo en
+`staging_required`, pero el pipeline se mantiene desactivado hasta que ambos
+Care estén accesibles y todos los gates sean verdes. “Staging incluido en todos
+los planes” no significa saltarse aislamiento, backup o aprobación en sitios
+existentes.

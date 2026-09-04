@@ -3340,8 +3340,8 @@ class RP_Care_REST {
             ], 200 );
         }
 
-        $configured = (bool) ( method_exists( 'RP_Care_Task_Backup', 'is_b2_configured' )
-            ? RP_Care_Task_Backup::is_b2_configured()
+        $configured = (bool) ( method_exists( 'RP_Care_Task_Backup', 'is_b2_configured_public' )
+            ? RP_Care_Task_Backup::is_b2_configured_public()
             : get_option( 'rpcare_b2_key_id' ) );
 
         $cfg = get_option( 'rpcare_b2_key_id' )

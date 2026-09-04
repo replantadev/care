@@ -68,6 +68,20 @@ if ( ! defined( 'DB_NAME' ) )       define( 'DB_NAME', 'test_db' );
 
 class BackupSemanticsTest extends TestCase {
 
+    public function test_b2_connection_endpoint_uses_public_configuration_probe(): void {
+        $source = (string) file_get_contents( __DIR__ . '/../inc/class-rest.php' );
+
+        $this->assertStringContainsString(
+            "RP_Care_Task_Backup::is_b2_configured_public()",
+            $source
+        );
+        $this->assertStringNotContainsString(
+            "RP_Care_Task_Backup::is_b2_configured()",
+            $source,
+            'The REST controller must not call the private provider method.'
+        );
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private function computeStatus( array $scopes, array $artifacts, array $errors ): string {

@@ -1,5 +1,10 @@
 # Changelog — Replanta Care
 
+## [1.16.43]
+
+### Fixed
+- The authenticated B2 connection diagnostic now calls the provider's public configuration probe instead of a private method, preventing an HTTP 200 response with an empty body on real sites.
+
 ## [1.16.42]
 
 ### Added

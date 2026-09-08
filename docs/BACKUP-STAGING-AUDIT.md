@@ -603,3 +603,42 @@ Decisión operativa: los grupos nuevos siguen naciendo en
 Care estén accesibles y todos los gates sean verdes. “Staging incluido en todos
 los planes” no significa saltarse aislamiento, backup o aprobación en sitios
 existentes.
+
+## Search Console Operations — sprint GSC-0/GSC-1 (2026-09-08)
+
+Este sprint es deliberadamente de solo lectura y no altera los gates de backup
+ni de staging. Hub conserva OAuth y consulta una sola vez el inventario de
+propiedades; Plugin Center consume el snapshot cacheado; Care no recibe tokens
+de Google ni ejecuta todavía reparaciones SEO.
+
+Entregado en el sprint:
+
+- [x] Contrato versionado `schema_version=1` para estado GSC por sitio.
+- [x] Normalización compatible con propiedades `sc-domain:` y URL-prefix.
+- [x] Snapshot central fail-closed con última comprobación, permiso, tipo de
+  propiedad y estados explícitos; un fallo de Google nunca se convierte en OK.
+- [x] Refresco automático dos veces al día y refresco manual auditado.
+- [x] Operaciones de PC muestra columna GSC y pestaña Indexación por sitio.
+- [x] Staging se representa como `staging_excluded` y nunca consulta ni se
+  propone enviar a Search Console.
+- [x] Renderizar Operaciones usa exclusivamente cache local; no añade llamadas
+  HTTP N+1 a Google.
+
+Pendiente para los siguientes sprints:
+
+- [ ] GSC-2: sitemaps, inventario canónico de URLs en Care, cola con cuotas e
+  inspección URL selectiva.
+- [ ] GSC-3: taxonomía de incidencias, correlación Google/live y propuestas en
+  `observe_only`/dry-run.
+- [ ] GSC-4: allowlist de reparaciones firmadas, idempotentes y reversibles.
+- [ ] Ninguna reparación de producción se habilitará sin backup utilizable,
+  staging saludable cuando el cambio lo requiera y evidencia de rollback. El
+  módulo GSC no puede convertir en verde un gate del pipeline.
+- [ ] Piloto real en un sitio propio/no crítico antes de extender mutaciones al
+  resto de instalaciones Care.
+
+Estado Maqui al redactar este sprint: la URL y WordPress del staging responden,
+pero el frontend devuelve 500 por dos archivos mezclados de WoodMart que
+declaran `XTS\\Modules\\Layouts\\My_Account_Content`. Debe reinstalarse el árbol
+del tema de forma limpia antes de utilizar este staging como gate de cualquier
+reparación o actualización.

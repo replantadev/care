@@ -285,7 +285,8 @@ capacidad se considera implementada parcialmente, no lista para produccion.
 
 ## Search Console Operations — vigilancia y reparacion de indexacion
 
-**Estado:** disenado; implementacion pendiente
+**Estado:** GSC-0/GSC-1 implementados en Hub 2.5.12 y Plugin Center 1.2.47;
+GSC-2 a GSC-5 pendientes
 
 **Prioridad:** alta, despues de cerrar el piloto de Smart Updates
 
@@ -334,8 +335,9 @@ se usaran sitemaps, enlaces internos, diagnostico tecnico e inspeccion URL.
 
 La conexion global de Google y la cobertura de un sitio son estados distintos.
 Cada sitio tendra un estado canonico:
-`connected`, `property_unmapped`, `property_not_found`,
-`insufficient_permission`, `token_expired`, `quota_limited` o `error`.
+`connected`, `site_unmapped`, `property_unmapped`, `property_not_found`,
+`insufficient_permission`, `token_expired`, `quota_limited`, `not_checked`,
+`staging_excluded`, `unavailable` o `error`.
 
 ### Experiencia en Operaciones
 
@@ -387,12 +389,12 @@ marque como problema. Para produccion se requiere una politica explicita
 
 | Fase | Entrega | Mutaciones |
 |---|---|---|
-| GSC-0 | Auditoria del OAuth/mapeo existente en Hub y contrato versionado | Ninguna |
-| GSC-1 | Pill de conexion y permisos en Operaciones; asignacion de propiedad | Ninguna |
-| GSC-2 | Sitemaps + inventario Care + inspeccion priorizada + timeline | Ninguna |
-| GSC-3 | Motor de clasificacion y propuestas con dry-run | Ninguna |
-| GSC-4 | Allowlist de reparaciones seguras, comandos firmados y revalidacion | Solo piloto aprobado |
-| GSC-5 | Despliegue gradual al resto de sitios Care | Segun politica por sitio |
+| GSC-0 | Auditoria del OAuth/mapeo existente en Hub y contrato versionado | Ninguna — implementado |
+| GSC-1 | Pill de conexion y permisos en Operaciones; asignacion de propiedad | Ninguna — implementado |
+| GSC-2 | Sitemaps + inventario Care + inspeccion priorizada + timeline | Ninguna — pendiente |
+| GSC-3 | Motor de clasificacion y propuestas con dry-run | Ninguna — pendiente |
+| GSC-4 | Allowlist de reparaciones seguras, comandos firmados y revalidacion | Solo piloto aprobado — pendiente |
+| GSC-5 | Despliegue gradual al resto de sitios Care | Segun politica por sitio — pendiente |
 
 El primer piloto sera un sitio propio/no critico con propiedad de dominio ya
 verificada. Durante GSC-0 a GSC-3 el modo obligatorio sera `observe_only`.

@@ -624,6 +624,25 @@ Entregado en el sprint:
 - [x] Renderizar Operaciones usa exclusivamente cache local; no añade llamadas
   HTTP N+1 a Google.
 
+Aceptación en producción (2026-09-08):
+
+- [x] Hub 2.5.13 y Plugin Center 1.2.48 desplegados con CI, lint, tests, ZIP,
+  release, actualización de producción y limpieza de OPcache en verde.
+- [x] La consulta real de la cuenta Google devolvió 27 propiedades y snapshot
+  fresco, sin exponer OAuth ni tokens fuera de Hub.
+- [x] `adfc.com.co` y `maquistoresas.com` se resolvieron como `connected`, con
+  permiso `siteowner` y propiedad URL-prefix exacta.
+- [x] `dev2.banbancosmetics.com` se resolvió como `staging_excluded`.
+- [x] `dev.banbancosmetics.com` quedó `property_unmapped`: no existe una
+  propiedad coincidente en la cuenta y el sistema falla cerrado.
+- [x] Se corrigió el desacoplamiento real entre el registro de sites de Care y
+  la tabla canónica de Hub. En ausencia de fila Hub, el estado usa únicamente
+  el snapshot cacheado y acepta una URL-prefix exacta o la propiedad de dominio
+  más específica; una coincidencia inexistente continúa sin asignar.
+- [ ] Sanear/migrar por separado la tabla `rphub_sites`: en producción contiene
+  una fila activa vacía. No bloquea el estado GSC tras el fallback, pero no debe
+  normalizarse escribiendo datos inferidos durante una lectura de Operaciones.
+
 Pendiente para los siguientes sprints:
 
 - [ ] GSC-2: sitemaps, inventario canónico de URLs en Care, cola con cuotas e

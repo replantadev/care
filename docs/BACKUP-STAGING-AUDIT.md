@@ -672,8 +672,50 @@ Pendiente para los siguientes sprints:
 - [ ] Ninguna reparación de producción se habilitará sin backup utilizable,
   staging saludable cuando el cambio lo requiera y evidencia de rollback. El
   módulo GSC no puede convertir en verde un gate del pipeline.
-- [ ] Piloto real en un sitio propio/no crítico antes de extender mutaciones al
-  resto de instalaciones Care.
+- [x] Piloto real de solo lectura en `maquistoresas.com`. Las mutaciones siguen
+  deshabilitadas hasta completar la respuesta al incidente descrito abajo.
+
+Aceptación parcial en vivo (2026-09-08):
+
+- [x] Hub 2.5.14 y Plugin Center 1.2.49 están activos en Cedro.
+- [x] La propiedad URL-prefix de `maquistoresas.com` aceptó una inspección real
+  y acotada de la portada. Google devolvió `pass`, cobertura
+  `enviadaeindexada`, indexación/robots permitidos, fetch correcto y último
+  rastreo `2026-09-07T22:06:57Z`. Consumo: 1 de 20 inspecciones del día.
+- [x] La cola eliminó la orden tras procesarla y conservó solo el resultado
+  normalizado; no hubo errores ni URLs pendientes.
+- [x] Tramo Care→PC validado con Care 1.16.45: entorno `production`, indexación
+  permitida, sitemap Yoast accesible, 2.206 URLs públicas y muestra acotada a
+  49, todas pertenecientes al hostname registrado.
+- [x] Se identificó por evidencia el bloqueo de su autoactualización: Care
+  ejecutaba un backup B2 síncrono por la mera presencia de credenciales
+  históricas, aunque el proveedor efectivo fuera `managed_by_host`. El hosting
+  agotaba su Connection Timeout antes de instalar el ZIP.
+- [x] Care 1.16.45 corrige la política: solo ejecuta el backup previo B2 cuando
+  el proveedor efectivo es realmente `b2`, y nunca en staging. Suite completa:
+  530 tests, 1349 assertions, 0 fallos, 6 skips justificados.
+- [x] Care 1.16.45 actualizado manualmente en Maquistoresas. Las siguientes
+  autoactualizaciones ya no deberían quedar atrapadas por credenciales B2
+  residuales en sitios gestionados por el hosting.
+
+### Incidente descubierto por el piloto GSC-2 — Maquistoresas
+
+- [x] La muestra selectiva inspeccionó tres URLs; Google respondió `pass` para
+  las tres, sin errores ni cola pendiente. Consumo total del día: 3/20.
+- [!] Una URL de la muestra es una entrada de casino en francés, rastreada el
+  `2026-09-08T14:18:27Z` y ya `enviadaeindexada`. El sitemap y robots permiten
+  su rastreo.
+- [!] El REST público declara 1.234 entradas. Una clasificación conservadora
+  por términos inequívocos de casino/apuestas encuentra al menos 762 entradas
+  sospechosas entre `2026-04-03` y `2026-09-07`.
+- [!] De esas 762, 653 pertenecen al usuario ID 18, nombre
+  `MARKETING MAQUISTORE`, slug `sara`; otras 109 pertenecen al usuario ID 1.
+  La entrada muestreada enlaza externamente a un dominio de casino.
+- [ ] Tratar como incidente de seguridad/SEO, no como simple error de
+  indexación: preservar backup y evidencia; detener la publicación; revisar
+  usuarios, sesiones, contraseñas de aplicación, cron/Action Scheduler,
+  plugins/tema y logs; solo después retirar el contenido y tramitar limpieza
+  en Google. No hay autorización todavía para borrar o despublicar entradas.
 
 Estado Maqui al redactar este sprint: la URL y WordPress del staging responden,
 pero el frontend devuelve 500 por dos archivos mezclados de WoodMart que

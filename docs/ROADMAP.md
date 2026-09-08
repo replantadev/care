@@ -282,3 +282,136 @@ Bridge semantico y el proveedor fake estan implementados. Sigue pendiente cerrar
 adaptador real de Plugin Center que invoque el Bridge para cPanel/Plesk y validar el
 contrato contra una instalacion real aislada de WP Toolkit. Hasta entonces esta
 capacidad se considera implementada parcialmente, no lista para produccion.
+
+## Search Console Operations — vigilancia y reparacion de indexacion
+
+**Estado:** disenado; implementacion pendiente
+
+**Prioridad:** alta, despues de cerrar el piloto de Smart Updates
+
+**Alcance:** todos los sitios de produccion con Care. Los staging deben permanecer
+fuera del indice y no se envian a Google.
+
+**Componentes:** Replanta Hub, Plugin Center, Replanta Care y el pipeline de
+comandos firmado.
+
+### Objetivo y limites reales
+
+Detectar pronto problemas tecnicos de indexacion, mostrar su evidencia en
+`Plugin Center > Care > Operaciones` y reparar automaticamente solo causas
+locales, reversibles y incluidas en una allowlist cerrada. El sistema no
+prometera que Google indexe una URL ni intentara silenciar las notificaciones de
+Search Console de los propietarios: puede prevenir y resolver parte de las
+causas tecnicas, pero Google decide el rastreo y la indexacion.
+
+La API publica de Search Console no expone el informe completo de Paginas como
+una bandeja enumerable de incidencias. La cobertura se construira combinando:
+
+1. propiedades y permisos disponibles en Search Console;
+2. sitemaps declarados y su estado;
+3. Search Analytics para descubrir URLs con impresiones;
+4. inspeccion selectiva por URL, sujeta a cuota;
+5. inventario canonico de WordPress y probes en vivo ejecutados por Care.
+
+La Indexing API de Google no se utilizara para paginas generales: esta limitada
+a `JobPosting` y `BroadcastEvent` dentro de `VideoObject`. Para sitios normales
+se usaran sitemaps, enlaces internos, diagnostico tecnico e inspeccion URL.
+
+### Arquitectura y propiedad de credenciales
+
+- **Hub:** unica parte que mantiene OAuth de Google, cifrado con `RPHUB_Crypto`.
+  Descubre propiedades, verifica permisos, consulta Search Analytics,
+  Sitemaps y URL Inspection, controla cuotas y conserva evidencia normalizada.
+- **Plugin Center:** fuente de verdad para el mapeo sitio-propiedad y la politica
+  de indexacion. Muestra estado, incidencias, propuestas, aprobaciones y timeline.
+- **Care:** no almacena tokens de Google. Construye el inventario de URLs,
+  comprueba respuesta HTTP, redirecciones, `robots.txt`, `X-Robots-Tag`, meta
+  robots, canonical y presencia en sitemap. Solo aplica comandos firmados y
+  tipados de una allowlist.
+- **Staging:** `desired_indexing=private`, noindex obligatorio y prohibicion de
+  alta/envio de sitemap. Una propiedad GSC de staging se trata como alerta de
+  aislamiento, no como integracion valida.
+
+La conexion global de Google y la cobertura de un sitio son estados distintos.
+Cada sitio tendra un estado canonico:
+`connected`, `property_unmapped`, `property_not_found`,
+`insufficient_permission`, `token_expired`, `quota_limited` o `error`.
+
+### Experiencia en Operaciones
+
+- Pill por sitio: `GSC OK`, `GSC sin propiedad`, `GSC sin acceso`, `GSC error` o
+  `No conectado`, con fecha de la ultima comprobacion.
+- Pestaña **Indexacion** con propiedad asignada, tipo de propiedad, nivel de
+  permiso, sitemaps, cobertura de la muestra, incidencias abiertas/resueltas,
+  URL afectada, evidencia de Google, evidencia en vivo y proxima accion.
+- Acciones separadas: `Comprobar conexion`, `Actualizar diagnostico`,
+  `Proponer reparacion`, `Aprobar`, `Revalidar` y `Abrir en Search Console`.
+- Estado global nunca inferido solo porque OAuth este conectado. Sin propiedad
+  exacta y permiso comprobado el sitio figurara como no cubierto.
+- Alertas deduplicadas por `site + url + issue_code + evidence_fingerprint`;
+  no se enviara una nueva alerta mientras el caso no cambie de estado.
+
+### Corpus y planificador de inspeccion
+
+El inventario inicial se forma con home, URLs criticas, URLs de los sitemaps,
+contenido publico de WordPress, canonicals, URLs modificadas recientemente y
+paginas observadas en Search Analytics. Se excluyen admin, previews, feeds,
+busquedas internas, parametros y staging.
+
+URL Inspection se ejecutara mediante una cola central con presupuesto por sitio
+y por proyecto. Se priorizan:
+
+1. home, sitemap y rutas comerciales criticas;
+2. URLs modificadas, redirigidas o reparadas recientemente;
+3. URLs con impresiones que presentan una anomalia local;
+4. muestra rotatoria del resto del inventario.
+
+Los resultados distinguen siempre entre la version conocida por Google y el
+probe en vivo; una inspeccion URL no se presentara como test live.
+
+### Politica de reparacion
+
+| Nivel | Ejemplos | Actuacion |
+|---|---|---|
+| Observar | `Crawled/Discovered - currently not indexed`, canonical elegido por Google, contenido insuficiente | Evidencia y recomendacion; nunca autocorregir |
+| Auto seguro | Purgar cache del sitemap, regenerar reglas, revalidar tras un cambio, reintentar un probe temporal | Care con lock, idempotencia y snapshot previo |
+| Politica explicita | Mantener staging en noindex; restaurar una directiva tecnica contra un golden conocido | Solo si entorno y `desired_indexing` son inequivocos |
+| Staging + aprobacion | Cambiar canonical, redirects, robots, sitemap provider o estructura de URLs | Pipeline staging-first, pruebas y rollback |
+| Manual obligatorio | Soft 404 ambiguo, duplicados, calidad/contenido, acciones manuales, seguridad o propiedad incorrecta | Operador/SEO; Care no escribe |
+
+Nunca se eliminara un `noindex`, bloqueo robots o canonical solo porque Google lo
+marque como problema. Para produccion se requiere una politica explicita
+`desired_indexing=public`; para staging la unica politica permitida es `private`.
+
+### Fases del piloto
+
+| Fase | Entrega | Mutaciones |
+|---|---|---|
+| GSC-0 | Auditoria del OAuth/mapeo existente en Hub y contrato versionado | Ninguna |
+| GSC-1 | Pill de conexion y permisos en Operaciones; asignacion de propiedad | Ninguna |
+| GSC-2 | Sitemaps + inventario Care + inspeccion priorizada + timeline | Ninguna |
+| GSC-3 | Motor de clasificacion y propuestas con dry-run | Ninguna |
+| GSC-4 | Allowlist de reparaciones seguras, comandos firmados y revalidacion | Solo piloto aprobado |
+| GSC-5 | Despliegue gradual al resto de sitios Care | Segun politica por sitio |
+
+El primer piloto sera un sitio propio/no critico con propiedad de dominio ya
+verificada. Durante GSC-0 a GSC-3 el modo obligatorio sera `observe_only`.
+
+### Gates de aceptacion
+
+- OAuth y refresh token siguen centralizados y cifrados en Hub; ningun token de
+  Google llega a Care, logs, HTML o respuestas de PC.
+- Mapeo exacto entre sitio Care y propiedad GSC, incluyendo normalizacion segura
+  de `sc-domain:` y propiedades URL-prefix.
+- Pruebas de token expirado, permiso insuficiente, propiedad ausente, 403/429,
+  timeout, cuota agotada y respuestas parciales sin convertirlas en `OK`.
+- Cola con rate limit, backoff, cache, prioridad y presupuesto diario; no se
+  inspecciona el sitio completo en cada ciclo.
+- Taxonomia versionada de incidencias y separacion visible entre evidencia de
+  Google, estado live y diagnostico inferido.
+- Reparaciones con allowlist, dry-run, idempotency key, lock, evidencia
+  antes/despues, auditoria y rollback. Ninguna escritura generica de opciones.
+- Prueba negativa: staging nunca puede hacerse indexable ni enviar sitemap.
+- Prueba negativa: un estado editorial/algoritmico nunca dispara una mutacion.
+- E2E en laboratorio y piloto real con deteccion, propuesta, aprobacion,
+  reparacion segura y revalidacion completa.

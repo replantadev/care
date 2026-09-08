@@ -643,10 +643,29 @@ Aceptación en producción (2026-09-08):
   una fila activa vacía. No bloquea el estado GSC tras el fallback, pero no debe
   normalizarse escribiendo datos inferidos durante una lectura de Operaciones.
 
+## Search Console Operations — sprint GSC-2 (2026-09-08)
+
+- [x] Care expone `POST /replanta-care/v1/seo/index-inventory`, autenticado con
+  `X-Hub-Token`, con máximo 100 URLs, sitemap acotado a 1 MB y tres rutas
+  candidatas. No escribe posts, robots, sitemap ni metadatos SEO.
+- [x] El inventario declara de forma explícita `blog_public`, entorno y si la
+  indexación local está permitida. Un staging siempre devuelve
+  `staging_excluded` aunque WordPress tenga `blog_public=1`.
+- [x] Plugin Center valida que la identidad y todas las URLs recibidas
+  pertenezcan al host registrado antes de cachear el contrato durante 24 h.
+- [x] Hub mantiene la única credencial Google y una cola de URL Inspection
+  limitada a 5 altas por acción, 50 pendientes y 20 consultas diarias.
+- [x] La cola tiene exclusión mutua con propietario/caducidad, reprogramación,
+  deduplicación durante siete días y validación URL↔propiedad antes de consultar
+  Google.
+- [x] Operaciones permite leer URLs/sitemaps e inspeccionar una muestra máxima
+  de tres URLs mediante acciones explícitas. Renderizar la tabla sigue sin
+  producir llamadas HTTP N+1.
+- [x] Solo se conserva evidencia normalizada: veredicto, cobertura, estados de
+  robots/indexación/fetch y último rastreo; nunca OAuth ni respuestas crudas.
+
 Pendiente para los siguientes sprints:
 
-- [ ] GSC-2: sitemaps, inventario canónico de URLs en Care, cola con cuotas e
-  inspección URL selectiva.
 - [ ] GSC-3: taxonomía de incidencias, correlación Google/live y propuestas en
   `observe_only`/dry-run.
 - [ ] GSC-4: allowlist de reparaciones firmadas, idempotentes y reversibles.

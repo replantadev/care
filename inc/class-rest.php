@@ -188,6 +188,13 @@ class RP_Care_REST {
             'permission_callback' => '__return_true',
         ] );
 
+        // Read-only canonical URLs and sitemap discovery for GSC Operations.
+        register_rest_route( $this->control_ns, '/seo/index-inventory', [
+            'methods'             => 'POST',
+            'callback'            => [ $this, 'hub_seo_index_inventory' ],
+            'permission_callback' => '__return_true',
+        ] );
+
         // ── Pipeline isolation report: read-only gate for paired staging ──────
         register_rest_route( $this->control_ns, '/pipeline/isolation-report', [
             'methods'             => 'POST',
@@ -2987,6 +2994,18 @@ class RP_Care_REST {
 		}
 		return new WP_REST_Response( [ 'ok' => true, 'schema_version' => 1 ], 200 );
 	}
+
+    /** Read-only URL and sitemap inventory for Search Console Operations. */
+    public function hub_seo_index_inventory( WP_REST_Request $request ): WP_REST_Response {
+        if ( ! $this->validate_hub_token( $request, true ) ) {
+            return new WP_REST_Response( [ 'error' => 'Unauthorized' ], 403 );
+        }
+        if ( ! class_exists( 'RP_Care_SEO_Index_Inventory' ) ) {
+            return new WP_REST_Response( [ 'error' => 'Index inventory unavailable' ], 503 );
+        }
+        $limit = max( 1, min( RP_Care_SEO_Index_Inventory::MAX_URLS, (int) ( $request->get_param( 'limit' ) ?: 50 ) ) );
+        return new WP_REST_Response( RP_Care_SEO_Index_Inventory::build( $limit ), 200 );
+    }
 
     /**
      * POST /wp-json/replanta-care/v1/updates/inventory

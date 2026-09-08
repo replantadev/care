@@ -285,8 +285,8 @@ capacidad se considera implementada parcialmente, no lista para produccion.
 
 ## Search Console Operations — vigilancia y reparacion de indexacion
 
-**Estado:** GSC-0/GSC-1 implementados en Hub 2.5.12 y Plugin Center 1.2.47;
-GSC-2 a GSC-5 pendientes
+**Estado:** GSC-0/GSC-1 desplegados; GSC-2 implementado en Care 1.16.44,
+Hub 2.5.14 y Plugin Center 1.2.49; GSC-3 a GSC-5 pendientes
 
 **Prioridad:** alta, despues de cerrar el piloto de Smart Updates
 

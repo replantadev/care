@@ -2147,7 +2147,21 @@ class RP_Care_REST {
             ? RP_Care_Pipeline_Client::OPT_ENVIRONMENT
             : 'rpcare_pipeline_environment';
         $is_pipeline_staging = 'staging' === get_option( $pipeline_environment_option, 'production' );
-        if ( ! $is_pipeline_staging && class_exists( 'RP_Care_Task_Backup' ) && RP_Care_Task_Backup::is_b2_configured_public() ) {
+        // Historical B2 credentials do not make B2 the active provider. A
+        // shared-hosting site may intentionally rely on Backuply/JetBackup
+        // (`managed_by_host`) while retaining old B2 settings. Starting a
+        // synchronous B2 backup in that case can exceed the proxy timeout and
+        // falsely report that the update failed. Use the same effective-mode
+        // decision as the update pipeline.
+        $effective_backup_mode = class_exists( 'RP_Care_Environment' )
+            ? RP_Care_Environment::get_effective_backup_mode()
+            : null;
+        if (
+            ! $is_pipeline_staging
+            && 'b2' === $effective_backup_mode
+            && class_exists( 'RP_Care_Task_Backup' )
+            && RP_Care_Task_Backup::is_b2_configured_public()
+        ) {
             $pre_update = RP_Care_Task_Backup::create_b2_backup( [
                 'reason' => 'pre_update',
                 'scopes' => [ 'database', 'config' ],

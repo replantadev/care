@@ -164,9 +164,8 @@ final class PipelineQualityGatesTest extends TestCase {
         $this->assertStringContainsString( '$is_pipeline_staging', $source );
         $this->assertStringContainsString( "'rpcare_pipeline_environment'", $source );
         $this->assertStringContainsString( "get_option( \$pipeline_environment_option, 'production' )", $source );
-        $this->assertMatchesRegularExpression(
-            '/if \( ! \$is_pipeline_staging && class_exists\( \'RP_Care_Task_Backup\' \)/',
-            $source
-        );
+        $this->assertStringContainsString( '! $is_pipeline_staging', $source );
+        $this->assertStringContainsString( "'b2' === \$effective_backup_mode", $source );
+        $this->assertStringContainsString( 'RP_Care_Task_Backup::is_b2_configured_public()', $source );
     }
 }

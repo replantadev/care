@@ -285,8 +285,8 @@ capacidad se considera implementada parcialmente, no lista para produccion.
 
 ## Search Console Operations — vigilancia y reparacion de indexacion
 
-**Estado:** GSC-0/GSC-1/GSC-2 desplegados; GSC-3 implementado localmente en
-Plugin Center 1.2.50 y pendiente de despliegue/aceptación; GSC-4/GSC-5 pendientes
+**Estado:** GSC-0/GSC-1/GSC-2/GSC-3 desplegados; Plugin Center 1.2.50 aceptado
+en vivo en modo `observe_only`; GSC-4/GSC-5 pendientes
 
 **Prioridad:** alta, despues de cerrar el piloto de Smart Updates
 
@@ -392,7 +392,7 @@ marque como problema. Para produccion se requiere una politica explicita
 | GSC-0 | Auditoria del OAuth/mapeo existente en Hub y contrato versionado | Ninguna — implementado |
 | GSC-1 | Pill de conexion y permisos en Operaciones; asignacion de propiedad | Ninguna — implementado |
 | GSC-2 | Sitemaps + inventario Care + inspeccion priorizada + timeline | Ninguna — implementado y aceptado en vivo |
-| GSC-3 | Motor de clasificacion y propuestas con dry-run | Ninguna — implementado localmente; pendiente aceptación viva |
+| GSC-3 | Motor de clasificacion y propuestas con dry-run | Ninguna — implementado y aceptado en vivo |
 | GSC-4 | Allowlist de reparaciones seguras, comandos firmados y revalidacion | Solo piloto aprobado — pendiente |
 | GSC-5 | Despliegue gradual al resto de sitios Care | Segun politica por sitio — pendiente |
 

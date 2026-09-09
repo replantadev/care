@@ -13,7 +13,7 @@ conservan más abajo como trazabilidad.
 |---|---|---|
 | Pipeline Banban | El lote #2 completó staging, aprobación, backup B2, producción y verificación el 31-08. Astra Pro quedó en 4.13.8 en producción. | No repetir el lote; validar el próximo candidato con baseline DOM y loopback reales. |
 | Banban producción | Care 1.16.45, ping OK, una actualización pendiente y backup B2 nuevo visible el 09-09. | Confirmar el `backup_id`/integridad de esa evidencia antes de crear otro lote. |
-| Banban staging | Care 1.16.41, ping OK, inventario sin datos y evidencia B2 de hace 8 días. | Actualizar/reparar a la versión vigente, refrescar inventario y comprobar ausencia de drift. |
+| Banban staging | Care 1.16.45 instalado. El diagnóstico estructural encuentra URL, grupo, schema y endpoints correctos, pero la identidad Pipeline no coincide y el heartbeat está obsoleto. | Ejecutar la reparación idempotente de la pareja y comprobar identidad/heartbeat antes de consultar inventario. |
 | Maquistoresas | Care 1.16.45, GSC conectado. El cliente comunica que eliminó las entradas de spam y cambió la contraseña. | Incidente contenido por el cliente, no verificado por Care. Queda un repaso de seguridad read-only; no usar este site como piloto hasta sanear su staging. |
 | GSC | GSC-2 aceptado en producción. GSC-3 está desplegado en PC 1.2.50 con clasificación y propuestas no ejecutables; la evidencia viva de Maqui produce 0 incidencias técnicas. | Validar casos controlados problemáticos; mantener `observe_only`. |
 
@@ -27,6 +27,28 @@ inventario de administradores/editores, sesiones y contraseñas de aplicación;
 cron y Action Scheduler; integridad de plugins/tema; y ausencia de nuevas altas
 o publicaciones. Después se podrá solicitar limpieza en Google de URLs que ya
 respondan 404/410. No se automatiza una retirada de contenido desde GSC.
+
+### Revalidación Banban tras actualizar dev2 — 2026-09-09
+
+- [x] Producción y staging ejecutan Care 1.16.45.
+- [x] Política coherente: `staging_required`, `care_pipeline`, auto-updates
+  nativos desactivados, lote máximo 1, riesgo máximo `medium`.
+- [x] Backup de producción utilizable: `complete · b2`.
+- [x] Diagnóstico estructural: site, grupo `27514146-...`, URL de staging,
+  schema PC 1.8.0 y ambos endpoints Care correctos.
+- [x] Sin drift de configuración entre instancias.
+- [ ] Identidad staging: bloqueada por `pipeline_instance_mismatch@staging`.
+- [ ] Canal pull: producción `heartbeat 1018s` y staging `heartbeat 16701s`;
+  ambos se consideran obsoletos y bloquean correctamente.
+- [ ] Ejecutar **Actualizar y reparar ambos Care**. Esta acción no crea lote:
+  repara identidades/roles, reconcilia el poller y fuerza la comprobación de
+  heartbeat.
+- [ ] Aceptación posterior: huella staging canónica, ambos heartbeats recientes,
+  cero blockers, inventario nuevo y ninguna orden/lote creado accidentalmente.
+
+No se inicia el siguiente lote hasta cerrar esos cuatro últimos puntos. La
+estructura correcta por sí sola no sustituye la identidad ni demuestra que la
+cola pull está operativa.
 
 ## Veredicto actual del piloto
 

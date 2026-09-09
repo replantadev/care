@@ -12,16 +12,15 @@ conservan más abajo como trazabilidad.
 | Área | Estado actual | Siguiente gate |
 |---|---|---|
 | Pipeline Banban | El lote #2 completó staging, aprobación, backup B2, producción y verificación el 31-08. Astra Pro quedó en 4.13.8 en producción. | No repetir el lote; validar el próximo candidato con baseline DOM y loopback reales. |
-| Banban producción | Care 1.16.45, ping OK, una actualización pendiente. En la lectura de Operaciones figura `Sin proveedor` de backup y alerta Staging. | Restaurar/confirmar perfil B2 por sitio y una evidencia utilizable antes de crear otro lote. |
+| Banban producción | Care 1.16.45, ping OK, una actualización pendiente y backup B2 nuevo visible el 09-09. | Confirmar el `backup_id`/integridad de esa evidencia antes de crear otro lote. |
 | Banban staging | Care 1.16.41, ping OK, inventario sin datos y evidencia B2 de hace 8 días. | Actualizar/reparar a la versión vigente, refrescar inventario y comprobar ausencia de drift. |
 | Maquistoresas | Care 1.16.45, GSC conectado. El cliente comunica que eliminó las entradas de spam y cambió la contraseña. | Incidente contenido por el cliente, no verificado por Care. Queda un repaso de seguridad read-only; no usar este site como piloto hasta sanear su staging. |
-| GSC | GSC-2 aceptado en producción. GSC-3 implementado localmente en PC 1.2.50 con clasificación y propuestas no ejecutables. | Desplegar PC, validar la UI con evidencia limpia y problemática; mantener `observe_only`. |
+| GSC | GSC-2 aceptado en producción. GSC-3 está desplegado en PC 1.2.50 con clasificación y propuestas no ejecutables; la evidencia viva de Maqui produce 0 incidencias técnicas. | Validar casos controlados problemáticos; mantener `observe_only`. |
 
 Durante la lectura del panel Banban se encoló accidentalmente la acción manual
-de backup de producción. El panel declaraba `Sin proveedor`; el contrato debe
-fallar cerrado y no crear una copia local. Comprobar su resultado en el log de
-operaciones antes de cualquier lote y confirmar que no apareció ningún temporal
-en `uploads`.
+de backup de producción. Terminó y Operaciones muestra una evidencia B2 fresca
+(`hace 0h`), sin fallback local. Antes de un lote se debe leer su `backup_id` e
+integridad en el detalle; el mero badge B2 no sustituye ese gate.
 
 Repaso mínimo pendiente del incidente Maquistoresas, sin prolongar la respuesta:
 inventario de administradores/editores, sesiones y contraseñas de aplicación;
@@ -751,7 +750,7 @@ reparación o actualización.
 
 ## Search Console Operations — sprint GSC-3 (2026-09-09)
 
-Implementado localmente en Plugin Center 1.2.50, todavía sin desplegar:
+Implementado y desplegado en Plugin Center 1.2.50:
 
 - [x] `PC_GSC_Issue_Classifier` combina exclusivamente snapshots cacheados de
   Care y Hub; renderizar Operaciones no añade llamadas HTTP ni consultas a
@@ -777,11 +776,16 @@ Implementado localmente en Plugin Center 1.2.50, todavía sin desplegar:
   visible “no ejecutable”.
 - [x] Suite Plugin Center: 415 tests, 1.241 assertions, 0 fallos, 7 skips de
   entorno; 7 pruebas específicas GSC-3 con 20 assertions.
+- [x] CI publicó PC 1.2.50 en Cedro. El asset vivo declara `ver=1.2.50` y la
+  pestaña Indexación muestra el diagnóstico correlacionado en modo solo
+  observar.
+- [x] Las tres inspecciones existentes de Maquistoresas (`pass`) producen cero
+  incidencias técnicas y ninguna orden. La URL de spam ya retirada sigue en la
+  evidencia histórica de Google; por diseño no se clasifica como avería técnica
+  ni activa una mutación de contenido.
 
 Pendiente de aceptación:
 
-- [ ] Desplegar Plugin Center 1.2.50 y comprobar que Maquistoresas limpio no
-  produce falsos positivos a partir de sus tres inspecciones existentes.
 - [ ] Generar en laboratorio evidencia controlada de sitemap inaccesible,
   robots bloqueado, fetch fallido y `not_indexed`; verificar clasificación,
   severidad, fingerprint y que no aparece ninguna orden Pipeline.

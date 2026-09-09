@@ -45,9 +45,17 @@ respondan 404/410. No se automatiza una retirada de contenido desde GSC.
   `rotate_instance_id=true` y no verificaba después la huella persistida. Ahora
   rota la identidad clonada y exige que `/smart-updates/status` devuelva
   exactamente `sha256(instance_id)`; si no coincide, falla explícitamente.
-- [ ] Desplegar PC 1.2.51 y volver a ejecutar **Actualizar y reparar ambos
-  Care**. La acción sigue sin crear lote y ahora su éxito implica identidad
-  verificada, además de roles, poller y heartbeat.
+- [x] PC 1.2.51 desplegado y reparación repetida: ambos canales pull quedaron
+  recientes, pero el overview siguió mostrando el mismatch.
+- [x] Segunda causa cerrada en PC 1.2.52: las filas de instancia retiradas se
+  conservan deliberadamente para auditoría, pero los gates consultaban todas
+  las filas del grupo y una staging antigua podía sobrescribir a la canónica
+  según el orden de MySQL. Overview y guardas comparten ahora una única lectura
+  basada exclusivamente en `production_instance_id` y `staging_instance_id`
+  del grupo.
+- [ ] Desplegar PC 1.2.52 y recargar Smart Updates. No requiere una nueva
+  rotación: la identidad ya reparada debe compararse con la referencia canónica
+  y dejar cero blockers.
 - [ ] Aceptación posterior: huella staging canónica, ambos heartbeats recientes,
   cero blockers, inventario nuevo y ninguna orden/lote creado accidentalmente.
 

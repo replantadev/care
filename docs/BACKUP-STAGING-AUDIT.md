@@ -55,11 +55,19 @@ respondan 404/410. No se automatiza una retirada de contenido desde GSC.
   del grupo.
 - [x] PC 1.2.52 desplegado y verificado en vivo: desapareció
   `pipeline_instance_mismatch@staging` sin una nueva rotación.
-- [ ] La primera aceptación expuso a continuación un timeout real de 8 s en
+- [x] La primera aceptación expuso a continuación un timeout real de 8 s en
   `/smart-updates/status` de dev2, repetido dos veces, mientras el ping básico
   seguía disponible. PC 1.2.53 añade un único reintento de transporte de 20 s
   solo para este endpoint de lectura; errores HTTP, auth y esquema continúan
-  fallando cerrado. Revalidar hasta cero blockers.
+  fallando cerrado.
+- [x] Aceptación viva con PC 1.2.53: producción y staging disponibles,
+  fingerprints canónicos, executor/auto-updates coherentes, backup B2 usable,
+  heartbeat 13 s/9 s y cero blockers. No había lote activo y la reparación no
+  creó ninguno.
+- [ ] Vigilar dev2 durante más de 15 minutos. Antes de la última reparación su
+  Action Scheduler constaba programado pero el heartbeat alcanzó 1193 s. Si se
+  repite, auditar `DISABLE_WP_CRON`, runner de Action Scheduler y cron real de
+  cPanel; no ampliar el umbral ni ocultar el blocker.
 - [ ] Aceptación posterior: huella staging canónica, ambos heartbeats recientes,
   cero blockers, inventario nuevo y ninguna orden/lote creado accidentalmente.
 

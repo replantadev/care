@@ -4,6 +4,31 @@ Fecha de revisión: 2026-08-28. Este documento distingue capacidades verificadas
 declaradas y pendientes. Es la fuente fresca de decisiones para el piloto
 `dev.banbancosmetics.com` → `dev2.banbancosmetics.com`.
 
+## Snapshot operativo fresco — 2026-09-09
+
+Este bloque prevalece sobre las fotografías históricas de agosto que se
+conservan más abajo como trazabilidad.
+
+| Área | Estado actual | Siguiente gate |
+|---|---|---|
+| Pipeline Banban | El lote #2 completó staging, aprobación, backup B2, producción y verificación el 31-08. Astra Pro quedó en 4.13.8 en producción. | No repetir el lote; validar el próximo candidato con baseline DOM y loopback reales. |
+| Banban producción | Care 1.16.45, ping OK, una actualización pendiente. En la lectura de Operaciones figura `Sin proveedor` de backup y alerta Staging. | Restaurar/confirmar perfil B2 por sitio y una evidencia utilizable antes de crear otro lote. |
+| Banban staging | Care 1.16.41, ping OK, inventario sin datos y evidencia B2 de hace 8 días. | Actualizar/reparar a la versión vigente, refrescar inventario y comprobar ausencia de drift. |
+| Maquistoresas | Care 1.16.45, GSC conectado. El cliente comunica que eliminó las entradas de spam y cambió la contraseña. | Incidente contenido por el cliente, no verificado por Care. Queda un repaso de seguridad read-only; no usar este site como piloto hasta sanear su staging. |
+| GSC | GSC-2 aceptado en producción. GSC-3 implementado localmente en PC 1.2.50 con clasificación y propuestas no ejecutables. | Desplegar PC, validar la UI con evidencia limpia y problemática; mantener `observe_only`. |
+
+Durante la lectura del panel Banban se encoló accidentalmente la acción manual
+de backup de producción. El panel declaraba `Sin proveedor`; el contrato debe
+fallar cerrado y no crear una copia local. Comprobar su resultado en el log de
+operaciones antes de cualquier lote y confirmar que no apareció ningún temporal
+en `uploads`.
+
+Repaso mínimo pendiente del incidente Maquistoresas, sin prolongar la respuesta:
+inventario de administradores/editores, sesiones y contraseñas de aplicación;
+cron y Action Scheduler; integridad de plugins/tema; y ausencia de nuevas altas
+o publicaciones. Después se podrá solicitar limpieza en Google de URLs que ya
+respondan 404/410. No se automatiza una retirada de contenido desde GSC.
+
 ## Veredicto actual del piloto
 
 El diseño central falla cerrado y el canal Pipeline emparejado está operativo,
@@ -711,14 +736,58 @@ Aceptación parcial en vivo (2026-09-08):
 - [!] De esas 762, 653 pertenecen al usuario ID 18, nombre
   `MARKETING MAQUISTORE`, slug `sara`; otras 109 pertenecen al usuario ID 1.
   La entrada muestreada enlaza externamente a un dominio de casino.
-- [ ] Tratar como incidente de seguridad/SEO, no como simple error de
-  indexación: preservar backup y evidencia; detener la publicación; revisar
-  usuarios, sesiones, contraseñas de aplicación, cron/Action Scheduler,
-  plugins/tema y logs; solo después retirar el contenido y tramitar limpieza
-  en Google. No hay autorización todavía para borrar o despublicar entradas.
+- [~] Tratado como incidente de seguridad/SEO, no como simple error de
+  indexación. El cliente comunica el 09-09 que borró las entradas y cambió la
+  contraseña. Queda verificar que no reaparecen publicaciones, revisar
+  usuarios/sesiones/contraseñas de aplicación, cron/Action Scheduler,
+  plugins/tema y logs y, solo después, tramitar limpieza en Google. La retirada
+  fue una actuación humana del cliente, no una reparación automática de Care.
 
 Estado Maqui al redactar este sprint: la URL y WordPress del staging responden,
 pero el frontend devuelve 500 por dos archivos mezclados de WoodMart que
 declaran `XTS\\Modules\\Layouts\\My_Account_Content`. Debe reinstalarse el árbol
 del tema de forma limpia antes de utilizar este staging como gate de cualquier
 reparación o actualización.
+
+## Search Console Operations — sprint GSC-3 (2026-09-09)
+
+Implementado localmente en Plugin Center 1.2.50, todavía sin desplegar:
+
+- [x] `PC_GSC_Issue_Classifier` combina exclusivamente snapshots cacheados de
+  Care y Hub; renderizar Operaciones no añade llamadas HTTP ni consultas a
+  Google.
+- [x] Contrato `schema_version=1`, taxonomía `gsc-issues-v1`, máximo 50
+  incidencias y fingerprint SHA-256 de `issue_code + URL + evidencia`.
+- [x] Taxonomía inicial: conexión/evidencia incompleta, identidad de entorno,
+  indexación local desactivada, sitemap inaccesible, error de inspección,
+  bloqueo de robots/indexación informado por Google, fallo de fetch y URL no
+  confirmada como indexada.
+- [x] Correlación por URL con presencia/canonical del inventario local, estados
+  normalizados de Google y fecha del último rastreo. Una ausencia en la muestra
+  truncada de Care no se presenta como fallo.
+- [x] Todas las propuestas llevan `dry_run=true`,
+  `execution_allowed=false`, y el análisis global declara
+  `mode=observe_only`, `mutations_allowed=false`.
+- [x] Staging devuelve `staging_excluded` sin incidencias ni propuestas. Un
+  entorno staging recibido para una fila production se considera mismatch
+  crítico y nunca se repara automáticamente.
+- [x] Estados editoriales/algorítmicos como “rastreada, actualmente no
+  indexada” son `manual_required`; jamás generan una mutación automática.
+- [x] Operaciones muestra resumen e incidencias con propuesta dry-run y marca
+  visible “no ejecutable”.
+- [x] Suite Plugin Center: 415 tests, 1.241 assertions, 0 fallos, 7 skips de
+  entorno; 7 pruebas específicas GSC-3 con 20 assertions.
+
+Pendiente de aceptación:
+
+- [ ] Desplegar Plugin Center 1.2.50 y comprobar que Maquistoresas limpio no
+  produce falsos positivos a partir de sus tres inspecciones existentes.
+- [ ] Generar en laboratorio evidencia controlada de sitemap inaccesible,
+  robots bloqueado, fetch fallido y `not_indexed`; verificar clasificación,
+  severidad, fingerprint y que no aparece ninguna orden Pipeline.
+- [ ] Añadir en un sprint posterior persistencia/timeline de casos con
+  deduplicación y transición abierta/resuelta. GSC-3 calcula snapshots; no
+  escribe casos ni silencia alertas.
+- [ ] GSC-4 definirá la allowlist de reparaciones firmadas. No reutilizar las
+  propuestas GSC-3 como comandos sin backup, idempotencia, lock, evidencia
+  antes/después y rollback.

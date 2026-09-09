@@ -53,9 +53,13 @@ respondan 404/410. No se automatiza una retirada de contenido desde GSC.
   según el orden de MySQL. Overview y guardas comparten ahora una única lectura
   basada exclusivamente en `production_instance_id` y `staging_instance_id`
   del grupo.
-- [ ] Desplegar PC 1.2.52 y recargar Smart Updates. No requiere una nueva
-  rotación: la identidad ya reparada debe compararse con la referencia canónica
-  y dejar cero blockers.
+- [x] PC 1.2.52 desplegado y verificado en vivo: desapareció
+  `pipeline_instance_mismatch@staging` sin una nueva rotación.
+- [ ] La primera aceptación expuso a continuación un timeout real de 8 s en
+  `/smart-updates/status` de dev2, repetido dos veces, mientras el ping básico
+  seguía disponible. PC 1.2.53 añade un único reintento de transporte de 20 s
+  solo para este endpoint de lectura; errores HTTP, auth y esquema continúan
+  fallando cerrado. Revalidar hasta cero blockers.
 - [ ] Aceptación posterior: huella staging canónica, ambos heartbeats recientes,
   cero blockers, inventario nuevo y ninguna orden/lote creado accidentalmente.
 

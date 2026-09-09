@@ -38,11 +38,16 @@ respondan 404/410. No se automatiza una retirada de contenido desde GSC.
   schema PC 1.8.0 y ambos endpoints Care correctos.
 - [x] Sin drift de configuración entre instancias.
 - [ ] Identidad staging: bloqueada por `pipeline_instance_mismatch@staging`.
-- [ ] Canal pull: producción `heartbeat 1018s` y staging `heartbeat 16701s`;
-  ambos se consideran obsoletos y bloquean correctamente.
-- [ ] Ejecutar **Actualizar y reparar ambos Care**. Esta acción no crea lote:
-  repara identidades/roles, reconcilia el poller y fuerza la comprobación de
-  heartbeat.
+- [x] Canal pull recuperado después de ejecutar **Actualizar y reparar ambos
+  Care**; dejaron de aparecer los blockers de heartbeat obsoleto.
+- [x] Defecto de la reparación identificado y corregido en PC 1.2.51: el atajo
+  detectaba `pipeline_instance_mismatch`, pero consumía el pairing sin
+  `rotate_instance_id=true` y no verificaba después la huella persistida. Ahora
+  rota la identidad clonada y exige que `/smart-updates/status` devuelva
+  exactamente `sha256(instance_id)`; si no coincide, falla explícitamente.
+- [ ] Desplegar PC 1.2.51 y volver a ejecutar **Actualizar y reparar ambos
+  Care**. La acción sigue sin crear lote y ahora su éxito implica identidad
+  verificada, además de roles, poller y heartbeat.
 - [ ] Aceptación posterior: huella staging canónica, ambos heartbeats recientes,
   cero blockers, inventario nuevo y ninguna orden/lote creado accidentalmente.
 
